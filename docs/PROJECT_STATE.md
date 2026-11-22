@@ -4,18 +4,30 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                          |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-22                                                                                                                                          |
-| Repository           | `https://github.com/basangnguyen/TUTORHUB_WEB`                                                                                                      |
-| Nhánh làm việc       | `main`                                                                                                                                              |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                         |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                           |
-| Phase hiện tại       | Phase 3 deferred carry-over vẫn hoạt động; Phase 5 collaboration đã đóng                                                                            |
-| Task `DONE` gần nhất | `UI-AUTH-08` Khóa trục dọc `0px` nhảy giữa Đăng nhập ↔ Đăng ký & `AUTH-15` Mẫu Email OTP Resend phong cách ChatGPT (0 chữ số nhiễu cho Gmail)       |
-| Mốc repository mới   | Neon `staging` ở `52 false`; `TestResendEmailPostgresDelivery` PASS; Chromium E2E `13/13` + `1/1` `p2-08`; `@tutorhub/web` `928/928` (`100` file)   |
-| Task hiện tại        | Xác nhận auto-deploy `UI-AUTH-08` (Cloudflare Pages) + `AUTH-15` (Render Core API) trên `https://tutorhub.vn` và thử nhận thư OTP thật trong Gmail  |
-| Task tiếp theo       | Lập lịch job hàng giờ `cmd/auth-maintenance` (GitHub Actions/cron), đối soát `Q12` trước khi gỡ ZITADEL; hoãn Facebook (chờ Meta duyệt) & `+84` ZNS |
+| Thuộc tính           | Trạng thái                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Ngày cập nhật        | 2026-11-22                                                                                                                                             |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                  |
+| Nhánh làm việc       | `main`                                                                                                                                                 |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                            |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                              |
+| Phase hiện tại       | Phase 3 deferred carry-over vẫn hoạt động; Phase 5 collaboration đã đóng                                                                               |
+| Task `DONE` gần nhất | `AUTH-16` Lập lịch GitHub Actions hàng giờ chạy `cmd/auth-maintenance` trên Neon & chuyển repository sang `basangnguyen12-tech/TUTORHUB_WEB`           |
+| Mốc repository mới   | `security:actions` `3` workflow (`11/11` test PASS); Neon `staging` ở `52 false` + Cloudflare DMARC/Avatar; `@tutorhub/web` `928/928` (`100` file)     |
+| Task hiện tại        | Gắn secret `DATABASE_AUTH_MAINTENANCE_URL` + nối lại repo `basangnguyen12-tech/TUTORHUB_WEB` trên Render/Cloudflare Pages và smoke `workflow_dispatch` |
+| Task tiếp theo       | Theo dõi canary Public Beta trên `https://tutorhub.vn`, đối soát `Q12` trước khi gỡ ZITADEL; hoãn Facebook (chờ Meta duyệt) & `+84` Zalo ZNS/SMS       |
+
+### Checkpoint `AUTH-16` Lập lịch GitHub Actions Hàng giờ Chạy `cmd/auth-maintenance` & Chuyển Đổi Repository Chính Thức (`DONE`) — 2026-11-22
+
+Claude Code triển khai `AUTH-16` bổ sung workflow định kỳ `.github/workflows/auth-maintenance.yml`, bài kiểm thử chính sách bảo mật trong `scripts/check-github-actions-security.test.mjs` và hướng dẫn vận hành trong `docs/AUTH_PUBLIC_BETA_RUNBOOK.md`; đồng thời chủ dự án chuyển repository chính thức sang `https://github.com/basangnguyen12-tech/TUTORHUB_WEB` (giữ nguyên toàn bộ lịch sử Git, Neon, Cloudflare `tutorhub.vn`, Render, Resend và OAuth providers):
+
+- **Workflow `.github/workflows/auth-maintenance.yml`**:
+  - Chạy định kỳ mỗi giờ ở phút `17` UTC (`17 * * * *`) trên `refs/heads/main` và hỗ trợ `workflow_dispatch` với hai tham số `batch_size` (mặc định `500`, giới hạn `1..5000`) và `max_batches` (mặc định `10`, giới hạn `1..100`).
+  - Tuân thủ nghiêm ngặt chính sách least-privilege: `permissions: { contents: read }`, `concurrency` đặt `cancel-in-progress: false` để không cắt ngang lô purge đang chạy dở trên Neon, `timeout-minutes: 10`, ghim cứng commit SHA 40 ký tự (`actions/checkout` với `persist-credentials: false` + `sparse-checkout: services/core-api`, `actions/setup-go` `1.26.8`).
+  - Biên dịch `cmd/auth-maintenance` trước khi có secret trong môi trường; chỉ truyền `DATABASE_AUTH_MAINTENANCE_URL` vào `env:` của duy nhất step purge, kiểm tra định dạng số nguyên cho `INPUT_BATCH_SIZE` / `INPUT_MAX_BATCHES` trước khi gọi CLI và tuyệt đối không nội suy `${{ ... }}` vào `run:` hay in giá trị DSN.
+- **Kiểm thử chính sách & Đồng bộ tài liệu**:
+  - `scripts/check-github-actions-security.test.mjs` bổ sung 4 bài kiểm tra chuyên biệt cho `auth-maintenance.yml` (`11/11` test PASS, `pnpm security:actions` xác nhận `3 workflow files` sạch).
+  - Cập nhật `docs/AUTH_PUBLIC_BETA_RUNBOOK.md` (§3–§4) và đồng bộ URL repository chính thức `https://github.com/basangnguyen12-tech/TUTORHUB_WEB` trên `AGENTS.md`, `README.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/config.yml`, `docs/AGENT_COORDINATION.md`, `docs/MASTER_PLAN.md` và `docs/PROJECT_STATE.md`.
 
 ### Checkpoint `UI-AUTH-08` Khóa Cố định Trục dọc `/sign-in` (`0px` nhảy) & `AUTH-15` Mẫu Email OTP Resend Phong cách ChatGPT (`DONE`) — 2026-11-22
 

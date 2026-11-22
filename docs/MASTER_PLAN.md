@@ -8,7 +8,7 @@
 | Cập nhật              | 2026-09-18                                                                                   |
 | Phạm vi ưu tiên       | Web application                                                                              |
 | Thư mục phát triển    | `D:\TutorHub_V2`                                                                             |
-| Repository chính thức | `https://github.com/basangnguyen/TUTORHUB_WEB`                                               |
+| Repository chính thức | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                        |
 | Dự án V1 tham chiếu   | `D:\Ban_sao_du_an`, chỉ đọc                                                                  |
 | Phase hiện tại        | Phase 5 collaboration đã đóng; Phase 3 deferred carry-over tiếp tục                          |
 | Trạng thái gần nhất   | P5-COLLAB-20 DONE; live completion, six fresh reviews và final force-off cleanup PASS        |

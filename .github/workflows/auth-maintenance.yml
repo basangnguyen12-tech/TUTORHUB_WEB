@@ -1,0 +1,81 @@
+# AUTH-16: hourly retention purge for expired auth artifacts
+# (docs/AUTH_PUBLIC_BETA_RUNBOOK.md §3, migration 000051_auth_retention).
+# The direct maintenance DSN is exposed to the single purge step only.
+name: Auth maintenance
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Rows per table per batch (1..5000)"
+        required: false
+        default: "500"
+        type: string
+      max_batches:
+        description: "Maximum batches per invocation (1..100)"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auth-maintenance-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  purge:
+    name: Purge expired auth artifacts
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Core API sources
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+          sparse-checkout: services/core-api
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: 1.26.8
+          cache-dependency-path: services/core-api/go.sum
+
+      # Download modules and compile before any secret is present in the environment.
+      - name: Build auth-maintenance
+        run: go build -o /dev/null ./services/core-api/cmd/auth-maintenance
+
+      - name: Purge expired auth artifacts
+        shell: bash
+        env:
+          DATABASE_AUTH_MAINTENANCE_URL: ${{ secrets.DATABASE_AUTH_MAINTENANCE_URL }}
+          INPUT_BATCH_SIZE: ${{ inputs.batch_size }}
+          INPUT_MAX_BATCHES: ${{ inputs.max_batches }}
+        run: |
+          set -euo pipefail
+
+          # Scheduled runs carry no inputs; fall back to the runbook defaults.
+          BATCH_SIZE="${INPUT_BATCH_SIZE:-500}"
+          MAX_BATCHES="${INPUT_MAX_BATCHES:-10}"
+
+          # Validate the shape before arithmetic; never echo raw input back.
+          if [[ ! "${BATCH_SIZE}" =~ ^[1-9][0-9]{0,3}$ ]] || ((BATCH_SIZE > 5000)); then
+            echo "::error::batch_size must be a positive integer in 1..5000"
+            exit 2
+          fi
+          if [[ ! "${MAX_BATCHES}" =~ ^[1-9][0-9]{0,2}$ ]] || ((MAX_BATCHES > 100)); then
+            echo "::error::max_batches must be a positive integer in 1..100"
+            exit 2
+          fi
+          if [[ -z "${DATABASE_AUTH_MAINTENANCE_URL:-}" ]]; then
+            echo "::error::DATABASE_AUTH_MAINTENANCE_URL secret is not configured"
+            exit 2
+          fi
+
+          go run ./services/core-api/cmd/auth-maintenance \
+            --batch-size "${BATCH_SIZE}" \
+            --max-batches "${MAX_BATCHES}"

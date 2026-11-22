@@ -6,17 +6,17 @@ Từ ngày 2026-11-16 ([ADR-0038](adr/0038-antigravity-orchestrated-multi-agent-
 bổ sung cho [ADR-0012](adr/0012-single-maintainer-direct-main-governance.md)), dự án do
 một chủ dự án duy trì với mô hình điều phối ba coding agent có phân tầng rõ ràng:
 
-- Repository: `https://github.com/basangnguyen/TUTORHUB_WEB`.
+- Repository: `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`.
 - Thư mục chuẩn: `D:\TutorHub_V2`.
 - Nhánh phát triển mặc định: `main` (không bắt buộc Issue/PR cho từng task; không force-push `main` và không commit secret).
 
 ### 1.1 Phân vai giữa các agent
 
-| Agent | Vai trò chính | Quyền hạn & Thế mạnh ưu tiên |
-| :--- | :--- | :--- |
-| **Antigravity** | **PM / Architect / Gatekeeper** | Giữ ngữ cảnh toàn cục (`PROJECT_STATE.md`, `MASTER_PLAN.md`, backlog, ADR), thiết kế kiến trúc, chia nhỏ công việc, **viết Prompt giao việc chuẩn** để chủ dự án dán vào Codex hoặc Claude Code, review `git diff` & bảo mật, chạy gate nghiệm thu (`pnpm verify`), cập nhật `docs/PROJECT_STATE.md` và là **agent duy nhất** được `git commit` / `git push origin main`. |
-| **Codex** | **Backend / Infra / Review Worker** | Ưu tiên giao các gói việc Go (`services/core-api`), PostgreSQL migration & runtime ACL, script điều phối/kiểm thử (`scripts/`), tối ưu hiệu năng/concurrency và rà soát lỗi logic/bảo mật độc lập. |
-| **Claude Code (Claude Pro)** | **Frontend / Contract / UX Worker** | Ưu tiên giao các gói việc React + TypeScript (`apps/web`, `packages/ui`), tích hợp OpenAPI (`openapi/`, `packages/api-client`), accessibility (keyboard/ARIA/Axe), đa ngôn ngữ (`vi`/`en`), Playwright E2E và refactor trải rộng nhiều component. |
+| Agent                        | Vai trò chính                       | Quyền hạn & Thế mạnh ưu tiên                                                                                                                                                                                                                                                                                                                                              |
+| :--------------------------- | :---------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Antigravity**              | **PM / Architect / Gatekeeper**     | Giữ ngữ cảnh toàn cục (`PROJECT_STATE.md`, `MASTER_PLAN.md`, backlog, ADR), thiết kế kiến trúc, chia nhỏ công việc, **viết Prompt giao việc chuẩn** để chủ dự án dán vào Codex hoặc Claude Code, review `git diff` & bảo mật, chạy gate nghiệm thu (`pnpm verify`), cập nhật `docs/PROJECT_STATE.md` và là **agent duy nhất** được `git commit` / `git push origin main`. |
+| **Codex**                    | **Backend / Infra / Review Worker** | Ưu tiên giao các gói việc Go (`services/core-api`), PostgreSQL migration & runtime ACL, script điều phối/kiểm thử (`scripts/`), tối ưu hiệu năng/concurrency và rà soát lỗi logic/bảo mật độc lập.                                                                                                                                                                        |
+| **Claude Code (Claude Pro)** | **Frontend / Contract / UX Worker** | Ưu tiên giao các gói việc React + TypeScript (`apps/web`, `packages/ui`), tích hợp OpenAPI (`openapi/`, `packages/api-client`), accessibility (keyboard/ARIA/Axe), đa ngôn ngữ (`vi`/`en`), Playwright E2E và refactor trải rộng nhiều component.                                                                                                                         |
 
 ### 1.2 Ranh giới an toàn bắt buộc cho Worker (`Codex` & `Claude Code`)
 
@@ -114,21 +114,21 @@ ngoại lệ có thời hạn theo ADR-0012 và không được mô tả như br
 
 ## 4. Trạng thái Phase 2
 
-| Task                           | Trạng thái | Ghi chú                                                    |
-| ------------------------------ | ---------- | ---------------------------------------------------------- |
-| P2-00 Policy/contract baseline | DONE       | Policy deny-by-default và role matrix dùng chung           |
-| P2-01 Profile/identity         | DONE       | Profile, identity linking và migration `000006`            |
-| P2-02 Tenant lifecycle         | DONE       | Lifecycle/switch, migration `000007`; `pnpm verify` xanh   |
-| P2-03 Membership invitation    | DONE       | Invitation/accept/revoke, migration `000008`; verify xanh  |
-| P2-04 Class lifecycle          | DONE       | Lifecycle/ownership, migration `000009`; verify xanh       |
-| P2-05 Enrollment/invite code   | DONE       | Enrollment/invite, migration `000010`; verify xanh         |
-| P2-06 Roster/class roles       | DONE       | Roster/hierarchy/single-bulk UI; verify xanh               |
-| P2-07 Audit log                | DONE       | Append-only audit, query/UI org admin, migration `000011`  |
-| P2-08 Admin/teacher E2E UI     | DONE       | CI và acceptance staging ba role đều xanh                  |
-| P2-09 Feature flag/quota       | DONE       | Staging migration/config/acceptance đều đạt                 |
-| P2-10 Tenant isolation/IDOR    | DONE       | Commit `c4205b9`; Verify/Security CI đều xanh               |
-| P2-11 V1 fixture import        | DONE       | Commit `f07d05d`; PostgreSQL 17 Verify/Security đều xanh    |
-| P2-12 Staging closure          | DONE       | UI, rollback/redeploy, sign-off và exit gate đều đạt         |
+| Task                           | Trạng thái | Ghi chú                                                   |
+| ------------------------------ | ---------- | --------------------------------------------------------- |
+| P2-00 Policy/contract baseline | DONE       | Policy deny-by-default và role matrix dùng chung          |
+| P2-01 Profile/identity         | DONE       | Profile, identity linking và migration `000006`           |
+| P2-02 Tenant lifecycle         | DONE       | Lifecycle/switch, migration `000007`; `pnpm verify` xanh  |
+| P2-03 Membership invitation    | DONE       | Invitation/accept/revoke, migration `000008`; verify xanh |
+| P2-04 Class lifecycle          | DONE       | Lifecycle/ownership, migration `000009`; verify xanh      |
+| P2-05 Enrollment/invite code   | DONE       | Enrollment/invite, migration `000010`; verify xanh        |
+| P2-06 Roster/class roles       | DONE       | Roster/hierarchy/single-bulk UI; verify xanh              |
+| P2-07 Audit log                | DONE       | Append-only audit, query/UI org admin, migration `000011` |
+| P2-08 Admin/teacher E2E UI     | DONE       | CI và acceptance staging ba role đều xanh                 |
+| P2-09 Feature flag/quota       | DONE       | Staging migration/config/acceptance đều đạt               |
+| P2-10 Tenant isolation/IDOR    | DONE       | Commit `c4205b9`; Verify/Security CI đều xanh             |
+| P2-11 V1 fixture import        | DONE       | Commit `f07d05d`; PostgreSQL 17 Verify/Security đều xanh  |
+| P2-12 Staging closure          | DONE       | UI, rollback/redeploy, sign-off và exit gate đều đạt      |
 
 Nguồn thực thi: `docs/PHASE_2_BACKLOG.md`.
 
@@ -141,27 +141,27 @@ live; rollback bằng specific commit giữ cấu hình hiện tại là bằng 
 
 ## 5. Trạng thái Phase 3
 
-| Task                                 | Trạng thái  | Ghi chú                                       |
-| ------------------------------------ | ----------- | --------------------------------------------- |
-| P3-00 Backlog/architecture baseline  | DONE        | Backlog, ADR scheduling và ADR worker         |
-| P3-CAL-00 Calendar research/design   | DONE        | Product/UX/technical/V1/OSS report            |
-| P3-CAL-00B Calendar re-baseline      | DONE        | Tài liệu only; chưa có theme/email runtime    |
-| P3-CAL-00C Calendar readiness review | DONE        | Gate/dependency/contract đã được harden       |
-| P3-CAL-01 Spike + ADR-0019           | DONE        | V7 được chấp nhận; manual NVDA gate PASS      |
-| P3-01 Session scheduling và timezone | DONE        | One-time session staging acceptance đạt       |
-| P3-CAL-02 Email/ICS + ADR-0020       | VERIFY      | Local renderer/sink/SES adapter; live SES/domain gates mở |
-| P3-02D-A Native Availability Poll    | DONE        | Exact staging, browser/API và manual NVDA gates PASS |
-| P3-02D-B Poll lifecycle delivery     | DEFERRED/TODO | Chưa code; auto-close/fan-out chờ worker      |
-| P3-03A Worker repository foundation  | VERIFY      | Implementation local/CI đã có                 |
-| P3-03B Durable worker acceptance     | DEFERRED/VERIFY | Host/role/grants/crash gate mở             |
-| P3-04 In-app notification            | VERIFY      | API ACL staging xanh; worker/canary gate mở   |
-| P3-02A Calendar shell/read projection | DONE      | Route E2E/perf/visual/staging gates đạt        |
-| P3-02B Recurrence + class conflict     | DONE      | PostgreSQL/staging acceptance đạt              |
-| P3-02C Working hours/free-busy/RSVP    | DONE      | Automated, staging/disposable DB và manual gates PASS |
-| P3-06/07A/08/09/11A/12/13            | DONE        | Runnable product slices đã qua exact acceptance |
-| P3-14-CORE                            | DONE        | Candidate `f5f1eb3` exact CI/deploy/live PASS   |
-| P3-05A/B, P3-07B, P3-10/11B          | DEFERRED/TODO | Chưa code; phụ thuộc worker/provider        |
-| P3-14 full closure                    | TODO        | Chỉ đóng sau toàn bộ carry-over               |
+| Task                                  | Trạng thái      | Ghi chú                                                   |
+| ------------------------------------- | --------------- | --------------------------------------------------------- |
+| P3-00 Backlog/architecture baseline   | DONE            | Backlog, ADR scheduling và ADR worker                     |
+| P3-CAL-00 Calendar research/design    | DONE            | Product/UX/technical/V1/OSS report                        |
+| P3-CAL-00B Calendar re-baseline       | DONE            | Tài liệu only; chưa có theme/email runtime                |
+| P3-CAL-00C Calendar readiness review  | DONE            | Gate/dependency/contract đã được harden                   |
+| P3-CAL-01 Spike + ADR-0019            | DONE            | V7 được chấp nhận; manual NVDA gate PASS                  |
+| P3-01 Session scheduling và timezone  | DONE            | One-time session staging acceptance đạt                   |
+| P3-CAL-02 Email/ICS + ADR-0020        | VERIFY          | Local renderer/sink/SES adapter; live SES/domain gates mở |
+| P3-02D-A Native Availability Poll     | DONE            | Exact staging, browser/API và manual NVDA gates PASS      |
+| P3-02D-B Poll lifecycle delivery      | DEFERRED/TODO   | Chưa code; auto-close/fan-out chờ worker                  |
+| P3-03A Worker repository foundation   | VERIFY          | Implementation local/CI đã có                             |
+| P3-03B Durable worker acceptance      | DEFERRED/VERIFY | Host/role/grants/crash gate mở                            |
+| P3-04 In-app notification             | VERIFY          | API ACL staging xanh; worker/canary gate mở               |
+| P3-02A Calendar shell/read projection | DONE            | Route E2E/perf/visual/staging gates đạt                   |
+| P3-02B Recurrence + class conflict    | DONE            | PostgreSQL/staging acceptance đạt                         |
+| P3-02C Working hours/free-busy/RSVP   | DONE            | Automated, staging/disposable DB và manual gates PASS     |
+| P3-06/07A/08/09/11A/12/13             | DONE            | Runnable product slices đã qua exact acceptance           |
+| P3-14-CORE                            | DONE            | Candidate `f5f1eb3` exact CI/deploy/live PASS             |
+| P3-05A/B, P3-07B, P3-10/11B           | DEFERRED/TODO   | Chưa code; phụ thuộc worker/provider                      |
+| P3-14 full closure                    | TODO            | Chỉ đóng sau toàn bộ carry-over                           |
 
 Nguồn thực thi: `docs/PHASE_3_BACKLOG.md`. Trước khi code calendar phải đọc
 `docs/CALENDAR_PRODUCT_TECHNICAL_DESIGN.md` và ADR-0017; P3-02B recurrence phải chờ
@@ -250,22 +250,22 @@ hoặc worker-driven file processing/sharing tới end user.
 
 ## 6. Trạng thái Phase 4
 
-| Task            | Trạng thái | Ghi chú                                                    |
-| --------------- | ---------- | ---------------------------------------------------------- |
-| P4-00           | DONE       | ADR-0030 + Phase 4 backlog; không migration/deploy         |
+| Task           | Trạng thái | Ghi chú                                                     |
+| -------------- | ---------- | ----------------------------------------------------------- |
+| P4-00          | DONE       | ADR-0030 + Phase 4 backlog; không migration/deploy          |
 | P4-MEDIA-UX-00 | DONE       | Report + prototype cô lập + ADR-0031; effect mặc định off   |
-| P4-01           | DONE       | Exact disposable/CI/shared/deploy/live feature-off PASS    |
-| P4-02           | DONE       | Exact disposable/CI/shared/deploy/live/provider PASS       |
-| P4-03           | DONE       | Exact CI/shared/deploy/live feature-off/privacy PASS        |
-| P4-04           | DONE       | Exact CI/shared/deploy/live privacy/no-side-effect PASS     |
-| P4-05           | DONE       | Exact CI/shared/deploy/live + isolated provider PASS        |
-| P4-06           | DONE       | Exact CI/shared/deploy/live feature-off/no-side-effect PASS |
-| P4-07           | DONE       | Exact CI/shared/deploy/live moderation acceptance PASS      |
-| P4-08           | DONE       | Exact CI/shared/deploy/live room-chat acceptance PASS       |
-| P4-09           | DONE       | Exact CI/shared/deploy/live reconnect acceptance PASS       |
-| P4-10           | DONE       | Exact CI/shared/deploy/live diagnostics acceptance PASS     |
-| P4-11           | DONE       | Exact CI + physical/load/rotation/outage gates PASS        |
-| P4-12           | DONE       | Exact staging acceptance và Phase 4 closure PASS           |
+| P4-01          | DONE       | Exact disposable/CI/shared/deploy/live feature-off PASS     |
+| P4-02          | DONE       | Exact disposable/CI/shared/deploy/live/provider PASS        |
+| P4-03          | DONE       | Exact CI/shared/deploy/live feature-off/privacy PASS        |
+| P4-04          | DONE       | Exact CI/shared/deploy/live privacy/no-side-effect PASS     |
+| P4-05          | DONE       | Exact CI/shared/deploy/live + isolated provider PASS        |
+| P4-06          | DONE       | Exact CI/shared/deploy/live feature-off/no-side-effect PASS |
+| P4-07          | DONE       | Exact CI/shared/deploy/live moderation acceptance PASS      |
+| P4-08          | DONE       | Exact CI/shared/deploy/live room-chat acceptance PASS       |
+| P4-09          | DONE       | Exact CI/shared/deploy/live reconnect acceptance PASS       |
+| P4-10          | DONE       | Exact CI/shared/deploy/live diagnostics acceptance PASS     |
+| P4-11          | DONE       | Exact CI + physical/load/rotation/outage gates PASS         |
+| P4-12          | DONE       | Exact staging acceptance và Phase 4 closure PASS            |
 
 Nguồn thực thi: `docs/PHASE_4_BACKLOG.md`; kiến trúc có thẩm quyền: ADR-0030. P1-07
 LiveKit token/webhook/prejoin/room code được tái sử dụng nhưng class-wide deterministic

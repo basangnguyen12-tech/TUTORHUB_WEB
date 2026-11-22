@@ -2,7 +2,7 @@
 
 TutorHub V2 là phiên bản web-first của hệ sinh thái TutorHub. Dự án được xây dựng mới, còn `D:\Ban_sao_du_an` chỉ là nguồn tham chiếu nghiệp vụ và dữ liệu của TutorHub V1.
 
-- Repository chính thức: [basangnguyen/TUTORHUB_WEB](https://github.com/basangnguyen/TUTORHUB_WEB)
+- Repository chính thức: [basangnguyen12-tech/TUTORHUB_WEB](https://github.com/basangnguyen12-tech/TUTORHUB_WEB)
 - Thư mục phát triển chuẩn: `D:\TutorHub_V2`
 - Nhánh mặc định: `main`; remote chuẩn: `origin`
 

@@ -18,7 +18,7 @@ TutorHub V2 là hệ sinh thái học trực tuyến web-first. TutorHub V1 tạ
 
 ## Repository và phối hợp (theo ADR-0012 & ADR-0038)
 
-- Repository chính thức: `https://github.com/basangnguyen/TUTORHUB_WEB`.
+- Repository chính thức: `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`.
 - Remote chuẩn: `origin`; nhánh mặc định: `main`.
 - Mô hình điều phối 3-agent dưới sự chỉ đạo của chủ dự án:
   - **Antigravity (PM / Architect / Gatekeeper)**: quản lý lộ trình, kiến trúc, ADR, phân rã task và xuất **Prompt giao việc chuẩn** để chủ dự án dán vào **Codex** hoặc **Claude Code**; trực tiếp review diff/bảo mật, chạy cổng kiểm chứng (`pnpm verify` và các test liên quan), cập nhật `docs/PROJECT_STATE.md` và là **agent duy nhất** thực hiện `git commit` / `git push origin main`.

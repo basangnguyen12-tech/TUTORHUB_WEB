@@ -6,7 +6,7 @@ TutorHub V2 is under active development. Security fixes are applied to the lates
 
 ## Reporting a vulnerability
 
-Do not disclose a suspected vulnerability in a public issue, discussion, pull request, screenshot or chat log. Use the repository's [private vulnerability reporting form](https://github.com/basangnguyen/TUTORHUB_WEB/security/advisories/new).
+Do not disclose a suspected vulnerability in a public issue, discussion, pull request, screenshot or chat log. Use the repository's [private vulnerability reporting form](https://github.com/basangnguyen12-tech/TUTORHUB_WEB/security/advisories/new).
 
 Include only the information required to reproduce and assess the issue:
 
