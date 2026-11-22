@@ -1,0 +1,441 @@
+/*
+ * ROOM-STAGE-01 — studio classroom layout.
+ *
+ * The room is locked to one viewport (100dvh, no page scroll):
+ *   slim header row → flexible stage (min-height: 0) → Dock pinned at bottom.
+ * When a classroom tool (whiteboard) is open the tool takes the central stage
+ * and the existing camera grid collapses, purely through CSS, into a 264px
+ * side strip (stacked strip below 960px). The media DOM never remounts.
+ */
+
+.media-p403-room.media-p405-room {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.media-p405-room > .lk-room-container {
+  display: flex;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.media-p405-room > .media-p405-notice,
+.media-p405-room > .media-p403-alert {
+  flex: 0 0 auto;
+  margin: 8px 12px;
+}
+
+.media-p405-room .media-p405-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  overflow: hidden;
+}
+
+.media-p405-room .media-p405-shell > * {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+/* ---- Slim one-row header -------------------------------------------- */
+
+.media-p405-room .media-p405-header {
+  min-height: 40px;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+
+.media-p405-room .media-p405-header > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.media-p405-room .media-p405-header h1 {
+  overflow: hidden;
+  font-size: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-p405-room .media-p405-header p {
+  margin-top: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-p405-header-actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.media-p405-room .media-p405-header-badges {
+  flex-wrap: nowrap;
+}
+
+.media-p405-room .media-p405-header-badges span {
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.media-p405-room .media-p407-room-controls {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.media-p405-room .media-p407-room-actions {
+  flex-wrap: nowrap;
+}
+
+.media-p405-room .media-p407-status {
+  max-width: 28ch;
+  font-size: 12px;
+}
+
+/* ---- Compact notices ------------------------------------------------ */
+
+.media-p405-room .media-p405-notice,
+.media-p405-room .media-p405-error {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+/* ---- Waiting-room banner (only visible while someone is waiting) ---- */
+
+.media-p406-lobby-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+  color: var(--color-text);
+}
+
+.media-p406-lobby-banner__text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---- Stage ---------------------------------------------------------- */
+
+.media-p405-room .media-p405-classroom {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* Short viewports scroll inside the stage instead of clipping tiles. */
+.media-p405-room .media-p405-stage {
+  min-height: 0;
+  overflow: auto;
+  place-items: center;
+  place-items: safe center;
+}
+
+.media-p405-room .media-p405-pagination {
+  min-height: 32px;
+}
+
+.media-p405-room .media-p405-pagination .th-button {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+/* ---- Dock ----------------------------------------------------------- */
+
+.media-p405-room .media-p405-footer {
+  padding: 6px 8px;
+}
+
+.media-p405-room .media-p405-device-panel {
+  position: absolute;
+  z-index: 30;
+  right: 12px;
+  bottom: 72px;
+  left: 12px;
+  max-height: 50%;
+  overflow: auto;
+  box-shadow: var(--shadow-md);
+}
+
+/* ---- Roster drawer hosts the waiting room --------------------------- */
+
+.media-p406-roster-control {
+  position: relative;
+}
+
+.media-p406-roster-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 2px solid var(--color-surface);
+  border-radius: 999px;
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  place-items: center;
+}
+
+.media-p406-roster-drawer {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.media-p406-roster-lobby .media-p404-lobby {
+  width: 100%;
+  max-width: none;
+  padding: 14px;
+  margin: 12px 0 0;
+}
+
+/* ---- Tool stage (whiteboard) ---------------------------------------- */
+
+.media-p506-tool-stage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.media-p506-tool-stage__header {
+  display: flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.media-p506-tool-stage__header h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-p506-tool-stage__header h2:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.media-p506-tool-stage__body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.media-p506-tool-stage .whiteboard-tool,
+.media-p506-tool-stage .whiteboard-engine {
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.media-p506-tool-stage .whiteboard-tool {
+  gap: 8px;
+}
+
+.media-p506-tool-stage .whiteboard-engine-canvas {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.media-p506-tool-stage .whiteboard-tool-state {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* The stage header already names the tool; keep the inner title for AT. */
+.media-p506-tool-stage .whiteboard-tool-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Split view: central tool stage + 264px camera strip on the right. */
+.media-p405-room .media-p405-classroom--tool-stage {
+  grid-template-columns: minmax(0, 1fr) 264px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.media-p405-classroom--tool-stage > .media-p506-tool-stage {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+
+.media-p405-classroom--tool-stage > .media-p405-stage {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  align-content: start;
+  padding: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  place-items: start stretch;
+}
+
+.media-p405-classroom--tool-stage:has(> .media-p405-rail) > .media-p405-stage {
+  grid-row: 1;
+  overflow: hidden;
+}
+
+.media-p405-classroom--tool-stage > .media-p405-rail {
+  grid-column: 2;
+  grid-row: 2;
+  padding: 6px;
+}
+
+.media-p405-classroom--tool-stage .media-p405-grid {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 6px;
+}
+
+.media-p405-classroom--tool-stage .media-p405-tile {
+  aspect-ratio: 16 / 9;
+}
+
+.media-p405-classroom--tool-stage .media-p405-tile--rail {
+  min-height: 0;
+}
+
+.media-p405-classroom--tool-stage .media-p405-avatar {
+  width: clamp(32px, 22%, 52px);
+  font-size: 18px;
+}
+
+.media-p405-classroom--tool-stage .media-p406-reactions {
+  right: 280px;
+}
+
+@media (max-width: 959px) {
+  .media-p405-room .media-p405-header-badges {
+    display: none;
+  }
+
+  .media-p405-room .media-p405-classroom--tool-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 116px;
+  }
+
+  .media-p405-classroom--tool-stage > .media-p506-tool-stage {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .media-p405-classroom--tool-stage > .media-p405-stage,
+  .media-p405-classroom--tool-stage:has(> .media-p405-rail)
+    > .media-p405-stage {
+    grid-column: 1;
+    grid-row: 2;
+    padding: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    place-items: stretch start;
+  }
+
+  .media-p405-classroom--tool-stage > .media-p405-rail {
+    display: none;
+  }
+
+  .media-p405-classroom--tool-stage .media-p405-grid {
+    height: 100%;
+    grid-auto-columns: 184px;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    align-content: stretch;
+  }
+
+  .media-p405-classroom--tool-stage .media-p405-tile--stage {
+    width: auto;
+    height: 100%;
+  }
+
+  .media-p405-classroom--tool-stage .media-p406-reactions {
+    right: 16px;
+    bottom: 132px;
+  }
+}
+
+@media (max-width: 767px) {
+  .media-p405-room .media-p405-header,
+  .media-p405-room .media-p405-footer {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .media-p405-room .media-p405-footer {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .media-p405-room .media-p407-room-actions .th-button {
+    min-height: 36px;
+  }
+
+  .media-p405-room .media-p405-device-panel {
+    bottom: 120px;
+  }
+}
+
+@media (forced-colors: active) {
+  .media-p506-tool-stage,
+  .media-p406-lobby-banner,
+  .media-p406-roster-badge {
+    border: 1px solid CanvasText;
+    forced-color-adjust: auto;
+  }
+}

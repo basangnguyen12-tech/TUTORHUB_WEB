@@ -1,6 +1,13 @@
 import { APIRequestError, type WhiteboardDocument } from "@tutorhub/api-client";
 import { Button } from "@tutorhub/ui";
-import { lazy, Suspense, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import { useI18n } from "../../app/i18n";
 import {
   usePrepareWhiteboard,
@@ -11,8 +18,17 @@ import { WHITEBOARD_PRIVATE_ALPHA_SUPPORT_HREF } from "./whiteboardPrivateAlpha"
 
 const LazyWhiteboardEngine = lazy(() => import("./LazyWhiteboardEngine"));
 
+type WhiteboardOperation = "open" | "suspend" | "resume" | "close";
+
 export interface ClassroomWhiteboardToolProps {
   actorID: string;
+  /**
+   * One-tap start for the in-room stage: prepare a whiteboard when the server
+   * allows creating one, then open it when the server allows opening. Every
+   * step stays gated by server-projected capabilities. Defaults to `false` so
+   * the discrete manual flow remains available elsewhere.
+   */
+  autoStart?: boolean;
   enabled: boolean;
   mediaSpaceID: string;
   tenantID: string;
@@ -20,6 +36,7 @@ export interface ClassroomWhiteboardToolProps {
 
 export function ClassroomWhiteboardTool({
   actorID,
+  autoStart = false,
   enabled,
   mediaSpaceID,
   tenantID,
@@ -28,6 +45,49 @@ export function ClassroomWhiteboardTool({
   const tool = useWhiteboardTool(tenantID, mediaSpaceID, enabled);
   const prepare = usePrepareWhiteboard(tenantID, mediaSpaceID);
   const transition = useTransitionWhiteboard(tenantID, mediaSpaceID);
+  const { mutate: prepareWhiteboard } = prepare;
+  const { mutate: transitionWhiteboard } = transition;
+  const autoPreparedSpaceRef = useRef<string | null>(null);
+  const autoOpenedDocumentRef = useRef<string | null>(null);
+  const manualPauseOrCloseRef = useRef(false);
+
+  const projection =
+    enabled && !tool.isPending && !tool.isError ? tool.data : undefined;
+  const autoPrepareReady = Boolean(
+    autoStart &&
+    projection?.document === null &&
+    projection.can_create &&
+    !prepare.isPending &&
+    !prepare.isError,
+  );
+  const autoOpenDocument =
+    autoStart &&
+    projection?.document?.status === "created" &&
+    projection.document.viewer_capabilities.can_open &&
+    !transition.isPending &&
+    !transition.isError
+      ? projection.document
+      : null;
+
+  useEffect(() => {
+    if (!autoPrepareReady) return;
+    if (autoPreparedSpaceRef.current === mediaSpaceID) return;
+    autoPreparedSpaceRef.current = mediaSpaceID;
+    prepareWhiteboard();
+  }, [autoPrepareReady, mediaSpaceID, prepareWhiteboard]);
+
+  useEffect(() => {
+    if (autoOpenDocument === null) return;
+    if (manualPauseOrCloseRef.current) return;
+    if (autoOpenedDocumentRef.current === autoOpenDocument.id) return;
+    autoOpenedDocumentRef.current = autoOpenDocument.id;
+    transitionWhiteboard({ document: autoOpenDocument, operation: "open" });
+  }, [autoOpenDocument, transitionWhiteboard]);
+
+  const refetchTool = tool.refetch;
+  const handleRecoveryRequired = useCallback(() => {
+    void refetchTool();
+  }, [refetchTool]);
 
   if (!enabled) {
     return <WhiteboardState message={t("whiteboard.featureOff")} />;
@@ -35,8 +95,9 @@ export function ClassroomWhiteboardTool({
   if (tool.isPending) {
     return (
       <WhiteboardState
+        compactPrivateAlphaNotice={autoStart}
         message={t("whiteboard.loading")}
-        showPrivateAlphaNotice
+        showPrivateAlphaNotice={!autoStart}
       />
     );
   }
@@ -57,12 +118,19 @@ export function ClassroomWhiteboardTool({
     );
   }
 
-  const projection = tool.data;
-  if (projection.document === null) {
+  const resolved = tool.data;
+  if (resolved.document === null) {
     return (
-      <WhiteboardState message={t("whiteboard.empty")} showPrivateAlphaNotice>
-        {projection.can_create ? (
-          <Button disabled={prepare.isPending} onClick={() => prepare.mutate()}>
+      <WhiteboardState
+        compactPrivateAlphaNotice={autoStart}
+        message={t("whiteboard.empty")}
+        showPrivateAlphaNotice={!autoStart}
+      >
+        {resolved.can_create ? (
+          <Button
+            disabled={prepare.isPending}
+            onClick={() => prepareWhiteboard()}
+          >
             {prepare.isPending
               ? t("whiteboard.preparing")
               : t("whiteboard.prepare")}
@@ -77,15 +145,21 @@ export function ClassroomWhiteboardTool({
     );
   }
 
+  const document = resolved.document;
   return (
     <WhiteboardDocumentView
       actorID={actorID}
-      document={projection.document}
+      document={document}
       mutationPending={transition.isPending}
-      onRecoveryRequired={() => void tool.refetch()}
-      onTransition={(operation) =>
-        transition.mutate({ document: projection.document!, operation })
-      }
+      onRecoveryRequired={handleRecoveryRequired}
+      onTransition={(operation) => {
+        // A deliberate pause/finish must never be undone by the one-tap flow;
+        // the manual Open/Resume buttons keep working.
+        if (operation === "suspend" || operation === "close") {
+          manualPauseOrCloseRef.current = true;
+        }
+        transitionWhiteboard({ document, operation });
+      }}
       tenantID={tenantID}
       transitionError={transition.isError}
     />
@@ -105,7 +179,7 @@ function WhiteboardDocumentView({
   document: WhiteboardDocument;
   mutationPending: boolean;
   onRecoveryRequired: () => void;
-  onTransition: (operation: "open" | "suspend" | "resume" | "close") => void;
+  onTransition: (operation: WhiteboardOperation) => void;
   tenantID: string;
   transitionError: boolean;
 }) {
@@ -116,17 +190,21 @@ function WhiteboardDocumentView({
       aria-labelledby="whiteboard-tool-title"
       className="whiteboard-tool"
     >
-      <PrivateAlphaNotice />
       <header className="whiteboard-tool-header">
-        <div>
-          <h2 id="whiteboard-tool-title">{t("whiteboard.title")}</h2>
-          <p>{t(`whiteboard.status.${document.status}`)}</p>
+        <div className="whiteboard-tool-heading">
+          <h3 className="whiteboard-tool-title" id="whiteboard-tool-title">
+            {t("whiteboard.title")}
+          </h3>
+          <p className="whiteboard-tool-status">
+            {t(`whiteboard.status.${document.status}`)}
+          </p>
         </div>
         <div className="whiteboard-tool-actions">
           {capabilities.can_open ? (
             <Button
               disabled={mutationPending}
               onClick={() => onTransition("open")}
+              size="sm"
             >
               {t("whiteboard.open")}
             </Button>
@@ -135,6 +213,8 @@ function WhiteboardDocumentView({
             <Button
               disabled={mutationPending}
               onClick={() => onTransition("suspend")}
+              size="sm"
+              variant="secondary"
             >
               {t("whiteboard.suspend")}
             </Button>
@@ -143,6 +223,7 @@ function WhiteboardDocumentView({
             <Button
               disabled={mutationPending}
               onClick={() => onTransition("resume")}
+              size="sm"
             >
               {t("whiteboard.resume")}
             </Button>
@@ -151,11 +232,13 @@ function WhiteboardDocumentView({
             <Button
               disabled={mutationPending}
               onClick={() => onTransition("close")}
+              size="sm"
               variant="danger"
             >
               {t("whiteboard.close")}
             </Button>
           ) : null}
+          <WhiteboardTrialDisclosure />
         </div>
       </header>
       {transitionError ? (
@@ -180,6 +263,17 @@ function WhiteboardDocumentView({
         <WhiteboardState message={t(`whiteboard.state.${document.status}`)} />
       )}
     </section>
+  );
+}
+
+/** Compact, collapsed-by-default home for the Private Alpha guidance. */
+function WhiteboardTrialDisclosure() {
+  const { t } = useI18n();
+  return (
+    <details className="whiteboard-trial-disclosure">
+      <summary>{t("whiteboard.trialInfo")}</summary>
+      <PrivateAlphaNotice />
+    </details>
   );
 }
 
@@ -228,17 +322,24 @@ function PrivateAlphaNotice() {
 function WhiteboardState({
   alert = false,
   children,
+  compactPrivateAlphaNotice = false,
   message,
   showPrivateAlphaNotice = false,
 }: {
   alert?: boolean;
   children?: ReactNode;
+  compactPrivateAlphaNotice?: boolean;
   message: string;
   showPrivateAlphaNotice?: boolean;
 }) {
   return (
     <>
       {showPrivateAlphaNotice ? <PrivateAlphaNotice /> : null}
+      {!showPrivateAlphaNotice && compactPrivateAlphaNotice ? (
+        <div className="whiteboard-tool-state-disclosure">
+          <WhiteboardTrialDisclosure />
+        </div>
+      ) : null}
       <div className="whiteboard-tool-state">
         <p
           aria-live={alert ? "assertive" : "polite"}

@@ -15,12 +15,13 @@ import {
   StatusBadge,
 } from "@tutorhub/ui";
 import { Check, RefreshCw, UserRoundX } from "lucide-react";
-import { useRef, useState } from "react";
+import { createContext, useRef, useState, type ReactNode } from "react";
 import {
   mediaLobbyIdempotencyKey,
   useMediaAdmissions,
   useResolveMediaAdmission,
   type MediaAdmissionItem,
+  type MediaAdmissionPage,
 } from "../app/mediaLobby";
 import { useI18n } from "../app/i18n";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
@@ -32,6 +33,53 @@ interface MediaLobbyPanelProps {
   spaceID: string;
   spaceVersion: number;
   tenantID: string;
+}
+
+/**
+ * Number of people currently waiting for admission. The classroom shell reads
+ * it to badge the roster control while the roster drawer (and the full lobby
+ * panel inside it) is closed and therefore unmounted.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- Shared waiting-count contract; ClassroomLiveKitRoom forwards a fixed prop set, so the shell reads this context instead of a new prop.
+export const MediaLobbyWaitingCountContext = createContext(0);
+
+/**
+ * Observes the same admissions query as {@link MediaLobbyPanel} (identical
+ * query key, so the cache and polling are shared) and publishes only the
+ * waiting count. Fails closed to `0` while disabled, loading or erroring.
+ */
+export function MediaLobbyWaitingCountProvider({
+  children,
+  enabled,
+  roomInstanceID,
+  roomInstanceVersion,
+  spaceID,
+  spaceVersion,
+  tenantID,
+}: MediaLobbyPanelProps & { children: ReactNode }) {
+  const admissions = useMediaAdmissions(
+    tenantID,
+    spaceID,
+    roomInstanceID,
+    spaceVersion,
+    roomInstanceVersion,
+    enabled,
+  );
+  const count =
+    enabled && !admissions.isError
+      ? waitingAdmissions(admissions.data).length
+      : 0;
+  return (
+    <MediaLobbyWaitingCountContext value={count}>
+      {children}
+    </MediaLobbyWaitingCountContext>
+  );
+}
+
+function waitingAdmissions(
+  page: MediaAdmissionPage | undefined,
+): MediaAdmissionItem[] {
+  return (page?.items ?? []).filter((item) => item.status === "waiting");
 }
 
 export function MediaLobbyPanel({
@@ -71,9 +119,7 @@ export function MediaLobbyPanel({
   const forbidden =
     admissions.error instanceof APIRequestError &&
     admissions.error.status === 403;
-  const waiting = (admissions.data?.items ?? []).filter(
-    (item) => item.status === "waiting",
-  );
+  const waiting = waitingAdmissions(admissions.data);
   const actionPending = (admissionID: string) =>
     resolve.isPending && resolve.variables?.admissionID === admissionID;
 

@@ -91,6 +91,8 @@ const messages = {
     "whiteboard.semanticNext": "Trang sau",
     "whiteboard.focusCanvas": "Chuyển tiêu điểm tới bảng vẽ",
     "whiteboard.semanticEmpty": "Bảng trắng chưa có nội dung.",
+    "whiteboard.semanticClose": "Đóng bản văn bản",
+    "whiteboard.trialInfo": "Thông tin phiên bản",
     "whiteboard.untitledElement": "phần tử không có nhãn",
     "whiteboard.status.created": "Đã chuẩn bị",
     "whiteboard.status.open": "Đang trình bày",
@@ -2438,7 +2440,7 @@ const messages = {
       "TutorHub chưa cấp credential. Hãy chờ một lúc rồi kiểm tra lại.",
     "media.p404.lobby.title": "Hàng chờ vào phòng",
     "media.p404.lobby.description":
-      "Cho vào hoặc từ chối từng yêu cầu đã được Core API xác thực.",
+      "Xem từng người đang xin vào lớp rồi chọn cho vào hoặc từ chối.",
     "media.p404.lobby.loading": "Đang tải hàng chờ",
     "media.p404.lobby.forbiddenTitle": "Không thể xem hàng chờ",
     "media.p404.lobby.forbiddenDescription":
@@ -2448,7 +2450,7 @@ const messages = {
       "Không thể xác nhận danh sách hiện tại. Hãy thử lại.",
     "media.p404.lobby.emptyTitle": "Không có ai đang chờ",
     "media.p404.lobby.emptyDescription":
-      "Yêu cầu mới sẽ xuất hiện ở đây sau khi Core API xác thực.",
+      "Khi có người xin vào lớp, yêu cầu sẽ hiện ngay tại đây.",
     "media.p404.lobby.listLabel": "Người đang chờ được cho vào",
     "media.p404.lobby.waiting": "Đang chờ",
     "media.p404.lobby.admit": "Cho vào",
@@ -2606,6 +2608,10 @@ const messages = {
     "media.p406.loadError": "Chưa thể đồng bộ danh sách và tín hiệu lớp học.",
     "media.p406.retry": "Thử đồng bộ lại",
     "media.p406.openRoster": "Mở danh sách lớp học",
+    "media.p406.openRosterWaiting":
+      "Mở danh sách lớp học ({count} người đang chờ vào phòng)",
+    "media.p406.lobbyWaiting": "{count} người đang chờ vào phòng",
+    "media.p406.viewWaitingRoom": "Xem hàng chờ",
     "media.p406.rosterTitle": "Danh sách lớp học",
     "media.p406.rosterLabel": "Người tham gia theo thứ tự lớp học",
     "media.p406.rosterEmpty": "Chưa có người tham gia trong danh sách.",
@@ -3104,6 +3110,8 @@ const messages = {
     "whiteboard.semanticNext": "Next page",
     "whiteboard.focusCanvas": "Move focus to drawing canvas",
     "whiteboard.semanticEmpty": "The whiteboard is empty.",
+    "whiteboard.semanticClose": "Close text view",
+    "whiteboard.trialInfo": "Trial info",
     "whiteboard.untitledElement": "unlabelled element",
     "whiteboard.status.created": "Prepared",
     "whiteboard.status.open": "Presenting",
@@ -5477,7 +5485,7 @@ const messages = {
       "TutorHub has not issued a credential. Wait briefly and check again.",
     "media.p404.lobby.title": "Waiting room",
     "media.p404.lobby.description":
-      "Admit or deny individual requests already authorized by the Core API.",
+      "Review each person asking to join, then admit or deny them.",
     "media.p404.lobby.loading": "Loading the waiting room",
     "media.p404.lobby.forbiddenTitle": "The waiting room is unavailable",
     "media.p404.lobby.forbiddenDescription":
@@ -5487,7 +5495,7 @@ const messages = {
       "The current list could not be confirmed. Try again.",
     "media.p404.lobby.emptyTitle": "No one is waiting",
     "media.p404.lobby.emptyDescription":
-      "New requests appear here after the Core API authorizes them.",
+      "When someone asks to join the class, their request appears here.",
     "media.p404.lobby.listLabel": "People waiting to be admitted",
     "media.p404.lobby.waiting": "Waiting",
     "media.p404.lobby.admit": "Admit",
@@ -5646,6 +5654,10 @@ const messages = {
       "The classroom roster and signals could not be synchronized.",
     "media.p406.retry": "Retry synchronization",
     "media.p406.openRoster": "Open classroom roster",
+    "media.p406.openRosterWaiting":
+      "Open classroom roster ({count} waiting to join)",
+    "media.p406.lobbyWaiting": "{count} waiting to join",
+    "media.p406.viewWaitingRoom": "View waiting room",
     "media.p406.rosterTitle": "Classroom roster",
     "media.p406.rosterLabel": "Participants in classroom order",
     "media.p406.rosterEmpty": "There are no participants in the roster yet.",

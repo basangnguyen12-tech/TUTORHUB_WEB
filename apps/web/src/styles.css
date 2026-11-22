@@ -5487,16 +5487,6 @@ textarea:focus-visible {
   color: var(--color-text);
 }
 
-.media-p405-lobby {
-  min-width: 0;
-}
-
-.media-p405-lobby .media-p404-lobby {
-  width: 100%;
-  max-width: none;
-  margin-top: 0;
-}
-
 .media-p405-start-audio {
   position: fixed;
   z-index: 20;
@@ -5515,10 +5505,27 @@ textarea:focus-visible {
 }
 
 .media-p406-status,
-.media-p406-sr-reactions {
+.media-p406-sr-reactions,
+.media-p406-lobby-banner--idle {
   position: absolute;
   width: 1px;
   height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A single video page needs no visible pager; it reappears only while it
+   holds programmatic focus (after a page clamp) so focus is never invisible. */
+.media-p405-pagination--single:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
@@ -5615,6 +5622,81 @@ textarea:focus-visible {
   gap: var(--space-3);
 }
 
+.whiteboard-tool-header {
+  position: relative;
+  z-index: 3;
+  gap: var(--space-2);
+}
+
+.whiteboard-tool-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.whiteboard-tool-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.whiteboard-tool-heading h3,
+.whiteboard-tool-status {
+  margin: 0;
+}
+
+.whiteboard-tool-status {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.whiteboard-trial-disclosure {
+  position: relative;
+}
+
+.whiteboard-trial-disclosure > summary {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 999px;
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.whiteboard-trial-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.whiteboard-trial-disclosure > summary:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.whiteboard-trial-disclosure[open] > .whiteboard-private-alpha-notice {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: min(24rem, 80vw);
+  max-height: min(60vh, 28rem);
+  overflow: auto;
+  box-shadow: var(--shadow-md);
+}
+
+.whiteboard-tool-state-disclosure {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .whiteboard-private-alpha-notice {
   display: grid;
   min-width: 0;
@@ -5700,13 +5782,30 @@ textarea:focus-visible {
 }
 
 .whiteboard-engine {
-  display: grid;
+  position: relative;
+  display: flex;
   min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.whiteboard-engine-bar {
+  display: flex;
+  min-height: 2rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
 }
 
 .whiteboard-connection-status {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .p515-harness {
@@ -5742,11 +5841,14 @@ textarea:focus-visible {
 }
 
 .whiteboard-engine-canvas {
+  position: relative;
+  z-index: 0;
   min-height: 28rem;
   height: min(65vh, 48rem);
   overflow: hidden;
   border-radius: var(--radius-lg);
   background: #fff;
+  isolation: isolate;
 }
 
 .whiteboard-engine-canvas:focus-visible {
@@ -5762,8 +5864,47 @@ textarea:focus-visible {
   border-radius: var(--radius-lg);
 }
 
+/* Always in the DOM for aria-describedby and synchronous focus, but hidden
+   visually until the reader opens it (or keyboard focus enters it). */
+.whiteboard-semantic-fallback--collapsed {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.whiteboard-engine > .whiteboard-semantic-fallback--open {
+  position: absolute;
+  z-index: 2;
+  top: calc(2rem + var(--space-3));
+  right: var(--space-3);
+  width: min(26rem, calc(100% - 2 * var(--space-3)));
+  max-height: calc(100% - 2rem - 2 * var(--space-3));
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text);
+}
+
+.whiteboard-semantic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .whiteboard-semantic-fallback h3 {
   margin-top: 0;
+}
+
+.whiteboard-semantic-header h3 {
+  margin: 0;
 }
 
 .whiteboard-semantic-list {

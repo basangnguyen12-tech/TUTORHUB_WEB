@@ -19,9 +19,11 @@ import { Button } from "@tutorhub/ui";
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
 } from "react";
 import { useI18n } from "../../app/i18n";
@@ -48,13 +50,33 @@ export default function LazyWhiteboardEngine({
   const [session, setSession] = useState<BrowserCollaborationSession | null>(
     null,
   );
+  // The control-plane query and the room page re-render often (signal clock,
+  // refetch-on-focus) and hand us fresh `document` objects and callbacks with
+  // identical authority. Keep the latest values in refs so the session effect
+  // depends only on the authority fence; otherwise every re-render would tear
+  // down the live socket and burst `POST …/grant-exchanges` into a 429.
+  const documentRef = useRef(document);
+  const onRecoveryRequiredRef = useRef(onRecoveryRequired);
+  useLayoutEffect(() => {
+    documentRef.current = document;
+    onRecoveryRequiredRef.current = onRecoveryRequired;
+  });
+  const documentID = document.id;
+  const currentGeneration = document.current_generation;
+  const revokeGeneration = document.revoke_generation;
 
   useEffect(() => {
     const abortController = new AbortController();
     let activeSession: BrowserCollaborationSession | null = null;
+    const fencedDocument: WhiteboardDocument = {
+      ...documentRef.current,
+      current_generation: currentGeneration,
+      id: documentID,
+      revoke_generation: revokeGeneration,
+    };
     void requestWhiteboardGrant(
       tenantID,
-      document,
+      fencedDocument,
       capability,
       abortController.signal,
     )
@@ -73,7 +95,9 @@ export default function LazyWhiteboardEngine({
           onStatus: setConnectionStatus,
           onTerminal: (reason) => {
             setError(true);
-            if (reason === "authority_changed") onRecoveryRequired?.();
+            if (reason === "authority_changed") {
+              onRecoveryRequiredRef.current?.();
+            }
           },
           tenantId: tenantID,
         }),
@@ -93,7 +117,15 @@ export default function LazyWhiteboardEngine({
       abortController.abort();
       activeSession?.destroy();
     };
-  }, [actorID, attempt, capability, document, onRecoveryRequired, tenantID]);
+  }, [
+    actorID,
+    attempt,
+    capability,
+    currentGeneration,
+    documentID,
+    revokeGeneration,
+    tenantID,
+  ]);
 
   if (error) {
     return (
@@ -154,10 +186,13 @@ export function CanonicalExcalidrawCanvas({
   const { t } = useI18n();
   const [api, setAPI] = useState<ExcalidrawImperativeAPI | null>(null);
   const [semanticRevision, setSemanticRevision] = useState(0);
+  const [semanticOpen, setSemanticOpen] = useState(false);
   const applyingRemoteRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const semanticHeadingRef = useRef<HTMLHeadingElement>(null);
+  const semanticTriggerRef = useRef<HTMLButtonElement>(null);
   const semanticDescriptionID = useId();
+  const semanticPanelID = useId();
   const initialProjection = useMemo(
     () => authority.getProjection(),
     [authority],
@@ -242,21 +277,30 @@ export function CanonicalExcalidrawCanvas({
   const semanticScene = authority.getScene();
   return (
     <div className="whiteboard-engine">
-      <p
-        aria-live="polite"
-        className="whiteboard-connection-status"
-        role="status"
-      >
-        {t(`whiteboard.connection.${connectionStatus}`)}
-        {readOnly ? ` · ${t("whiteboard.readOnly")}` : ""}
-      </p>
-      <div className="whiteboard-semantic-actions">
-        <Button
-          onClick={() => semanticHeadingRef.current?.focus()}
-          variant="secondary"
+      <div className="whiteboard-engine-bar">
+        <p
+          aria-live="polite"
+          className="whiteboard-connection-status"
+          role="status"
         >
-          {t("whiteboard.readSemantic")}
-        </Button>
+          {t(`whiteboard.connection.${connectionStatus}`)}
+          {readOnly ? ` · ${t("whiteboard.readOnly")}` : ""}
+        </p>
+        <div className="whiteboard-semantic-actions">
+          <Button
+            aria-controls={semanticPanelID}
+            aria-expanded={semanticOpen}
+            onClick={() => {
+              setSemanticOpen(true);
+              semanticHeadingRef.current?.focus();
+            }}
+            ref={semanticTriggerRef}
+            size="sm"
+            variant="secondary"
+          >
+            {t("whiteboard.readSemantic")}
+          </Button>
+        </div>
       </div>
       <div
         aria-describedby={semanticDescriptionID}
@@ -300,23 +344,47 @@ export function CanonicalExcalidrawCanvas({
         descriptionID={semanticDescriptionID}
         elements={semanticScene.elements}
         headingRef={semanticHeadingRef}
+        id={semanticPanelID}
+        onClose={() => {
+          setSemanticOpen(false);
+          semanticTriggerRef.current?.focus();
+        }}
+        onFocusCanvas={() => setSemanticOpen(false)}
+        onOpen={() => setSemanticOpen(true)}
+        open={semanticOpen}
         revision={semanticRevision}
       />
     </div>
   );
 }
 
+/**
+ * Text alternative for the canvas. It is always in the DOM (it backs the
+ * canvas `aria-describedby` and receives focus synchronously), but stays
+ * visually collapsed until opened — explicitly, or implicitly when keyboard
+ * focus enters it — so the drawing surface keeps the full stage.
+ */
 export function WhiteboardSemanticFallback({
   canvasRef,
   descriptionID,
   elements,
   headingRef,
+  id,
+  onClose,
+  onFocusCanvas,
+  onOpen,
+  open = true,
   revision,
 }: {
   canvasRef: RefObject<HTMLDivElement | null>;
   descriptionID: string;
   elements: CanonicalElementV1[];
   headingRef: RefObject<HTMLHeadingElement | null>;
+  id?: string;
+  onClose?: () => void;
+  onFocusCanvas?: () => void;
+  onOpen?: () => void;
+  open?: boolean;
   revision: number;
 }) {
   const { t } = useI18n();
@@ -335,16 +403,39 @@ export function WhiteboardSemanticFallback({
     [activePageIndex, elements],
   );
 
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Escape" || !open || !onClose) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  };
+
   return (
     <section
       aria-labelledby="whiteboard-semantic-title"
-      className="whiteboard-semantic-fallback"
+      className={`whiteboard-semantic-fallback ${
+        open
+          ? "whiteboard-semantic-fallback--open"
+          : "whiteboard-semantic-fallback--collapsed"
+      }`}
       data-semantic-revision={revision}
       data-testid="whiteboard-semantic-fallback"
+      id={id}
+      onFocus={() => {
+        if (!open) onOpen?.();
+      }}
+      onKeyDown={handleKeyDown}
     >
-      <h3 id="whiteboard-semantic-title" ref={headingRef} tabIndex={-1}>
-        {t("whiteboard.semanticTitle")}
-      </h3>
+      <div className="whiteboard-semantic-header">
+        <h3 id="whiteboard-semantic-title" ref={headingRef} tabIndex={-1}>
+          {t("whiteboard.semanticTitle")}
+        </h3>
+        {onClose ? (
+          <Button onClick={onClose} size="sm" variant="quiet">
+            {t("whiteboard.semanticClose")}
+          </Button>
+        ) : null}
+      </div>
       <p id={descriptionID}>{t("whiteboard.semanticDescription")}</p>
       <p
         aria-atomic="true"
@@ -375,7 +466,13 @@ export function WhiteboardSemanticFallback({
         >
           {t("whiteboard.semanticNext")}
         </Button>
-        <Button onClick={() => canvasRef.current?.focus()} variant="secondary">
+        <Button
+          onClick={() => {
+            onFocusCanvas?.();
+            canvasRef.current?.focus();
+          }}
+          variant="secondary"
+        >
           {t("whiteboard.focusCanvas")}
         </Button>
       </div>

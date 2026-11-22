@@ -59,6 +59,7 @@ import {
 } from "livekit-client";
 import {
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -70,6 +71,7 @@ import {
   type ReactNode,
 } from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
+import { MediaLobbyWaitingCountContext } from "../../components/MediaLobbyPanel";
 import {
   ClassroomDegradationController,
   projectClassroomDegradation,
@@ -109,6 +111,11 @@ export interface ClassroomMediaShellProps {
   controlAbortSignal?: AbortSignal;
   chat?: ReactNode;
   lobby?: ReactNode;
+  /**
+   * Number of people waiting for admission. Defaults to the value published by
+   * `MediaLobbyWaitingCountProvider`; only meaningful when `lobby` is present.
+   */
+  lobbyWaitingCount?: number;
   moderation?: ClassroomModerationControlsModel;
   signals?: ClassroomSignalControls;
   tools?: readonly ClassroomToolDefinition[];
@@ -206,6 +213,7 @@ export function ClassroomMediaShell({
   controlAbortSignal,
   chat,
   lobby,
+  lobbyWaitingCount,
   moderation,
   signals,
   tools = [],
@@ -213,6 +221,10 @@ export function ClassroomMediaShell({
   onTerminalMediaCleanup,
 }: ClassroomMediaShellProps) {
   const { t } = useI18n();
+  const contextWaitingCount = useContext(MediaLobbyWaitingCountContext);
+  const waitingCount = lobby
+    ? Math.max(0, lobbyWaitingCount ?? contextWaitingCount)
+    : 0;
   const shellRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const speakerController = useRef(new ActiveSpeakerHysteresis());
@@ -476,7 +488,7 @@ export function ClassroomMediaShell({
         : []),
       ...(chat ? (["chat"] as const) : []),
       ...tools.map(({ id }) => `tool-${id}` as const),
-      ...(signals ? (["roster"] as const) : []),
+      ...(signals || lobby ? (["roster"] as const) : []),
       "layout-grid",
       "layout-active-speaker",
       ...(presenterID ? (["layout-presentation"] as const) : []),
@@ -486,6 +498,7 @@ export function ClassroomMediaShell({
       canShareScreen,
       chat,
       controlsTerminated,
+      lobby,
       pendingControl,
       presenterID,
       signals,
@@ -891,6 +904,26 @@ export function ClassroomMediaShell({
     nextControl?.focus();
   };
 
+  const activeTool = tools.find((tool) => tool.id === openToolID) ?? null;
+
+  // The tool stage is a non-modal region: the classroom Dock stays reachable
+  // while drawing, so opening moves focus to the stage heading and closing
+  // returns it to the exact toolbar control that owns the tool.
+  const toggleTool = (toolID: ClassroomToolID) => {
+    if (openToolID === toolID) {
+      setOpenToolID(null);
+      return;
+    }
+    setOpenToolID(toolID);
+    scheduleElementFocus(`media-p506-stage-title-${toolID}`);
+  };
+
+  const closeActiveTool = () => {
+    if (!activeTool) return;
+    setOpenToolID(null);
+    scheduleElementFocus(`media-p506-control-${activeTool.id}`);
+  };
+
   const changeLayout = (mode: ClassroomLayoutMode) => {
     setLayoutState((current) => ({
       ...current,
@@ -930,19 +963,52 @@ export function ClassroomMediaShell({
             {t("media.room.participantCount", { count: participantCount })}
           </p>
         </div>
-        <div className="media-p405-header-badges">
-          {!canPublishCameraMicrophone && (
-            <span>{t("media.room.listenOnly")}</span>
+        <div className="media-p405-header-actions">
+          <div className="media-p405-header-badges">
+            {!canPublishCameraMicrophone && (
+              <span>{t("media.room.listenOnly")}</span>
+            )}
+            <span>{t("media.p405.effectsNone")}</span>
+          </div>
+          {moderation && (
+            <ClassroomModerationControls
+              controls={moderation}
+              disabled={controlsTerminated || connectionStatus !== "connected"}
+            />
           )}
-          <span>{t("media.p405.effectsNone")}</span>
         </div>
       </header>
 
-      {moderation && (
-        <ClassroomModerationControls
-          controls={moderation}
-          disabled={controlsTerminated || connectionStatus !== "connected"}
-        />
+      {lobby && (
+        // Stays mounted (visually collapsed while idle) so the polite live
+        // region announces new waiting requests without taking stage height.
+        <div
+          className={`media-p406-lobby-banner${
+            waitingCount > 0 ? "" : " media-p406-lobby-banner--idle"
+          }`}
+        >
+          <p
+            aria-atomic="true"
+            aria-live="polite"
+            className="media-p406-lobby-banner__text"
+            role="status"
+          >
+            {waitingCount > 0
+              ? t("media.p406.lobbyWaiting", { count: waitingCount })
+              : ""}
+          </p>
+          {waitingCount > 0 && (
+            <Button
+              disabled={controlsTerminated}
+              leadingIcon={<Users />}
+              onClick={() => setRosterOpen(true)}
+              size="sm"
+              variant="primary"
+            >
+              {t("media.p406.viewWaitingRoom")}
+            </Button>
+          )}
+        </div>
       )}
 
       {!canPublishCameraMicrophone && (
@@ -1017,8 +1083,34 @@ export function ClassroomMediaShell({
       )}
 
       <div
-        className={`media-p405-classroom media-p405-classroom--${projection.mode}`}
+        className={`media-p405-classroom media-p405-classroom--${projection.mode}${
+          activeTool ? " media-p405-classroom--tool-stage" : ""
+        }`}
       >
+        {/*
+          The tool stage occupies its own conditional slot ahead of the media
+          stage, so opening/closing it never remounts the camera grid; CSS
+          turns the media stage into the side camera strip.
+        */}
+        {activeTool && (
+          <section
+            aria-labelledby={`media-p506-stage-title-${activeTool.id}`}
+            className={`media-p506-tool-stage media-p506-tool-${activeTool.id}`}
+            id={`media-p506-stage-${activeTool.id}`}
+          >
+            <header className="media-p506-tool-stage__header">
+              <h2 id={`media-p506-stage-title-${activeTool.id}`} tabIndex={-1}>
+                {activeTool.title}
+              </h2>
+              <Button onClick={closeActiveTool} size="sm" variant="secondary">
+                {t("media.p405.close")}
+              </Button>
+            </header>
+            <div className="media-p506-tool-stage__body">
+              {activeTool.content}
+            </div>
+          </section>
+        )}
         {signals?.projection && (
           <div aria-hidden="true" className="media-p406-reactions">
             {signals.projection.reactions.clusters.map((cluster) => (
@@ -1093,8 +1185,11 @@ export function ClassroomMediaShell({
 
       <div
         aria-label={t("media.p405.pagination")}
-        className="media-p405-pagination"
+        className={`media-p405-pagination${
+          projection.pageCount <= 1 ? " media-p405-pagination--single" : ""
+        }`}
         id="media-p405-pagination"
+        role="group"
         tabIndex={-1}
       >
         <IconButton
@@ -1344,52 +1439,51 @@ export function ClassroomMediaShell({
             </Drawer>
           )}
 
-          {tools.map((tool) => (
-            <Drawer
-              key={tool.id}
-              onOpenChange={(open) => setOpenToolID(open ? tool.id : null)}
-              open={openToolID === tool.id}
-            >
-              <DrawerTrigger asChild>
-                <IconButton
-                  aria-expanded={openToolID === tool.id}
-                  data-media-control={`tool-${tool.id}`}
-                  id={`media-p506-control-${tool.id}`}
-                  label={tool.label}
-                  onFocus={() => setToolbarFocusKey(`tool-${tool.id}`)}
-                  tabIndex={toolbarTabIndex(`tool-${tool.id}`)}
-                  variant="secondary"
-                >
-                  {tool.icon}
-                </IconButton>
-              </DrawerTrigger>
-              <DrawerContent
-                className={`media-p506-tool-drawer media-p506-tool-${tool.id}`}
-                closeLabel={t("media.p405.close")}
-                data-theme="dark"
+          {tools.map((tool) => {
+            const open = openToolID === tool.id;
+            return (
+              <IconButton
+                aria-controls={open ? `media-p506-stage-${tool.id}` : undefined}
+                aria-expanded={open}
+                data-media-control={`tool-${tool.id}`}
+                id={`media-p506-control-${tool.id}`}
+                key={tool.id}
+                label={tool.label}
+                onClick={() => toggleTool(tool.id)}
+                onFocus={() => setToolbarFocusKey(`tool-${tool.id}`)}
+                tabIndex={toolbarTabIndex(`tool-${tool.id}`)}
+                variant={open ? "primary" : "secondary"}
               >
-                <DrawerTitle>{tool.title}</DrawerTitle>
-                {tool.content}
-                <DrawerClose asChild>
-                  <Button variant="secondary">{t("media.p405.close")}</Button>
-                </DrawerClose>
-              </DrawerContent>
-            </Drawer>
-          ))}
+                {tool.icon}
+              </IconButton>
+            );
+          })}
 
-          {signals && (
+          {(signals || lobby) && (
             <Drawer onOpenChange={setRosterOpen} open={rosterOpen}>
               <DrawerTrigger asChild>
                 <IconButton
+                  className="media-p406-roster-control"
                   data-media-control="roster"
                   disabled={controlsTerminated}
                   id="media-p406-control-roster"
-                  label={t("media.p406.openRoster")}
+                  label={
+                    waitingCount > 0
+                      ? t("media.p406.openRosterWaiting", {
+                          count: waitingCount,
+                        })
+                      : t("media.p406.openRoster")
+                  }
                   onFocus={() => setToolbarFocusKey("roster")}
                   tabIndex={toolbarTabIndex("roster")}
-                  variant="secondary"
+                  variant={waitingCount > 0 ? "primary" : "secondary"}
                 >
                   <Users />
+                  {waitingCount > 0 && (
+                    <span className="media-p406-roster-badge">
+                      {waitingCount > 99 ? "99+" : waitingCount}
+                    </span>
+                  )}
                 </IconButton>
               </DrawerTrigger>
               <DrawerContent
@@ -1398,25 +1492,30 @@ export function ClassroomMediaShell({
                 data-theme="dark"
               >
                 <DrawerTitle>{t("media.p406.rosterTitle")}</DrawerTitle>
-                <ClassroomRoster
-                  moderation={moderation}
-                  moderationDisabled={
-                    controlsTerminated || connectionStatus !== "connected"
-                  }
-                  onLowerAll={() =>
-                    void runSignalAction(
-                      signals.onLowerAllHands,
-                      "media.p406.loweredAllHands",
-                    )
-                  }
-                  onLowerHand={(participantKey) =>
-                    void runSignalAction(
-                      () => signals.onLowerHand(participantKey),
-                      "media.p406.loweredHand",
-                    )
-                  }
-                  signals={signals}
-                />
+                {lobby && (
+                  <div className="media-p406-roster-lobby">{lobby}</div>
+                )}
+                {signals && (
+                  <ClassroomRoster
+                    moderation={moderation}
+                    moderationDisabled={
+                      controlsTerminated || connectionStatus !== "connected"
+                    }
+                    onLowerAll={() =>
+                      void runSignalAction(
+                        signals.onLowerAllHands,
+                        "media.p406.loweredAllHands",
+                      )
+                    }
+                    onLowerHand={(participantKey) =>
+                      void runSignalAction(
+                        () => signals.onLowerHand(participantKey),
+                        "media.p406.loweredHand",
+                      )
+                    }
+                    signals={signals}
+                  />
+                )}
                 <DrawerClose asChild>
                   <Button variant="secondary">{t("media.p405.close")}</Button>
                 </DrawerClose>
@@ -1466,8 +1565,6 @@ export function ClassroomMediaShell({
           onDeviceError={handleDeviceError}
         />
       )}
-
-      {lobby && <aside className="media-p405-lobby">{lobby}</aside>}
     </div>
   );
 }

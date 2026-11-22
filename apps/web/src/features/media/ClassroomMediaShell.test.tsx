@@ -12,6 +12,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
+import { MediaLobbyWaitingCountContext } from "../../components/MediaLobbyPanel";
 import {
   ClassroomMediaShell,
   type ClassroomSignalControls,
@@ -569,6 +570,158 @@ describe("ClassroomMediaShell", () => {
     expect(view.container.querySelector(".media-p405-grid > li")).toBe(
       mediaTile,
     );
+  });
+
+  it("puts an open tool on a non-modal central stage beside the camera strip", async () => {
+    const view = renderShell({
+      chat: <div>Persistent room history</div>,
+      tools: [
+        {
+          content: <TestWhiteboardTool />,
+          icon: <span aria-hidden="true">W</span>,
+          id: "whiteboard",
+          label: "Open whiteboard",
+          title: "Classroom whiteboard",
+        },
+      ],
+    });
+    const classroom = view.container.querySelector(".media-p405-classroom");
+    const mediaStage = view.container.querySelector(".media-p405-stage");
+    const mediaTile = view.container.querySelector(".media-p405-grid > li");
+    const opener = screen.getByRole("button", { name: "Open whiteboard" });
+
+    fireEvent.click(opener);
+
+    const stage = screen.getByRole("region", { name: "Classroom whiteboard" });
+    expect(classroom).toHaveClass("media-p405-classroom--tool-stage");
+    expect(opener).toHaveAttribute("aria-expanded", "true");
+    expect(opener).toHaveAttribute("aria-controls", stage.id);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Classroom whiteboard" }),
+      ).toHaveFocus(),
+    );
+    // The media stage keeps its exact DOM and simply becomes the side strip.
+    expect(view.container.querySelector(".media-p405-stage")).toBe(mediaStage);
+    expect(view.container.querySelector(".media-p405-grid > li")).toBe(
+      mediaTile,
+    );
+    expect(
+      view.container.querySelectorAll(".media-p405-grid > li"),
+    ).toHaveLength(12);
+
+    // The Dock stays interactive (no modal focus trap / aria-hidden siblings).
+    fireEvent.click(screen.getByRole("button", { name: "Turn microphone on" }));
+    await waitFor(() =>
+      expect(
+        liveKitState.localParticipant.setMicrophoneEnabled,
+      ).toHaveBeenCalledWith(true),
+    );
+    expect(
+      screen.getByRole("button", { name: "Open in-room chat" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Leave room" })).toBeEnabled();
+    expect(screen.getByText("Lazy whiteboard content")).toBeInTheDocument();
+
+    fireEvent.click(opener);
+    expect(opener).toHaveAttribute("aria-expanded", "false");
+    expect(opener).not.toHaveAttribute("aria-controls");
+    expect(classroom).not.toHaveClass("media-p405-classroom--tool-stage");
+    expect(
+      screen.queryByRole("region", { name: "Classroom whiteboard" }),
+    ).not.toBeInTheDocument();
+    expect(toolLifecycle.mounts).toBe(1);
+    expect(toolLifecycle.unmounts).toBe(1);
+    expect(view.container.querySelector(".media-p405-grid > li")).toBe(
+      mediaTile,
+    );
+  });
+
+  it("keeps the waiting room inside the roster drawer and surfaces waiting requests", async () => {
+    const view = renderShell({
+      lobby: <section aria-label="Waiting room panel">Lobby queue</section>,
+      lobbyWaitingCount: 2,
+      signals: createSignalControls(),
+    });
+
+    expect(screen.queryByText("Lobby queue")).not.toBeInTheDocument();
+    expect(view.container.querySelector(".media-p405-lobby")).toBeNull();
+    const roster = screen.getByRole("button", {
+      name: "Open classroom roster (2 waiting to join)",
+    });
+    expect(roster.querySelector(".media-p406-roster-badge")).toHaveTextContent(
+      "2",
+    );
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((element) => element.textContent === "2 waiting to join"),
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "View waiting room" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Classroom roster" }),
+    ).toBeInTheDocument();
+    const lobby = screen.getByRole("region", { name: "Waiting room panel" });
+    const rosterList = screen.getByRole("list", {
+      name: "Participants in classroom order",
+    });
+    expect(
+      lobby.compareDocumentPosition(rosterList) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("takes no stage space when nobody is waiting and reads the provider count", () => {
+    const view = render(
+      <MediaLobbyWaitingCountContext value={3}>
+        {shellElement({ lobby: <p>Lobby queue</p> })}
+      </MediaLobbyWaitingCountContext>,
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Open classroom roster (3 waiting to join)",
+      }),
+    ).toBeInTheDocument();
+
+    view.rerender(
+      <MediaLobbyWaitingCountContext value={0}>
+        {shellElement({ lobby: <p>Lobby queue</p> })}
+      </MediaLobbyWaitingCountContext>,
+    );
+    expect(
+      screen.queryByRole("button", { name: "View waiting room" }),
+    ).not.toBeInTheDocument();
+    expect(
+      view.container.querySelector(".media-p406-lobby-banner"),
+    ).toHaveClass("media-p406-lobby-banner--idle");
+    expect(
+      screen.getByRole("button", { name: "Open classroom roster" }),
+    ).toBeInTheDocument();
+    expect(view.container.querySelector(".media-p406-roster-badge")).toBeNull();
+
+    view.rerender(
+      <MediaLobbyWaitingCountContext value={3}>
+        {shellElement()}
+      </MediaLobbyWaitingCountContext>,
+    );
+    expect(
+      screen.queryByRole("button", { name: /Open classroom roster/ }),
+    ).not.toBeInTheDocument();
+    expect(view.container.querySelector(".media-p406-lobby-banner")).toBeNull();
+  });
+
+  it("collapses the pager when every participant fits on one page", () => {
+    const view = renderShell();
+    const pager = () => document.getElementById("media-p405-pagination");
+    expect(pager()).not.toHaveClass("media-p405-pagination--single");
+
+    liveKitState.cameraTrackRefs = createCameraTracks(5);
+    view.rerender(shellElement());
+    expect(pager()).toHaveClass("media-p405-pagination--single");
+    expect(screen.getByText("Page 1 of 1")).toBeInTheDocument();
   });
 
   it("retires an old page before subscribing replacements in reversed provider order", async () => {

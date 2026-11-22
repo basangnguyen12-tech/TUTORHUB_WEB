@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { APIRequestError, type WhiteboardDocument } from "@tutorhub/api-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
@@ -228,17 +228,253 @@ describe("ClassroomWhiteboardTool", () => {
     screen.getByRole("button", { name: "Simulate authority fence" }).click();
     expect(refetch).toHaveBeenCalledTimes(1);
   });
+
+  it("tucks the private-alpha guidance into a compact trial disclosure on the document view", () => {
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+
+    const view = renderTool();
+
+    const disclosure = view.container.querySelector(
+      "details.whiteboard-trial-disclosure",
+    );
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(disclosure?.querySelector("summary")).toHaveTextContent(
+      "Trial info",
+    );
+    expect(
+      disclosure?.querySelector(".whiteboard-private-alpha-notice"),
+    ).not.toBeNull();
+    expect(
+      view.container.querySelectorAll(".whiteboard-private-alpha-notice"),
+    ).toHaveLength(1);
+  });
+
+  it("never prepares or opens on its own without autoStart", () => {
+    const prepare = vi.fn();
+    const transition = vi.fn();
+    whiteboardMocks.prepare.mockReturnValue({
+      isError: false,
+      isPending: false,
+      mutate: prepare,
+    });
+    whiteboardMocks.transition.mockReturnValue({
+      isError: false,
+      isPending: false,
+      mutate: transition,
+    });
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: true, document: null },
+      isError: false,
+      isPending: false,
+    });
+    const view = renderTool();
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document: createdDocument() },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+    view.rerender(toolElement());
+
+    expect(prepare).not.toHaveBeenCalled();
+    expect(transition).not.toHaveBeenCalled();
+  });
+
+  it("prepares exactly once per media space when autoStart is on", () => {
+    const prepare = vi.fn();
+    whiteboardMocks.prepare.mockReturnValue({
+      isError: false,
+      isPending: false,
+      mutate: prepare,
+    });
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: true, document: null },
+      isError: false,
+      isPending: false,
+    });
+
+    const view = renderTool({ autoStart: true });
+    view.rerender(toolElement({ autoStart: true }));
+    view.rerender(toolElement({ autoStart: true }));
+
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Trial info")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        hidden: true,
+        name: "Whiteboard trial guidance",
+      }),
+    ).not.toBeVisible();
+  });
+
+  it("does not auto-prepare without server create permission or after a failure", () => {
+    const prepare = vi.fn();
+    whiteboardMocks.prepare.mockReturnValue({
+      isError: true,
+      isPending: false,
+      mutate: prepare,
+    });
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: true, document: null },
+      isError: false,
+      isPending: false,
+    });
+    const view = renderTool({ autoStart: true });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "The whiteboard could not be updated",
+    );
+
+    whiteboardMocks.prepare.mockReturnValue({
+      isError: false,
+      isPending: false,
+      mutate: prepare,
+    });
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document: null },
+      isError: false,
+      isPending: false,
+    });
+    view.rerender(toolElement({ autoStart: true }));
+
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it("opens a prepared whiteboard once when the server allows opening", () => {
+    const transition = vi.fn();
+    whiteboardMocks.transition.mockReturnValue({
+      isError: false,
+      isPending: false,
+      mutate: transition,
+    });
+    const prepared = createdDocument();
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document: prepared },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+
+    const view = renderTool({ autoStart: true });
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document: { ...prepared } },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+    view.rerender(toolElement({ autoStart: true }));
+
+    expect(transition).toHaveBeenCalledTimes(1);
+    expect(transition).toHaveBeenCalledWith({
+      document: prepared,
+      operation: "open",
+    });
+  });
+
+  it("leaves a prepared whiteboard closed for viewers without open permission", () => {
+    const transition = vi.fn();
+    whiteboardMocks.transition.mockReturnValue({
+      isError: false,
+      isPending: false,
+      mutate: transition,
+    });
+    whiteboardMocks.tool.mockReturnValue({
+      data: {
+        can_create: false,
+        document: {
+          ...createdDocument(),
+          viewer_capabilities: {
+            ...document.viewer_capabilities,
+            can_open: false,
+          },
+        },
+      },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+
+    renderTool({ autoStart: true });
+
+    expect(transition).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("The whiteboard is ready for a teacher to open."),
+    ).toBeInTheDocument();
+  });
+
+  it("never re-opens a whiteboard the teacher deliberately paused", () => {
+    const transition = vi.fn();
+    whiteboardMocks.transition.mockReturnValue({
+      isError: false,
+      isPending: false,
+      mutate: transition,
+    });
+    const presenting: WhiteboardDocument = {
+      ...document,
+      viewer_capabilities: {
+        ...document.viewer_capabilities,
+        can_suspend: true,
+        capability: "edit",
+      },
+    };
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document: presenting },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+    const view = renderTool({ autoStart: true });
+
+    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
+    expect(transition).toHaveBeenCalledWith({
+      document: presenting,
+      operation: "suspend",
+    });
+
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document: createdDocument() },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+    view.rerender(toolElement({ autoStart: true }));
+
+    expect(transition).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Open and present" }));
+    expect(transition).toHaveBeenLastCalledWith({
+      document: createdDocument(),
+      operation: "open",
+    });
+  });
 });
 
-function renderTool() {
-  return render(toolElement());
+function createdDocument(): WhiteboardDocument {
+  return {
+    ...document,
+    status: "created",
+    viewer_capabilities: {
+      ...document.viewer_capabilities,
+      can_open: true,
+      capability: "edit",
+    },
+  };
 }
 
-function toolElement() {
+function renderTool(options: { autoStart?: boolean } = {}) {
+  return render(toolElement(options));
+}
+
+function toolElement({ autoStart }: { autoStart?: boolean } = {}) {
   return (
     <I18nProvider initialLanguage="en">
       <ClassroomWhiteboardTool
         actorID="b0f39fdb-0789-454d-8517-ae313dd81ca9"
+        autoStart={autoStart}
         enabled
         mediaSpaceID="0e0f92c4-347c-4022-b4d1-c81208a972e3"
         tenantID="2a388dc1-e3a5-4888-8d65-d9bd57fd4fc7"

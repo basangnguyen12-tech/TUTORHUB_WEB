@@ -3,10 +3,14 @@
 import "@testing-library/jest-dom/vitest";
 import { APIRequestError } from "@tutorhub/api-client";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../app/i18n";
-import { MediaLobbyPanel } from "./MediaLobbyPanel";
+import {
+  MediaLobbyPanel,
+  MediaLobbyWaitingCountContext,
+  MediaLobbyWaitingCountProvider,
+} from "./MediaLobbyPanel";
 import { MediaSpaceInvitePanel } from "./MediaSpaceInvitePanel";
 
 const lobbyMocks = vi.hoisted(() => ({
@@ -184,6 +188,82 @@ describe("MediaLobbyPanel", () => {
       screen.getByRole("heading", { name: "The waiting room is unavailable" }),
     ).toBeVisible();
     expect(screen.queryByText("Student One")).not.toBeInTheDocument();
+  });
+});
+
+function WaitingCountProbe() {
+  return (
+    <output aria-label="Waiting count">
+      {useContext(MediaLobbyWaitingCountContext)}
+    </output>
+  );
+}
+
+function renderWaitingCount(enabled: boolean) {
+  return renderEnglish(
+    <MediaLobbyWaitingCountProvider
+      enabled={enabled}
+      roomInstanceID={roomInstanceID}
+      roomInstanceVersion={3}
+      spaceID={spaceID}
+      spaceVersion={5}
+      tenantID={tenantID}
+    >
+      <WaitingCountProbe />
+    </MediaLobbyWaitingCountProvider>,
+  );
+}
+
+describe("MediaLobbyWaitingCountProvider", () => {
+  it("publishes only waiting admissions from the shared lobby query", () => {
+    lobbyMocks.admissions.mockReturnValue(
+      queryResult({
+        room_instance_id: roomInstanceID,
+        room_instance_version: 3,
+        items: [
+          { id: "a", status: "waiting", version: 1, display_name: "One" },
+          { id: "b", status: "admitted", version: 2, display_name: "Two" },
+          { id: "c", status: "waiting", version: 1, display_name: "Three" },
+          { id: "d", status: "denied", version: 3, display_name: "Four" },
+        ],
+      }),
+    );
+
+    renderWaitingCount(true);
+
+    expect(screen.getByLabelText("Waiting count")).toHaveTextContent("2");
+    expect(lobbyMocks.admissions).toHaveBeenLastCalledWith(
+      tenantID,
+      spaceID,
+      roomInstanceID,
+      5,
+      3,
+      true,
+    );
+    expect(document.body).not.toHaveTextContent("Three");
+  });
+
+  it("fails closed to zero while disabled or when the queue cannot be read", () => {
+    const view = renderWaitingCount(false);
+    expect(screen.getByLabelText("Waiting count")).toHaveTextContent("0");
+    expect(lobbyMocks.admissions).toHaveBeenLastCalledWith(
+      tenantID,
+      spaceID,
+      roomInstanceID,
+      5,
+      3,
+      false,
+    );
+
+    lobbyMocks.admissions.mockReturnValue({
+      ...queryResult(undefined),
+      error: new APIRequestError(403),
+      isError: true,
+      isSuccess: false,
+    });
+    view.unmount();
+    renderWaitingCount(true);
+    expect(screen.getByLabelText("Waiting count")).toHaveTextContent("0");
   });
 });
 

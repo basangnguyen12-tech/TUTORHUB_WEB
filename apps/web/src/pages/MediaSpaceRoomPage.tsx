@@ -24,7 +24,10 @@ import {
   mediaDiagnosticPath,
   recordBoundedMediaDiagnostic,
 } from "../app/mediaDiagnostics";
-import { MediaLobbyPanel } from "../components/MediaLobbyPanel";
+import {
+  MediaLobbyPanel,
+  MediaLobbyWaitingCountProvider,
+} from "../components/MediaLobbyPanel";
 import { MediaSpaceChatPanel } from "../components/MediaSpaceChatPanel";
 import { ClassroomWhiteboardTool } from "../features/collaboration/ClassroomWhiteboardTool";
 import {
@@ -41,6 +44,7 @@ import {
 } from "../features/media/classroomSignals";
 
 import { useTenantCapabilities } from "../app/tenantCapabilities";
+import "./ClassroomRoomStage.css";
 
 export function MediaSpaceRoomPage() {
   const { spaceId, roomInstanceId } = useParams();
@@ -414,19 +418,21 @@ function MediaSpaceRoomSession({
     );
   }
 
-  const lobby =
-    spaceId &&
+  const lobbyScopeActive =
+    viewerOperations.canManageAdmissions &&
     activeRoom?.id === roomInstanceId &&
-    activeRoom.status === "active" ? (
-      <MediaLobbyPanel
-        enabled={viewerOperations.canManageAdmissions}
-        roomInstanceID={activeRoom.id}
-        roomInstanceVersion={activeRoom.version}
-        spaceID={spaceId}
-        spaceVersion={mediaSpace.data?.version ?? 0}
-        tenantID={tenantId}
-      />
-    ) : undefined;
+    activeRoom.status === "active";
+  const lobbyScope = {
+    enabled: lobbyScopeActive,
+    roomInstanceID: activeRoom?.id ?? "",
+    roomInstanceVersion: activeRoom?.version ?? 0,
+    spaceID: spaceId,
+    spaceVersion: mediaSpace.data?.version ?? 0,
+    tenantID: tenantId,
+  };
+  const lobby = lobbyScopeActive ? (
+    <MediaLobbyPanel {...lobbyScope} />
+  ) : undefined;
 
   const roomProps: ClassroomLiveKitRoomProps = {
     choices: handoff.choices,
@@ -453,6 +459,7 @@ function MediaSpaceRoomSession({
         content: (
           <ClassroomWhiteboardTool
             actorID={userId}
+            autoStart
             enabled={whiteboardEnabled}
             mediaSpaceID={spaceId}
             tenantID={tenantId}
@@ -468,7 +475,13 @@ function MediaSpaceRoomSession({
 
   return (
     <main className="media-p403-room media-p405-room" data-theme="dark">
-      <ClassroomLiveKitRoom {...roomProps} />
+      {/*
+        Always mounted (even when the viewer cannot manage admissions) so the
+        LiveKit room subtree keeps a stable position and never reconnects.
+      */}
+      <MediaLobbyWaitingCountProvider {...lobbyScope}>
+        <ClassroomLiveKitRoom {...roomProps} />
+      </MediaLobbyWaitingCountProvider>
       {roomError && (
         <section className="media-p403-alert" role="alert">
           <p>{t(roomError)}</p>
