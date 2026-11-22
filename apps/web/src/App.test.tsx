@@ -148,6 +148,36 @@ describe("web shell", () => {
     ]);
   });
 
+  it("links the sidebar identity footer to account settings with initials", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            status: "ok",
+            service: "tutorhub-core-api",
+            environment: "test",
+            timestamp: "2026-11-22T00:00:00Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    renderRoute("/app/home");
+
+    const footer = screen.getByRole("link", { name: /TutorHub Teacher/ });
+    expect(footer).toHaveAttribute("href", "/app/settings");
+    expect(footer).toHaveAttribute("title", "Thiết lập tài khoản");
+    expect(footer).toHaveClass("app-sidebar__footer");
+    expect(
+      footer.querySelector('.app-sidebar__avatar[aria-hidden="true"]'),
+    ).toHaveTextContent("TT");
+    expect(
+      screen.getByRole("combobox", { name: "Ngôn ngữ" }),
+    ).toHaveDisplayValue("Tiếng Việt");
+  });
+
   it("shows Messages to a student without organization-level chat.send", () => {
     vi.stubGlobal(
       "fetch",
@@ -906,6 +936,20 @@ describe("web shell", () => {
         );
       }
       if (
+        request.url.endsWith(`/api/v1/classes/${createdClass.id}`) &&
+        request.method === "PATCH"
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ ...createdClass, status: "active", version: 2 }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            },
+          ),
+        );
+      }
+      if (
         request.url.includes("/api/v1/classes") &&
         request.method === "POST"
       ) {
@@ -957,6 +1001,19 @@ describe("web shell", () => {
       await screen.findByRole("heading", { name: "Mạng máy tính nâng cao" }),
     ).toBeInTheDocument();
     expect(screen.getByText("NET201")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Đang hoạt động", {
+        selector:
+          '.classroom-detail__identity .class-status[data-status="active"]',
+      }),
+    ).toBeInTheDocument();
+    const activateRequest = fetchMock.mock.calls
+      .map((call) => call[0] as Request)
+      .find((request) => request.method === "PATCH");
+    await expect(activateRequest?.clone().json()).resolves.toEqual({
+      expected_version: 1,
+      status: "active",
+    });
 
     const createRequest = fetchMock.mock.calls
       .map((call) => call[0] as Request)

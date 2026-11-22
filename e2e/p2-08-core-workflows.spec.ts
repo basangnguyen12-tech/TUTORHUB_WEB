@@ -466,13 +466,41 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
       await createClassDialog
         .getByLabel("Description")
         .fill("A complete P2-08 browser workflow.");
+      // CLASS-UX-01 activates new classes by default; keep the draft so this
+      // journey still covers the explicit draft -> Active transition.
+      const saveAsDraft = createClassDialog.getByRole("checkbox", {
+        name: "Save as draft (do not activate yet)",
+      });
+      await expect(saveAsDraft).not.toBeChecked();
+      await saveAsDraft.check();
       await createClassDialog
         .getByRole("button", { name: "Create class" })
         .click();
       await expect(
         teacherPage.getByRole("heading", { name: className }),
       ).toBeVisible();
+      await expect(
+        teacherPage.getByRole("region", {
+          name: "This class is still a draft",
+        }),
+      ).toBeVisible();
+      await expect(
+        teacherPage.getByRole("tab", { name: "Sessions" }),
+      ).toHaveAttribute("aria-selected", "true");
+      const heroAxe = await new AxeBuilder({ page: teacherPage })
+        .include(".classroom-detail__header")
+        .include(".classroom-draft-banner")
+        .include(".classroom-tabs__list")
+        .analyze();
+      expect(
+        heroAxe.violations.filter(
+          (violation) =>
+            violation.impact === "serious" || violation.impact === "critical",
+        ),
+      ).toEqual([]);
 
+      await teacherPage.getByRole("tab", { name: "Settings" }).click();
+      await expect(teacherPage).toHaveURL(/[?&]tab=settings(?:&|$)/);
       const editRegion = teacherPage.getByRole("region", {
         name: "Edit class",
       });
@@ -487,7 +515,14 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
       await expect(
         teacherPage.getByRole("heading", { name: updatedClassName }),
       ).toBeVisible();
+      await expect(
+        teacherPage.getByRole("region", {
+          name: "This class is still a draft",
+        }),
+      ).toHaveCount(0);
 
+      await teacherPage.getByRole("tab", { name: "Members" }).click();
+      await expect(teacherPage).toHaveURL(/[?&]tab=members(?:&|$)/);
       await teacherPage.getByRole("button", { name: "Create link" }).click();
       const linkDialog = teacherPage.getByRole("dialog", {
         name: "Create a class join link",
@@ -525,6 +560,15 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
       await expect(
         studentPage.getByRole("link", { name: new RegExp(updatedClassName) }),
       ).toBeVisible();
+      const cardAxe = await new AxeBuilder({ page: studentPage })
+        .include(".class-card-grid")
+        .analyze();
+      expect(
+        cardAxe.violations.filter(
+          (violation) =>
+            violation.impact === "serious" || violation.impact === "critical",
+        ),
+      ).toEqual([]);
     });
 
     await test.step("conversations pass canonical, concealment, focus, privacy, and page axe gates", async () => {
@@ -763,6 +807,7 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
     await test.step("instructor updates the learner role, then suspends and removes the learner", async () => {
       await teacherPage.reload();
       await useEnglish(teacherPage);
+      await teacherPage.getByRole("tab", { name: "Members" }).click();
       await expect(
         teacherPage
           .getByRole("region", { name: "Members and invite links" })
@@ -821,6 +866,7 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
         inviteRegion.getByText("1/2 uses consumed", { exact: true }),
       ).toBeVisible();
 
+      await teacherPage.getByRole("tab", { name: "Settings" }).click();
       await teacherPage
         .getByRole("region", { name: "Archive class" })
         .getByRole("button", { name: "Archive class" })
@@ -834,6 +880,7 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
           '.classroom-detail__identity .class-status[data-status="archived"]',
         ),
       ).toBeVisible();
+      await teacherPage.getByRole("tab", { name: "Members" }).click();
       await expect(
         teacherPage
           .getByRole("row")

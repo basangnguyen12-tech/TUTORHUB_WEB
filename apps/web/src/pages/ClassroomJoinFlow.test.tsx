@@ -183,6 +183,21 @@ describe("class-list invitation journey", () => {
     ).toHaveAttribute("href", `/app/classrooms/${classID}`);
     expect(screen.getByTestId("location")).toHaveTextContent("/app/classrooms");
     expect(screen.getByText(classroom.code)).toBeInTheDocument();
+    const titleLink = await screen.findByRole("link", {
+      name: classroom.title,
+    });
+    expect(titleLink).toHaveAttribute("href", `/app/classrooms/${classID}`);
+    const card = titleLink.closest("article") as HTMLElement;
+    // Media rooms are off here, so the learner keeps the legacy P1 entry.
+    expect(
+      within(card).getByRole("link", { name: "Join live classroom" }),
+    ).toHaveAttribute("href", `/app/classrooms/${classID}/prejoin`);
+    expect(
+      within(card).getByRole("link", { name: "View details" }),
+    ).toHaveAttribute("href", `/app/classrooms/${classID}`);
+    expect(
+      within(card).queryByRole("button", { name: "Activate class" }),
+    ).toBeNull();
     expect(listReads).toBeGreaterThanOrEqual(2);
 
     const requests = fetchMock.mock.calls.map((call) => call[0] as Request);

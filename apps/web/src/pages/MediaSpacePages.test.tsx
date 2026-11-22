@@ -9,8 +9,13 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
-import type { CurrentUser, MediaSpace } from "@tutorhub/api-client";
+import {
+  APIRequestError,
+  type CurrentUser,
+  type MediaSpace,
+} from "@tutorhub/api-client";
 import { StrictMode } from "react";
 import {
   MemoryRouter,
@@ -379,7 +384,7 @@ function RoomScopeNavigation() {
   );
 }
 
-function renderPrejoin(mediaDevices: MediaDevices) {
+function renderPrejoin(mediaDevices: MediaDevices, routeState?: unknown) {
   vi.stubGlobal("navigator", {
     mediaDevices,
     onLine: true,
@@ -405,7 +410,12 @@ function renderPrejoin(mediaDevices: MediaDevices) {
       <I18nProvider initialLanguage="en">
         <SessionProvider mode={{ kind: "static", currentUser }}>
           <MemoryRouter
-            initialEntries={[`/app/media/spaces/${spaceID}/prejoin`]}
+            initialEntries={[
+              {
+                pathname: `/app/media/spaces/${spaceID}/prejoin`,
+                state: routeState,
+              },
+            ]}
           >
             <Routes>
               <Route
@@ -1124,6 +1134,177 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
       }),
     ).toBeNull();
   });
+
+  it.each([
+    { state: undefined, href: "/app/home", label: "← Back to Home" },
+    {
+      state: { returnTo: "/app/classrooms/abc", classTitle: "Security" },
+      href: "/app/classrooms/abc",
+      label: "← Back to class",
+    },
+    {
+      state: { returnTo: "https://evil.example/app/" },
+      href: "/app/home",
+      label: "← Back to Home",
+    },
+    {
+      state: { returnTo: "//evil.example/app/" },
+      href: "/app/home",
+      label: "← Back to Home",
+    },
+  ])(
+    "links back to the launching class only for in-app return paths ($href)",
+    async ({ state, href, label }) => {
+      renderPrejoin(fakeMediaDevices(fakeStream().stream), state);
+      await screen.findByRole("heading", { name: "Get ready for class" });
+      expect(screen.getByRole("link", { name: label })).toHaveAttribute(
+        "href",
+        href,
+      );
+    },
+  );
+
+  it("recovers once from a stale 409 by re-reading the space and using a new attempt id", async () => {
+    const media = fakeMediaDevices(fakeStream().stream);
+    const refreshedSpace = { ...mediaSpace, version: mediaSpace.version + 1 };
+    apiMocks.getMediaSpace
+      .mockResolvedValueOnce(mediaSpace)
+      .mockResolvedValue(refreshedSpace);
+    apiMocks.createJoinAttempt
+      .mockRejectedValueOnce(
+        new APIRequestError(409, {
+          type: "urn:tutorhub:problem:http-409",
+          title: "Media space changed",
+          status: 409,
+        }),
+      )
+      .mockResolvedValueOnce({
+        admission_request_id: null,
+        join_attempt_id: joinAttemptID,
+        participant_session_id: participantSessionID,
+        room_instance_id: roomInstanceID,
+        status: "admitted",
+        version: 1,
+      });
+    apiMocks.issueJoinCredential.mockResolvedValue({
+      access_token: "retry-memory-token",
+      server_url: "wss://media.example.test",
+      participant_session_id: participantSessionID,
+      room_instance_id: roomInstanceID,
+      join_attempt_id: joinAttemptID,
+      instance_role: "attendee",
+      can_publish_camera_microphone: true,
+      can_share_screen: false,
+      can_subscribe: true,
+      expires_at: "2030-08-03T00:05:00Z",
+    });
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Get ready for class" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Join listen-only" }));
+
+    expect(
+      await screen.findByText("Canonical room destination"),
+    ).toBeInTheDocument();
+    expect(apiMocks.createJoinAttempt).toHaveBeenCalledTimes(2);
+    const [firstCall, retryCall] = apiMocks.createJoinAttempt.mock.calls;
+    expect(firstCall?.[2]).toMatchObject({
+      expected_space_version: mediaSpace.version,
+    });
+    expect(retryCall?.[2]).toMatchObject({
+      expected_room_instance_id: roomInstanceID,
+      expected_space_version: refreshedSpace.version,
+    });
+    expect(retryCall?.[2].join_attempt_id).not.toBe(
+      firstCall?.[2].join_attempt_id,
+    );
+    expect(apiMocks.getMediaSpace).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops after a single 409 retry and shows the error beside the join buttons", async () => {
+    const media = fakeMediaDevices(fakeStream().stream);
+    apiMocks.createJoinAttempt.mockRejectedValue(
+      new APIRequestError(409, {
+        type: "urn:tutorhub:problem:http-409",
+        title: "Media space changed",
+        status: 409,
+      }),
+    );
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Get ready for class" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Join listen-only" }));
+
+    const readiness = screen.getByRole("complementary", {
+      name: "Join readiness status",
+    });
+    expect(
+      await within(readiness).findByRole("heading", {
+        name: "Unable to join the classroom",
+      }),
+    ).toBeInTheDocument();
+    expect(apiMocks.createJoinAttempt).toHaveBeenCalledTimes(2);
+    expect(apiMocks.issueJoinCredential).not.toHaveBeenCalled();
+    expect(
+      within(readiness).getByRole("button", { name: "Join listen-only" }),
+    ).toBeEnabled();
+  });
+
+  it.each([
+    { serverURL: "ws://127.0.0.1:7880", accepted: true },
+    { serverURL: "ws://media.example.test", accepted: false },
+    { serverURL: "wss://media.example.test/rtc", accepted: false },
+  ])(
+    "applies the loopback-only ws:// policy to $serverURL on a localhost page",
+    async ({ serverURL, accepted }) => {
+      const media = fakeMediaDevices(fakeStream().stream);
+      apiMocks.createJoinAttempt.mockResolvedValue({
+        admission_request_id: null,
+        join_attempt_id: joinAttemptID,
+        participant_session_id: participantSessionID,
+        room_instance_id: roomInstanceID,
+        status: "admitted",
+        version: 1,
+      });
+      apiMocks.issueJoinCredential.mockResolvedValue({
+        access_token: "loopback-memory-token",
+        server_url: serverURL,
+        participant_session_id: participantSessionID,
+        room_instance_id: roomInstanceID,
+        join_attempt_id: joinAttemptID,
+        instance_role: "attendee",
+        can_publish_camera_microphone: true,
+        can_share_screen: false,
+        can_subscribe: true,
+        expires_at: "2030-08-03T00:05:00Z",
+      });
+      renderPrejoin(media);
+      await screen.findByRole("heading", { name: "Get ready for class" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Join listen-only" }));
+
+      if (accepted) {
+        expect(
+          await screen.findByText("Canonical room destination"),
+        ).toBeInTheDocument();
+        return;
+      }
+      expect(
+        await screen.findByRole("heading", {
+          name: "Unable to join the classroom",
+        }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Canonical room destination")).toBeNull();
+      expect(
+        takeMediaRoomEscrow({
+          tenantId: tenantID,
+          userId: userID,
+          spaceId: spaceID,
+          roomInstanceId: roomInstanceID,
+        }),
+      ).toBeNull();
+    },
+  );
 
   it("survives StrictMode handoff and applies the original-sound profile to LiveKit", async () => {
     const token = "strict-mode-memory-token";

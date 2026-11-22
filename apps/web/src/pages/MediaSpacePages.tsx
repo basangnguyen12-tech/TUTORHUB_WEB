@@ -18,8 +18,9 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { useI18n, type TranslationKey } from "../app/i18n";
+import { isAllowedLiveKitServerURL } from "../app/media";
 import {
   clearMediaRoomEscrow,
   MediaPrejoinController,
@@ -87,6 +88,8 @@ const unsupportedSnapshot: MediaPrejoinSnapshot = {
 export function MediaSpacePreJoinPage() {
   const { spaceId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = prejoinReturnPath(location.state);
   const { language, t } = useI18n();
   const session = useSession();
   const tenantId = session.currentUser?.active_tenant?.id ?? "";
@@ -256,7 +259,7 @@ export function MediaSpacePreJoinPage() {
         credential.room_instance_id !== attempt.room_instance_id ||
         credential.participant_session_id !== attempt.participant_session_id ||
         credential.join_attempt_id !== attempt.join_attempt_id ||
-        !credential.server_url.startsWith("wss://") ||
+        !isAllowedLiveKitServerURL(credential.server_url) ||
         Date.parse(credential.expires_at) <= Date.now()
       ) {
         throw new Error("invalid_media_credential_projection");
@@ -335,21 +338,71 @@ export function MediaSpacePreJoinPage() {
     activeJoinRequest.current = abort;
     const joinStartedAt = performance.now();
     try {
-      const csrf = await rotateCSRFToken({ signal: abort.signal });
+      let csrfToken = (await rotateCSRFToken({ signal: abort.signal }))
+        .csrf_token;
       if (abort.signal.aborted) {
         return;
       }
-      const attempt = (await createMediaSpaceJoinAttempt(
-        tenantId,
-        spaceId,
-        {
-          join_attempt_id: attemptId,
-          expected_room_instance_id: room.id,
-          expected_space_version: mediaSpace.data.version,
-        },
-        csrf.csrf_token,
-        { signal: abort.signal },
-      )) as MediaJoinAttemptProjection;
+      let attempt: MediaJoinAttemptProjection;
+      try {
+        attempt = (await createMediaSpaceJoinAttempt(
+          tenantId,
+          spaceId,
+          {
+            join_attempt_id: attemptId,
+            expected_room_instance_id: room.id,
+            expected_space_version: mediaSpace.data.version,
+          },
+          csrfToken,
+          { signal: abort.signal },
+        )) as MediaJoinAttemptProjection;
+      } catch (error) {
+        // A reloaded Pre-Join page can hold a stale attempt or space version.
+        // Drop the local attempt, re-read the space, and retry exactly once.
+        if (
+          abort.signal.aborted ||
+          !(error instanceof APIRequestError) ||
+          error.status !== 409
+        ) {
+          throw error;
+        }
+        setJoinState((current) =>
+          current.scopeKey === joinScopeKey
+            ? { ...current, attempt: null }
+            : current,
+        );
+        const refreshed = await mediaSpace.refetch();
+        if (abort.signal.aborted) {
+          return;
+        }
+        const refreshedSpace = refreshed.data;
+        const refreshedRoom = refreshedSpace?.active_room_instance;
+        if (
+          refreshed.isError ||
+          !refreshedSpace ||
+          refreshedSpace.status !== "open" ||
+          !refreshedRoom ||
+          refreshedRoom.status !== "active"
+        ) {
+          throw error;
+        }
+        csrfToken = (await rotateCSRFToken({ signal: abort.signal }))
+          .csrf_token;
+        if (abort.signal.aborted) {
+          return;
+        }
+        attempt = (await createMediaSpaceJoinAttempt(
+          tenantId,
+          spaceId,
+          {
+            join_attempt_id: globalThis.crypto.randomUUID(),
+            expected_room_instance_id: refreshedRoom.id,
+            expected_space_version: refreshedSpace.version,
+          },
+          csrfToken,
+          { signal: abort.signal },
+        )) as MediaJoinAttemptProjection;
+      }
       void recordBoundedMediaDiagnostic({
         tenantID: tenantId,
         spaceID: spaceId,
@@ -385,7 +438,7 @@ export function MediaSpacePreJoinPage() {
         });
         return;
       }
-      await completeCredentialHandoff(attempt, choices, csrf.csrf_token, abort);
+      await completeCredentialHandoff(attempt, choices, csrfToken, abort);
     } catch (error) {
       if (abort.signal.aborted) {
         return;
@@ -630,7 +683,11 @@ export function MediaSpacePreJoinPage() {
 
   return (
     <div className="media-p403-page">
-      <Link to="/app/home">{t("media.p403.back")}</Link>
+      <Link to={returnTo}>
+        {returnTo === "/app/home"
+          ? t("media.p403.back")
+          : t("media.p403.backToClass")}
+      </Link>
       <header className="media-p403-heading">
         <p>{t("media.prejoin.kicker")}</p>
         <h1>{t("media.p403.title")}</h1>
@@ -746,6 +803,33 @@ export function MediaSpacePreJoinPage() {
               {t("media.p403.joinListenOnly")}
             </button>
           </div>
+          {currentJoinErrorKey && (
+            <section
+              className="media-p403-alert media-p403-join-error"
+              role="alert"
+            >
+              <h2>{t("media.prejoin.cannotJoin")}</h2>
+              <p>{t(currentJoinErrorKey)}</p>
+              <button
+                onClick={() => {
+                  setJoinState((current) =>
+                    current.scopeKey === joinScopeKey
+                      ? { ...current, status: "idle", errorKey: null }
+                      : {
+                          scopeKey: joinScopeKey,
+                          status: "idle",
+                          errorKey: null,
+                          attempt: null,
+                          choices: null,
+                        },
+                  );
+                }}
+                type="button"
+              >
+                {t("state.retry")}
+              </button>
+            </section>
+          )}
         </aside>
       </section>
 
@@ -825,31 +909,6 @@ export function MediaSpacePreJoinPage() {
         <p className="sr-only" role="status" aria-live="polite">
           {t("media.p403.deviceReset")}
         </p>
-      )}
-
-      {currentJoinErrorKey && (
-        <section className="media-p403-alert" role="alert">
-          <h2>{t("media.prejoin.cannotJoin")}</h2>
-          <p>{t(currentJoinErrorKey)}</p>
-          <button
-            onClick={() => {
-              setJoinState((current) =>
-                current.scopeKey === joinScopeKey
-                  ? { ...current, status: "idle", errorKey: null }
-                  : {
-                      scopeKey: joinScopeKey,
-                      status: "idle",
-                      errorKey: null,
-                      attempt: null,
-                      choices: null,
-                    },
-              );
-            }}
-            type="button"
-          >
-            {t("state.retry")}
-          </button>
-        </section>
       )}
 
       <MediaSpaceInvitePanel
@@ -1021,6 +1080,26 @@ function DeviceControls({
       </div>
     </div>
   );
+}
+
+/**
+ * Accepts only an in-app destination supplied by a TutorHub launcher so the
+ * Pre-Join back link can never become an open redirect.
+ */
+function prejoinReturnPath(state: unknown): string {
+  if (typeof state === "object" && state !== null && "returnTo" in state) {
+    const value = (state as { returnTo?: unknown }).returnTo;
+    if (
+      typeof value === "string" &&
+      value.startsWith("/app/") &&
+      !value.startsWith("//") &&
+      !value.includes("\\") &&
+      !value.includes("://")
+    ) {
+      return value;
+    }
+  }
+  return "/app/home";
 }
 
 function MediaSpaceFailure({ message }: { message: string }) {

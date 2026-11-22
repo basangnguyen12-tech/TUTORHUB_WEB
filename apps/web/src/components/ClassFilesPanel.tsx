@@ -42,6 +42,12 @@ export function ClassFilesPanel({ classroom }: { classroom: ClassroomClass }) {
   const viewerAccess = filesQuery.data?.pages[0]?.viewer_access;
   const featureEnabled =
     capabilities.data?.features.file_uploads?.enabled === true;
+  // Storage switched off for the whole environment is an expected state, not
+  // an outage: show a calm notice instead of the red retry panel.
+  const storageDisabled =
+    filesQuery.isError &&
+    capabilities.data?.features.file_uploads?.enabled === false &&
+    isStorageDisabledError(filesQuery.error);
   const canStartUpload =
     viewerAccess?.can_upload === true &&
     featureEnabled &&
@@ -78,7 +84,16 @@ export function ClassFilesPanel({ classroom }: { classroom: ClassroomClass }) {
       </div>
 
       {filesQuery.isPending && <ClassFilesSkeleton />}
-      {filesQuery.isError && (
+      {storageDisabled && (
+        <div className="class-files__gate class-files__disabled" role="status">
+          <UploadCloud aria-hidden="true" />
+          <div>
+            <strong>{t("classFiles.storageDisabledTitle")}</strong>
+            <p>{t("classFiles.storageDisabledDescription")}</p>
+          </div>
+        </div>
+      )}
+      {filesQuery.isError && !storageDisabled && (
         <ClassFilesError
           error={filesQuery.error}
           onRetry={() => void filesQuery.refetch()}
@@ -301,6 +316,15 @@ function ClassFilesError({
         </Button>
       )}
     </div>
+  );
+}
+
+function isStorageDisabledError(error: Error | null) {
+  return (
+    error instanceof APIRequestError &&
+    (error.status === 503 ||
+      error.problem?.code === "feature_disabled" ||
+      (error.problem?.type ?? "").endsWith(":feature_disabled"))
   );
 }
 

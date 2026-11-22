@@ -10,16 +10,28 @@ import {
   SelectField,
   Skeleton,
   SkeletonGroup,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   TextAreaField,
   TextField,
+  type ButtonSize,
 } from "@tutorhub/ui";
-import { ChevronDown, Plus, RotateCw } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { ChevronDown, Plus, Power, RotateCw } from "lucide-react";
+import { useId, useMemo, useState, type FormEvent } from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import {
   useClassDetail,
   useClassList,
   useCreateClass,
+  useUpdateClass,
   type ClassStatusFilter,
 } from "../app/classes";
 import { useLeaveClass } from "../app/classEnrollments";
@@ -28,6 +40,7 @@ import { useSession } from "../app/session";
 import {
   tenantOperationAvailability,
   useTenantCapabilities,
+  type TenantOperationAvailability,
 } from "../app/tenantCapabilities";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
 import { useTenantDetail } from "../app/workspaces";
@@ -36,9 +49,11 @@ import { ClassConversationAction } from "../components/ClassConversationAction";
 import { ClassFilesPanel } from "../components/ClassFilesPanel";
 import { ClassJoinDialog } from "../components/ClassJoinDialog";
 import { ClassManagementPanel } from "../components/ClassManagementPanel";
+import { ClassroomQuickLaunchAction } from "../components/ClassroomQuickLaunchAction";
 import { ClassRosterPanel } from "../components/ClassRosterPanel";
 import { ClassSessionPanel } from "../components/ClassSessionPanel";
 import { TenantOperationNotice } from "../components/TenantOperationNotice";
+import "./ClassroomPages.css";
 
 const classCodePattern = /^[A-Z0-9][A-Z0-9_-]{2,31}$/;
 
@@ -53,6 +68,56 @@ function leaveClassErrorKey(error: Error | null): TranslationKey {
     return "classEnrollment.leaveConflict";
   }
   return "classEnrollment.leaveError";
+}
+
+const classDetailTabs = [
+  "sessions",
+  "materials",
+  "members",
+  "settings",
+] as const;
+type ClassDetailTab = (typeof classDetailTabs)[number];
+
+function isClassDetailTab(value: string | null): value is ClassDetailTab {
+  return classDetailTabs.some((tab) => tab === value);
+}
+
+const activationErrorKeys = [
+  "classroom.activateError",
+  "classroom.activateQuotaError",
+  "classroom.updateConflict",
+  "classroom.updateForbidden",
+] as const satisfies readonly TranslationKey[];
+type ActivationErrorKey = (typeof activationErrorKeys)[number];
+
+function activateClassErrorKey(error: Error | null): ActivationErrorKey {
+  if (error instanceof APIRequestError) {
+    const code = error.problem?.code ?? "";
+    const type = error.problem?.type ?? "";
+    if (
+      error.status === 429 ||
+      code === "quota_exceeded" ||
+      type.endsWith(":quota_exceeded")
+    ) {
+      return "classroom.activateQuotaError";
+    }
+    if (error.status === 403) {
+      return "classroom.updateForbidden";
+    }
+    if (error.status === 409) {
+      return "classroom.updateConflict";
+    }
+  }
+  return "classroom.activateError";
+}
+
+/** Reads the activation failure handed over by the create dialog, if any. */
+function activationNoticeFromState(state: unknown): ActivationErrorKey | null {
+  if (typeof state !== "object" || state === null) {
+    return null;
+  }
+  const value = (state as { activationError?: unknown }).activationError;
+  return activationErrorKeys.find((key) => key === value) ?? null;
 }
 
 export function ClassroomListPage() {
@@ -72,6 +137,16 @@ export function ClassroomListPage() {
     capabilitiesQuery,
     "join_class_invite_link",
   );
+  const activateAvailability = tenantOperationAvailability(
+    capabilitiesQuery,
+    "activate_class",
+  );
+  const schedulingAvailability = tenantOperationAvailability(
+    capabilitiesQuery,
+    "schedule_class_session",
+  );
+  const mediaRoomsEnabled =
+    capabilitiesQuery.data?.features.classroom_media_rooms?.enabled;
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [joinedClass, setJoinedClass] = useState<{
     classroom: ClassroomClass;
@@ -145,6 +220,7 @@ export function ClassroomListPage() {
 
       {!classesConcealed && canCreate && (
         <CreateClassDialog
+          activateAvailable={activateAvailability.available}
           available={createAvailability.available}
           onOpenChange={setIsCreateOpen}
           open={isCreateOpen}
@@ -217,7 +293,12 @@ export function ClassroomListPage() {
         )}
         {!classesConcealed && classesQuery.data && classrooms.length > 0 && (
           <>
-            <ClassList classes={classrooms} />
+            <ClassCardGrid
+              activateAvailability={activateAvailability}
+              classes={classrooms}
+              mediaRoomsEnabled={mediaRoomsEnabled}
+              schedulingAvailability={schedulingAvailability}
+            />
             {classesQuery.isFetchNextPageError && (
               <div className="classroom-pagination-error" role="alert">
                 <span>{t("classroom.loadMoreError")}</span>
@@ -253,10 +334,34 @@ export function ClassroomListPage() {
 export function ClassroomDetailPage() {
   const { classId } = useParams();
   const { language, t } = useI18n();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const session = useSession();
   const activeTenant = session.currentUser?.active_tenant;
   const classQuery = useClassDetail(activeTenant?.id, classId);
   const capabilitiesQuery = useTenantCapabilities(activeTenant?.id);
+  const requestedTab = searchParams.get("tab");
+  const activeTab: ClassDetailTab = isClassDetailTab(requestedTab)
+    ? requestedTab
+    : "sessions";
+
+  const changeTab = (value: string) => {
+    if (!isClassDetailTab(value) || value === activeTab) {
+      return;
+    }
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value === "sessions") {
+          next.delete("tab");
+        } else {
+          next.set("tab", value);
+        }
+        return next;
+      },
+      { replace: true, state: location.state },
+    );
+  };
 
   if (classQuery.isPending) {
     return (
@@ -280,12 +385,24 @@ export function ClassroomDetailPage() {
   }
 
   const classroom = classQuery.data;
-  const mediaCapability =
-    capabilitiesQuery.data?.features.classroom_media_rooms;
-  const mediaRoomsEnabled = mediaCapability?.enabled === true;
-  const canJoin =
-    classroom.status === "active" && classroom.viewer_access.can_join_room;
-  const canUseLegacyMedia = canJoin && mediaCapability?.enabled === false;
+  const mediaRoomsEnabled =
+    capabilitiesQuery.data?.features.classroom_media_rooms?.enabled;
+  const schedulingAvailability = tenantOperationAvailability(
+    capabilitiesQuery,
+    "schedule_class_session",
+  );
+  const activateAvailability = tenantOperationAvailability(
+    capabilitiesQuery,
+    "activate_class",
+  );
+  const activationNotice =
+    classroom.status === "draft"
+      ? activationNoticeFromState(location.state)
+      : null;
+  const ownerLabel =
+    classroom.owner_user_id === session.currentUser?.user.id
+      ? t("classroom.ownerYou")
+      : t("classroom.ownerMember");
   const dateFormatter = new Intl.DateTimeFormat(
     language === "vi" ? "vi-VN" : "en-US",
     { dateStyle: "medium", timeStyle: "short" },
@@ -297,104 +414,206 @@ export function ClassroomDetailPage() {
         {t("classroom.backToList")}
       </Link>
       <header className="classroom-detail__header">
-        <div>
+        <div className="classroom-detail__heading">
           <div className="classroom-detail__identity">
             <code>{classroom.code}</code>
             <ClassStatus status={classroom.status} />
           </div>
           <h1>{classroom.title}</h1>
           <p>{classroom.description || t("classroom.noDescription")}</p>
+          <dl className="classroom-detail__meta">
+            <div>
+              <dt>{t("classroom.workspaceLabel")}</dt>
+              <dd>{activeTenant?.name}</dd>
+            </div>
+            <div>
+              <dt>{t("classroom.ownerLabel")}</dt>
+              <dd>{ownerLabel}</dd>
+            </div>
+            <div>
+              <dt>{t("classroom.timezoneLabel")}</dt>
+              <dd>{classroom.timezone}</dd>
+            </div>
+          </dl>
         </div>
-        {canUseLegacyMedia && (
-          <Link
-            className="classroom-live-action"
-            to={`/app/classrooms/${classroom.id}/prejoin`}
-          >
-            <span aria-hidden="true" />
-            {t("classroom.joinRoomAction")}
-          </Link>
-        )}
+        <div className="classroom-detail__actions">
+          <ClassroomQuickLaunchAction
+            classroom={classroom}
+            mediaRoomsEnabled={mediaRoomsEnabled}
+            schedulingAvailability={schedulingAvailability}
+          />
+          <div className="classroom-detail__conversation">
+            <ClassConversationAction classID={classroom.id} />
+          </div>
+        </div>
       </header>
 
-      <section
-        aria-labelledby="classroom-information-heading"
-        className="classroom-detail__section"
-      >
-        <h2 id="classroom-information-heading">
-          {t("classroom.informationTitle")}
-        </h2>
-        <dl className="classroom-detail__facts">
+      {classroom.status === "draft" && (
+        <section
+          aria-labelledby="classroom-draft-banner-title"
+          className="classroom-draft-banner"
+        >
           <div>
-            <dt>{t("classroom.workspaceLabel")}</dt>
-            <dd>{activeTenant?.name}</dd>
+            <h2 id="classroom-draft-banner-title">
+              {t("classroom.draftBannerTitle")}
+            </h2>
+            <p>{t("classroom.draftBannerDescription")}</p>
+            {activationNotice && (
+              <p className="classroom-draft-banner__error" role="alert">
+                {t(activationNotice)}
+              </p>
+            )}
           </div>
-          <div>
-            <dt>{t("classroom.ownerLabel")}</dt>
-            <dd>
-              {classroom.owner_user_id === session.currentUser?.user.id
-                ? t("classroom.ownerYou")
-                : t("classroom.ownerMember")}
-            </dd>
-          </div>
-          <div>
-            <dt>{t("classroom.timezoneLabel")}</dt>
-            <dd>{classroom.timezone}</dd>
-          </div>
-          <div>
-            <dt>{t("classroom.createdLabel")}</dt>
-            <dd>{dateFormatter.format(new Date(classroom.created_at))}</dd>
-          </div>
-          <div>
-            <dt>{t("classroom.updatedLabel")}</dt>
-            <dd>{dateFormatter.format(new Date(classroom.updated_at))}</dd>
-          </div>
-          {classroom.archived_at && (
-            <div>
-              <dt>{t("classroom.archivedLabel")}</dt>
-              <dd>{dateFormatter.format(new Date(classroom.archived_at))}</dd>
-            </div>
-          )}
-        </dl>
-      </section>
-
-      <ClassConversationAction classID={classroom.id} />
-
-      <ClassFilesPanel classroom={classroom} />
-
-      <ClassSessionPanel
-        classroom={classroom}
-        mediaRoomsEnabled={mediaRoomsEnabled}
-        schedulingAvailability={tenantOperationAvailability(
-          capabilitiesQuery,
-          "schedule_class_session",
-        )}
-      />
-      <ClassManagementPanel
-        activateAvailability={tenantOperationAvailability(
-          capabilitiesQuery,
-          "activate_class",
-        )}
-        classroom={classroom}
-        onReload={async () => (await classQuery.refetch()).data}
-        onRetryCapabilities={() => void capabilitiesQuery.refetch()}
-        restoreAvailability={tenantOperationAvailability(
-          capabilitiesQuery,
-          "create_class",
-        )}
-      />
-      <ClassRosterPanel classroom={classroom} />
-      <ClassEnrollmentPanel
-        classroom={classroom}
-        createInviteAvailability={tenantOperationAvailability(
-          capabilitiesQuery,
-          "create_class_invite_link",
-        )}
-        onRetryCapabilities={() => void capabilitiesQuery.refetch()}
-      />
-      {classroom.viewer_access.can_leave && (
-        <LeaveClassAction classroom={classroom} />
+          {classroom.viewer_access.can_update_class &&
+            activateAvailability.available && (
+              <ClassActivateAction
+                classroom={classroom}
+                label={t("classroom.activateNowAction")}
+              />
+            )}
+        </section>
       )}
+
+      <Tabs
+        className="classroom-tabs"
+        onValueChange={changeTab}
+        value={activeTab}
+      >
+        <TabsList
+          aria-label={t("classroom.tabsLabel")}
+          className="classroom-tabs__list"
+        >
+          <TabsTrigger className="classroom-tabs__trigger" value="sessions">
+            {t("classroom.tab.sessions")}
+          </TabsTrigger>
+          <TabsTrigger className="classroom-tabs__trigger" value="materials">
+            {t("classroom.tab.materials")}
+          </TabsTrigger>
+          <TabsTrigger className="classroom-tabs__trigger" value="members">
+            {t("classroom.tab.members")}
+          </TabsTrigger>
+          <TabsTrigger className="classroom-tabs__trigger" value="settings">
+            {t("classroom.tab.settings")}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent className="classroom-tabs__panel" value="sessions">
+          <ClassSessionPanel
+            classroom={classroom}
+            mediaRoomsEnabled={mediaRoomsEnabled === true}
+            schedulingAvailability={schedulingAvailability}
+          />
+        </TabsContent>
+
+        <TabsContent className="classroom-tabs__panel" value="materials">
+          <ClassFilesPanel classroom={classroom} />
+        </TabsContent>
+
+        <TabsContent className="classroom-tabs__panel" value="members">
+          <ClassRosterPanel classroom={classroom} />
+          <ClassEnrollmentPanel
+            classroom={classroom}
+            createInviteAvailability={tenantOperationAvailability(
+              capabilitiesQuery,
+              "create_class_invite_link",
+            )}
+            onRetryCapabilities={() => void capabilitiesQuery.refetch()}
+          />
+        </TabsContent>
+
+        <TabsContent className="classroom-tabs__panel" value="settings">
+          <section
+            aria-labelledby="classroom-information-heading"
+            className="classroom-detail__section"
+          >
+            <h2 id="classroom-information-heading">
+              {t("classroom.informationTitle")}
+            </h2>
+            <dl className="classroom-detail__facts">
+              <div>
+                <dt>{t("classroom.workspaceLabel")}</dt>
+                <dd>{activeTenant?.name}</dd>
+              </div>
+              <div>
+                <dt>{t("classroom.ownerLabel")}</dt>
+                <dd>{ownerLabel}</dd>
+              </div>
+              <div>
+                <dt>{t("classroom.timezoneLabel")}</dt>
+                <dd>{classroom.timezone}</dd>
+              </div>
+              <div>
+                <dt>{t("classroom.createdLabel")}</dt>
+                <dd>{dateFormatter.format(new Date(classroom.created_at))}</dd>
+              </div>
+              <div>
+                <dt>{t("classroom.updatedLabel")}</dt>
+                <dd>{dateFormatter.format(new Date(classroom.updated_at))}</dd>
+              </div>
+              {classroom.archived_at && (
+                <div>
+                  <dt>{t("classroom.archivedLabel")}</dt>
+                  <dd>
+                    {dateFormatter.format(new Date(classroom.archived_at))}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </section>
+          <ClassManagementPanel
+            activateAvailability={activateAvailability}
+            classroom={classroom}
+            onReload={async () => (await classQuery.refetch()).data}
+            onRetryCapabilities={() => void capabilitiesQuery.refetch()}
+            restoreAvailability={tenantOperationAvailability(
+              capabilitiesQuery,
+              "create_class",
+            )}
+          />
+          {classroom.viewer_access.can_leave && (
+            <LeaveClassAction classroom={classroom} />
+          )}
+        </TabsContent>
+      </Tabs>
     </article>
+  );
+}
+
+function ClassActivateAction({
+  classroom,
+  label,
+  size = "md",
+}: {
+  classroom: ClassroomClass;
+  label: string;
+  size?: ButtonSize;
+}) {
+  const { t } = useI18n();
+  const session = useSession();
+  const updateClass = useUpdateClass(session.currentUser?.active_tenant?.id);
+
+  return (
+    <div className="class-activate-action">
+      <Button
+        leadingIcon={<Power />}
+        loading={updateClass.isPending}
+        loadingLabel={t("classroom.activating")}
+        onClick={() =>
+          updateClass.mutate({
+            classID: classroom.id,
+            input: { expected_version: classroom.version, status: "active" },
+          })
+        }
+        size={size}
+      >
+        {label}
+      </Button>
+      {updateClass.isError && (
+        <p className="class-activate-action__error" role="alert">
+          {t(activateClassErrorKey(updateClass.error))}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -477,16 +696,20 @@ function LeaveClassAction({ classroom }: { classroom: ClassroomClass }) {
 }
 
 function CreateClassDialog({
+  activateAvailable,
   available,
   onOpenChange,
   open,
 }: {
+  activateAvailable: boolean;
   available: boolean;
   onOpenChange: (open: boolean) => void;
   open: boolean;
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const draftCheckboxID = useId();
+  const [saveAsDraft, setSaveAsDraft] = useState(false);
   const session = useSession();
   const activeTenantID = session.currentUser?.active_tenant?.id;
   const createClass = useCreateClass(activeTenantID);
@@ -540,15 +763,29 @@ function CreateClassDialog({
     setValidationError(null);
     createClass.mutate(
       {
-        code: normalizedCode,
-        title: normalizedTitle,
-        description: description.trim(),
-        timezone: normalizedTimezone,
+        activate: !saveAsDraft && activateAvailable,
+        input: {
+          code: normalizedCode,
+          title: normalizedTitle,
+          description: description.trim(),
+          timezone: normalizedTimezone,
+        },
       },
       {
-        onSuccess: (created) => {
+        onSuccess: ({ activationError, classroom }) => {
           onOpenChange(false);
-          void navigate(`/app/classrooms/${created.id}`);
+          // A failed auto-activation (e.g. active-class quota) keeps the new
+          // draft; the detail page then shows the activation reminder.
+          void navigate(
+            `/app/classrooms/${classroom.id}`,
+            activationError
+              ? {
+                  state: {
+                    activationError: activateClassErrorKey(activationError),
+                  },
+                }
+              : undefined,
+          );
         },
       },
     );
@@ -606,6 +843,17 @@ function CreateClassDialog({
             rows={4}
             value={description}
           />
+          <div className="class-create-form__draft">
+            <input
+              checked={saveAsDraft}
+              id={draftCheckboxID}
+              onChange={(event) => setSaveAsDraft(event.target.checked)}
+              type="checkbox"
+            />
+            <label htmlFor={draftCheckboxID}>
+              {t("classroom.saveAsDraftLabel")}
+            </label>
+          </div>
 
           {(validationError || createClass.isError) && (
             <p className="class-create-form__error" role="alert">
@@ -634,8 +882,18 @@ function CreateClassDialog({
   );
 }
 
-function ClassList({ classes }: { classes: readonly ClassroomClass[] }) {
-  const { language, t } = useI18n();
+function ClassCardGrid({
+  activateAvailability,
+  classes,
+  mediaRoomsEnabled,
+  schedulingAvailability,
+}: {
+  activateAvailability: TenantOperationAvailability;
+  classes: readonly ClassroomClass[];
+  mediaRoomsEnabled: boolean | undefined;
+  schedulingAvailability: TenantOperationAvailability;
+}) {
+  const { language } = useI18n();
   const dateFormatter = useMemo(
     () =>
       new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
@@ -645,30 +903,89 @@ function ClassList({ classes }: { classes: readonly ClassroomClass[] }) {
   );
 
   return (
-    <ul className="class-list">
+    <ul className="class-card-grid">
       {classes.map((classroom) => (
         <li key={classroom.id}>
-          <Link to={`/app/classrooms/${classroom.id}`}>
-            <span className="class-list__identity">
-              <code>{classroom.code}</code>
-              <strong>{classroom.title}</strong>
-              <small>
-                {classroom.description || t("classroom.noDescription")}
-              </small>
-            </span>
-            <ClassStatus status={classroom.status} />
-            <time dateTime={classroom.updated_at}>
-              {t("classroom.updatedShort", {
-                date: dateFormatter.format(new Date(classroom.updated_at)),
-              })}
-            </time>
-            <span aria-hidden="true" className="class-list__arrow">
-              →
-            </span>
-          </Link>
+          <ClassCard
+            activateAvailability={activateAvailability}
+            classroom={classroom}
+            dateFormatter={dateFormatter}
+            mediaRoomsEnabled={mediaRoomsEnabled}
+            schedulingAvailability={schedulingAvailability}
+          />
         </li>
       ))}
     </ul>
+  );
+}
+
+function ClassCard({
+  activateAvailability,
+  classroom,
+  dateFormatter,
+  mediaRoomsEnabled,
+  schedulingAvailability,
+}: {
+  activateAvailability: TenantOperationAvailability;
+  classroom: ClassroomClass;
+  dateFormatter: Intl.DateTimeFormat;
+  mediaRoomsEnabled: boolean | undefined;
+  schedulingAvailability: TenantOperationAvailability;
+}) {
+  const { t } = useI18n();
+  const titleID = useId();
+  const detailPath = `/app/classrooms/${classroom.id}`;
+  const canActivate =
+    classroom.status === "draft" &&
+    classroom.viewer_access.can_update_class &&
+    activateAvailability.available;
+
+  return (
+    <article aria-labelledby={titleID} className="class-card">
+      <div className="class-card__header">
+        <code>{classroom.code}</code>
+        <ClassStatus status={classroom.status} />
+      </div>
+      <div className="class-card__body">
+        <h3 className="class-card__title" id={titleID}>
+          <Link className="class-card__title-link" to={detailPath}>
+            {classroom.title}
+          </Link>
+        </h3>
+        <p className="class-card__description">
+          {classroom.description || t("classroom.noDescription")}
+        </p>
+        <time className="class-card__updated" dateTime={classroom.updated_at}>
+          {t("classroom.updatedShort", {
+            date: dateFormatter.format(new Date(classroom.updated_at)),
+          })}
+        </time>
+      </div>
+      <div className="class-card__actions">
+        {classroom.status === "active" && (
+          <ClassroomQuickLaunchAction
+            classroom={classroom}
+            mediaRoomsEnabled={mediaRoomsEnabled}
+            schedulingAvailability={schedulingAvailability}
+            size="sm"
+          />
+        )}
+        {canActivate && (
+          <ClassActivateAction
+            classroom={classroom}
+            label={t("classroom.activateAction")}
+            size="sm"
+          />
+        )}
+        <Link
+          aria-describedby={titleID}
+          className="class-card__details"
+          to={detailPath}
+        >
+          {t("classroom.viewDetails")}
+        </Link>
+      </div>
+    </article>
   );
 }
 

@@ -52,6 +52,48 @@ export function hasMediaDeviceSupport(target: typeof navigator | undefined) {
   );
 }
 
+const loopbackHostnames = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+function currentPageHostname() {
+  return typeof window === "undefined" ? "" : window.location.hostname;
+}
+
+/**
+ * Accepts only bare LiveKit origins. `wss:` is always allowed; plaintext `ws:`
+ * is accepted solely for local development, when both this page and the media
+ * server resolve to a loopback hostname.
+ */
+export function isAllowedLiveKitServerURL(
+  serverUrl: string,
+  currentHostname: string = currentPageHostname(),
+): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(serverUrl);
+  } catch {
+    return false;
+  }
+  if (
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    (parsed.pathname !== "" && parsed.pathname !== "/")
+  ) {
+    return false;
+  }
+  if (parsed.protocol === "wss:") {
+    return true;
+  }
+  if (parsed.protocol === "ws:") {
+    return (
+      loopbackHostnames.has(currentHostname.toLowerCase()) &&
+      loopbackHostnames.has(parsed.hostname.toLowerCase())
+    );
+  }
+  return false;
+}
+
 export function readMediaRoomState(
   value: unknown,
 ): MediaRoomNavigationState | null {
@@ -71,7 +113,7 @@ export function readMediaRoomState(
     typeof credential.access_token !== "string" ||
     credential.access_token.length === 0 ||
     typeof credential.server_url !== "string" ||
-    !credential.server_url.startsWith("wss://") ||
+    !isAllowedLiveKitServerURL(credential.server_url) ||
     typeof credential.room_name !== "string" ||
     typeof credential.participant_identity !== "string" ||
     typeof credential.participant_name !== "string" ||

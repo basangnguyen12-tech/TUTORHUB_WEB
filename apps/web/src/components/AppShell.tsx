@@ -38,6 +38,17 @@ function useOnlineStatus() {
   return isOnline;
 }
 
+/** First letters of the first and last words, e.g. "Nguyễn Văn An" → "NA". */
+function displayInitials(name: string) {
+  const words = name.trim().split(/\s+/u).filter(Boolean);
+  const first = Array.from(words[0] ?? "")[0] ?? "";
+  const last =
+    words.length > 1
+      ? (Array.from(words[words.length - 1] ?? "")[0] ?? "")
+      : "";
+  return `${first}${last}`.toLocaleUpperCase() || "?";
+}
+
 export function AppShell() {
   const { language, setLanguage, t } = useI18n();
   const session = useSession();
@@ -85,6 +96,8 @@ export function AppShell() {
         : role === "student"
           ? t("shell.role.student")
           : t("shell.role.guest");
+  const displayName =
+    session.currentUser?.user.display_name || t("shell.profile");
 
   return (
     <div className="app-shell">
@@ -121,12 +134,20 @@ export function AppShell() {
           ))}
         </nav>
 
-        <div className="app-sidebar__footer">
-          <span className="app-sidebar__role">{roleLabel}</span>
-          <strong>
-            {session.currentUser?.user.display_name ?? t("shell.profile")}
-          </strong>
-        </div>
+        <Link
+          className="app-sidebar__footer"
+          onClick={() => setIsNavigationOpen(false)}
+          title={t("shell.accountSettings")}
+          to="/app/settings"
+        >
+          <span aria-hidden="true" className="app-sidebar__avatar">
+            {displayInitials(displayName)}
+          </span>
+          <span className="app-sidebar__identity">
+            <span className="app-sidebar__role">{roleLabel}</span>
+            <strong>{displayName}</strong>
+          </span>
+        </Link>
       </aside>
 
       <div className="app-workspace">
@@ -153,7 +174,7 @@ export function AppShell() {
           </div>
 
           <div className="app-topbar__actions">
-            <label className="workspace-select">
+            <label className="workspace-select" title={activeTenant?.name}>
               <span className="visually-hidden">
                 {t("workspace.activeLabel")}
               </span>

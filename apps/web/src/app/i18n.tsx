@@ -1218,6 +1218,7 @@ const messages = {
     "shell.role.student": "Học viên",
     "shell.role.guest": "Khách",
     "shell.role.admin": "Quản trị tổ chức",
+    "shell.accountSettings": "Thiết lập tài khoản",
     "shell.online": "Có kết nối",
     "shell.offline": "Đang ngoại tuyến",
     "shell.offlineMessage": "Một số dữ liệu có thể chưa được cập nhật.",
@@ -2107,6 +2108,9 @@ const messages = {
     "classFiles.forbiddenTitle": "Tệp của lớp không khả dụng",
     "classFiles.forbiddenDescription":
       "Phiên hiện tại không có quyền xem tệp trong lớp này.",
+    "classFiles.storageDisabledTitle": "Tài liệu lớp đang tạm tắt",
+    "classFiles.storageDisabledDescription":
+      "Tính năng tải tài liệu hiện đang tạm tắt trên môi trường này.",
     "classFiles.status.pending": "Chờ tải lên",
     "classFiles.status.uploaded": "Chờ kiểm tra",
     "classFiles.status.processing": "Đang kiểm tra",
@@ -2181,6 +2185,29 @@ const messages = {
     "classroom.errorDescription":
       "Kiểm tra kết nối rồi thử lại. Nếu lỗi tiếp diễn, cần kiểm tra Core API.",
     "classroom.joinRoomAction": "Vào phòng học trực tuyến",
+    "classroom.quickLaunch.start": "Vào phòng học ngay",
+    "classroom.quickLaunch.join": "Tham gia phòng học",
+    "classroom.quickLaunch.sessionTitle": "{title} — Buổi học trực tiếp",
+    "classroom.quickLaunch.noLiveSession":
+      "Giáo viên chưa mở phòng học trực tiếp cho lớp này.",
+    "classroom.quickLaunch.schedulingUnavailable":
+      "Chưa thể mở buổi học trực tiếp vì tính năng lên lịch đang tạm khóa trong workspace này.",
+    "classroom.saveAsDraftLabel": "Lưu làm bản nháp (chưa mở lớp ngay)",
+    "classroom.activateAction": "Kích hoạt lớp",
+    "classroom.activateNowAction": "Kích hoạt lớp ngay",
+    "classroom.activating": "Đang kích hoạt...",
+    "classroom.activateError": "Chưa thể kích hoạt lớp. Hãy thử lại.",
+    "classroom.activateQuotaError":
+      "Workspace đã đạt giới hạn số lớp đang hoạt động. Hãy lưu trữ bớt lớp rồi thử lại.",
+    "classroom.draftBannerTitle": "Lớp đang ở trạng thái bản nháp",
+    "classroom.draftBannerDescription":
+      "Học viên chưa thể tham gia và chưa mở được phòng học trực tiếp cho đến khi lớp được kích hoạt.",
+    "classroom.viewDetails": "Chi tiết lớp",
+    "classroom.tabsLabel": "Các mục của lớp học",
+    "classroom.tab.sessions": "Buổi học",
+    "classroom.tab.materials": "Tài liệu",
+    "classroom.tab.members": "Thành viên",
+    "classroom.tab.settings": "Cài đặt",
     "classSession.title": "Lịch buổi học",
     "classSession.description":
       "Các buổi học một lần của lớp, hiển thị theo múi giờ của bạn.",
@@ -2200,6 +2227,7 @@ const messages = {
       "Lớp hoặc lịch buổi học không còn thuộc workspace hiện tại.",
     "classSession.createTitle": "Lên lịch buổi học",
     "classSession.editTitle": "Chỉnh sửa buổi học",
+    "classSession.editAction": "Sửa buổi học",
     "classSession.formDescription":
       "Thời gian phải có offset RFC3339 khớp với múi giờ IANA đã chọn.",
     "classSession.titleLabel": "Tên buổi học",
@@ -2292,6 +2320,7 @@ const messages = {
       "Phòng chưa mở hoặc phiên media hiện tại đã kết thúc.",
     "media.p403.roomLocked": "Phòng đang khóa và không nhận lượt tham gia mới.",
     "media.p403.back": "← Về Trang chủ",
+    "media.p403.backToClass": "← Quay lại lớp học",
     "media.p403.title": "Sẵn sàng vào phòng học",
     "media.p403.description":
       "Camera và micro chỉ được mở sau khi bạn chọn kiểm tra. Lựa chọn thiết bị và credential chỉ tồn tại trong bộ nhớ của tab.",
@@ -4219,6 +4248,7 @@ const messages = {
     "shell.role.student": "Learner",
     "shell.role.guest": "Guest",
     "shell.role.admin": "Organization admin",
+    "shell.accountSettings": "Account settings",
     "shell.online": "Online",
     "shell.offline": "Offline",
     "shell.offlineMessage": "Some data may be out of date.",
@@ -5115,6 +5145,9 @@ const messages = {
     "classFiles.forbiddenTitle": "Class files are unavailable",
     "classFiles.forbiddenDescription":
       "The current session cannot view files in this class.",
+    "classFiles.storageDisabledTitle": "Class materials are paused",
+    "classFiles.storageDisabledDescription":
+      "Class file storage is currently turned off in this environment.",
     "classFiles.status.pending": "Waiting for upload",
     "classFiles.status.uploaded": "Awaiting checks",
     "classFiles.status.processing": "Checking",
@@ -5188,6 +5221,30 @@ const messages = {
     "classroom.errorDescription":
       "Check the connection and retry. If this continues, review the Core API.",
     "classroom.joinRoomAction": "Join live classroom",
+    "classroom.quickLaunch.start": "Start classroom",
+    "classroom.quickLaunch.join": "Join classroom",
+    "classroom.quickLaunch.sessionTitle": "{title} — Live session",
+    "classroom.quickLaunch.noLiveSession":
+      "The instructor hasn't opened a live room for this class yet.",
+    "classroom.quickLaunch.schedulingUnavailable":
+      "A live session can't be opened because class scheduling is currently unavailable in this workspace.",
+    "classroom.saveAsDraftLabel": "Save as draft (do not activate yet)",
+    "classroom.activateAction": "Activate class",
+    "classroom.activateNowAction": "Activate class now",
+    "classroom.activating": "Activating...",
+    "classroom.activateError":
+      "The class could not be activated. Please retry.",
+    "classroom.activateQuotaError":
+      "This workspace has reached its active class limit. Archive a class and try again.",
+    "classroom.draftBannerTitle": "This class is still a draft",
+    "classroom.draftBannerDescription":
+      "Learners can't join and live rooms can't open until the class is activated.",
+    "classroom.viewDetails": "View details",
+    "classroom.tabsLabel": "Class sections",
+    "classroom.tab.sessions": "Sessions",
+    "classroom.tab.materials": "Materials",
+    "classroom.tab.members": "Members",
+    "classroom.tab.settings": "Settings",
     "classSession.title": "Class sessions",
     "classSession.description":
       "One-time class sessions shown in your preferred timezone.",
@@ -5206,6 +5263,7 @@ const messages = {
       "The class or session is not in the active workspace.",
     "classSession.createTitle": "Schedule a session",
     "classSession.editTitle": "Edit session",
+    "classSession.editAction": "Edit session",
     "classSession.formDescription":
       "The timestamp offset must match the selected IANA timezone.",
     "classSession.titleLabel": "Session title",
@@ -5301,6 +5359,7 @@ const messages = {
     "media.p403.roomLocked":
       "The room is locked and is not accepting new join attempts.",
     "media.p403.back": "← Back to Home",
+    "media.p403.backToClass": "← Back to class",
     "media.p403.title": "Get ready for class",
     "media.p403.description":
       "Camera and microphone access starts only after you choose to test them. Device choices and credentials stay in this tab's memory.",

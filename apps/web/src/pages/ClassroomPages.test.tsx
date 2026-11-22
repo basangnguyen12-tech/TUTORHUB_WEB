@@ -1,13 +1,21 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
-import type { ClassroomClass, CurrentUser } from "@tutorhub/api-client";
-import { MemoryRouter, Route, Routes } from "react-router";
+import type {
+  ClassSession,
+  ClassroomClass,
+  CurrentUser,
+  MediaSpace,
+  TenantCapabilities,
+} from "@tutorhub/api-client";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classEnrollmentQueryKeys } from "../app/classEnrollments";
 import { classQueryKeys } from "../app/classes";
@@ -23,6 +31,7 @@ import { ClassroomDetailPage, ClassroomListPage } from "./ClassroomPages";
 const tenantID = "4b18543a-74de-419f-9fe8-d0c3dfc991eb";
 const ownerID = "be85eb92-0f18-4163-85ba-50e4d343d632";
 const classID = "a912f628-f3d2-4c18-84c6-42a9e858dc8d";
+const spaceID = "c2dc1048-1d90-4c90-ae50-5fb436bfb607";
 
 const classroom: ClassroomClass = {
   id: classID,
@@ -48,6 +57,69 @@ const classroom: ClassroomClass = {
     can_publish_media: true,
     can_leave: false,
   },
+};
+
+const learnerView: ClassroomClass = {
+  ...classroom,
+  viewer_access: {
+    ...classroom.viewer_access,
+    class_role: "student",
+    enrollment_status: "active",
+    can_update_class: false,
+    can_archive_class: false,
+    can_transfer_ownership: false,
+    can_schedule_sessions: false,
+  },
+};
+
+function classSession(overrides: Partial<ClassSession> = {}): ClassSession {
+  return {
+    id: "9f8bf389-362c-48ca-8e67-53df4e558f4d",
+    class_id: classID,
+    title: "Buổi 1",
+    description: "",
+    starts_at: "2026-07-20T01:30:00Z",
+    ends_at: "2026-07-20T03:00:00Z",
+    timezone: "Asia/Ho_Chi_Minh",
+    status: "scheduled",
+    version: 1,
+    viewer_access: { can_update: true, can_cancel: true },
+    created_by: ownerID,
+    updated_by: ownerID,
+    cancelled_by: null,
+    cancelled_at: null,
+    created_at: "2026-07-19T02:00:00Z",
+    updated_at: "2026-07-19T02:00:00Z",
+    ...overrides,
+  };
+}
+
+const openSpace: MediaSpace = {
+  id: spaceID,
+  source: {
+    kind: "class_session",
+    class_session_id: "9f8bf389-362c-48ca-8e67-53df4e558f4d",
+  },
+  status: "open",
+  version: 2,
+  active_room_instance: {
+    id: "c5f918a5-a09e-4f94-9fab-fb0ab5702a4d",
+    status: "active",
+    version: 1,
+    created_at: "2026-07-20T02:00:00Z",
+    updated_at: "2026-07-20T02:00:00Z",
+  },
+  recovery_room_instance: null,
+  viewer_operations: {
+    can_start: true,
+    can_end: true,
+    can_cancel: true,
+    can_manage_admissions: true,
+    can_manage_invites: false,
+    can_recover: false,
+  },
+  created_at: "2026-07-20T02:00:00Z",
+  updated_at: "2026-07-20T02:00:00Z",
 };
 
 function currentUser({
@@ -96,11 +168,29 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <>
+      <output data-testid="location">{`${location.pathname}${location.search}`}</output>
+      <output data-testid="location-state">
+        {JSON.stringify(location.state ?? null)}
+      </output>
+    </>
+  );
+}
+
+interface RenderOptions {
+  features?: Partial<TenantCapabilities["features"]>;
+  filesResponse?: () => Response;
+}
+
 function renderClassRoute(
   path: string,
   fetchMock: (request: Request) => Promise<Response>,
   session = currentUser(),
   mediaRoomsEnabled = false,
+  { features = {}, filesResponse }: RenderOptions = {},
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -114,6 +204,7 @@ function renderClassRoute(
         configured_enabled: mediaRoomsEnabled,
         enabled: mediaRoomsEnabled,
       },
+      ...features,
     },
   });
   const fetchWithClassFiles = vi.fn(
@@ -126,11 +217,12 @@ function renderClassRoute(
         )
       ) {
         return Promise.resolve(
-          jsonResponse({
-            items: [],
-            next_cursor: null,
-            viewer_access: { can_upload: false },
-          }),
+          filesResponse?.() ??
+            jsonResponse({
+              items: [],
+              next_cursor: null,
+              viewer_access: { can_upload: false },
+            }),
         );
       }
       return fetchMock(request);
@@ -151,7 +243,12 @@ function renderClassRoute(
                 element={<ClassroomDetailPage />}
                 path="/app/classrooms/:classId"
               />
+              <Route
+                element={<h1>Phòng chờ media</h1>}
+                path="/app/media/spaces/:spaceId/prejoin"
+              />
             </Routes>
+            <LocationProbe />
           </MemoryRouter>
         </SessionProvider>
       </I18nProvider>
@@ -164,9 +261,25 @@ function requestFrom(call: unknown[]) {
   return call[0] as Request;
 }
 
+function requestsOf(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.map(requestFrom);
+}
+
+function clickTab(tab: HTMLElement) {
+  fireEvent.mouseDown(tab);
+  act(() => tab.focus());
+  fireEvent.mouseUp(tab);
+  fireEvent.click(tab);
+}
+
+function pathOf(request: Request) {
+  return new URL(request.url).pathname;
+}
+
 describe("ClassroomPages P2-04", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -335,9 +448,25 @@ describe("ClassroomPages P2-04", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Tên lớp" }), {
       target: { value: classroom.title },
     });
+    const draftCheckbox = screen.getByRole("checkbox", {
+      name: "Lưu làm bản nháp (chưa mở lớp ngay)",
+    });
+    expect(draftCheckbox).not.toBeChecked();
+    fireEvent.click(draftCheckbox);
     fireEvent.click(screen.getByRole("button", { name: "Tạo lớp" }));
 
     await screen.findByRole("heading", { name: classroom.title });
+    expect(
+      fetchMock.mock.calls
+        .map(requestFrom)
+        .some((request) => request.method === "PATCH"),
+    ).toBe(false);
+    expect(
+      screen.getByRole("region", { name: "Lớp đang ở trạng thái bản nháp" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Kích hoạt lớp ngay" }),
+    ).toBeInTheDocument();
     const createRequest = fetchMock.mock.calls
       .map(requestFrom)
       .find(
@@ -378,7 +507,7 @@ describe("ClassroomPages P2-04", () => {
       return Promise.reject(new Error(`Unexpected request: ${request.url}`));
     });
 
-    renderClassRoute(`/app/classrooms/${classID}`, fetchMock);
+    renderClassRoute(`/app/classrooms/${classID}?tab=settings`, fetchMock);
 
     const titleInput = await screen.findByRole("textbox", {
       name: "Tên lớp",
@@ -447,7 +576,7 @@ describe("ClassroomPages P2-04", () => {
       return Promise.reject(new Error(`Unexpected request: ${request.url}`));
     });
 
-    renderClassRoute(`/app/classrooms/${classID}`, fetchMock);
+    renderClassRoute(`/app/classrooms/${classID}?tab=settings`, fetchMock);
 
     const titleInput = await screen.findByRole("textbox", {
       name: "Tên lớp",
@@ -489,7 +618,7 @@ describe("ClassroomPages P2-04", () => {
       return Promise.reject(new Error(`Unexpected request: ${request.url}`));
     });
 
-    renderClassRoute(`/app/classrooms/${classID}`, fetchMock);
+    renderClassRoute(`/app/classrooms/${classID}?tab=settings`, fetchMock);
 
     fireEvent.change(await screen.findByRole("textbox", { name: /^Mã lớp/ }), {
       target: { value: "SEC999" },
@@ -562,7 +691,8 @@ describe("ClassroomPages P2-04", () => {
         name: "Vào phòng học trực tuyến",
       }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Lưu trữ lớp" }));
+    clickTab(screen.getByRole("tab", { name: "Cài đặt" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Lưu trữ lớp" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Xác nhận lưu trữ" }),
     );
@@ -617,7 +747,7 @@ describe("ClassroomPages P2-04", () => {
     };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(teacherView));
     renderClassRoute(
-      `/app/classrooms/${classID}`,
+      `/app/classrooms/${classID}?tab=settings`,
       fetchMock,
       currentUser({
         role: "teacher",
@@ -668,12 +798,15 @@ describe("ClassroomPages P2-04", () => {
         name: "Vào phòng học trực tuyến",
       }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Vào phòng học ngay" }),
+    ).toBeEnabled();
   });
 
   it("exposes lifecycle controls to an organization admin who is not the owner", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(classroom));
     renderClassRoute(
-      `/app/classrooms/${classID}`,
+      `/app/classrooms/${classID}?tab=settings`,
       fetchMock,
       currentUser({
         role: "org_admin",
@@ -684,5 +817,516 @@ describe("ClassroomPages P2-04", () => {
     expect(
       await screen.findByRole("button", { name: "Lưu trữ lớp" }),
     ).toBeInTheDocument();
+  });
+
+  it("switches between the four horizontal tabs and keeps ?tab in sync", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(classroom));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/roster`)) {
+        return Promise.resolve(
+          jsonResponse({ class_owner: null, items: [], next_cursor: null }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute(`/app/classrooms/${classID}?tab=unknown`, fetchMock);
+
+    const tablist = await screen.findByRole("tablist", {
+      name: "Các mục của lớp học",
+    });
+    expect(
+      within(tablist)
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual(["Buổi học", "Tài liệu", "Thành viên", "Cài đặt"]);
+    expect(screen.getByRole("tab", { name: "Buổi học" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Lịch buổi học" }),
+    ).toBeInTheDocument();
+    // The conversation shortcut stays on the hero regardless of the tab.
+    expect(
+      screen.getByRole("button", { name: "Mở trao đổi lớp" }),
+    ).toBeInTheDocument();
+
+    clickTab(screen.getByRole("tab", { name: "Tài liệu" }));
+    expect(
+      await screen.findByRole("heading", { name: "Tệp của lớp" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      `/app/classrooms/${classID}?tab=materials`,
+    );
+
+    clickTab(screen.getByRole("tab", { name: "Cài đặt" }));
+    expect(
+      await screen.findByRole("heading", { name: "Thông tin lớp học" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tệp của lớp" })).toBeNull();
+    expect(screen.getByTestId("location")).toHaveTextContent("?tab=settings");
+
+    const settingsTab = screen.getByRole("tab", { name: "Cài đặt" });
+    fireEvent.keyDown(settingsTab, { key: "ArrowLeft" });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Thành viên" })).toHaveFocus(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("?tab=members"),
+    );
+
+    clickTab(screen.getByRole("tab", { name: "Buổi học" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        new RegExp(`^/app/classrooms/${classID}$`),
+      ),
+    );
+  });
+
+  it("creates an active class by default by activating the version-1 draft", async () => {
+    const draft = {
+      ...classroom,
+      status: "draft" as const,
+      version: 1,
+    };
+    const activated = { ...draft, status: "active" as const, version: 2 };
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/tenants/${tenantID}`)) {
+        return Promise.resolve(jsonResponse({ timezone: classroom.timezone }));
+      }
+      if (path.endsWith("/api/v1/auth/csrf")) {
+        return Promise.resolve(jsonResponse({ csrf_token: "class-csrf" }));
+      }
+      if (path.endsWith("/api/v1/classes") && request.method === "POST") {
+        return Promise.resolve(jsonResponse(draft, 201));
+      }
+      if (
+        path.endsWith(`/api/v1/classes/${classID}`) &&
+        request.method === "PATCH"
+      ) {
+        return Promise.resolve(jsonResponse(activated));
+      }
+      if (path.endsWith("/api/v1/classes") && request.method === "GET") {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute("/app/classrooms", fetchMock);
+
+    await screen.findByText("Workspace chưa có lớp học");
+    fireEvent.click(screen.getByRole("button", { name: "Tạo lớp học" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /^Mã lớp/ }), {
+      target: { value: "sec101" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Tên lớp" }), {
+      target: { value: classroom.title },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Tạo lớp" }));
+
+    expect(
+      await screen.findByRole("heading", { name: classroom.title }),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(
+        '.classroom-detail__identity .class-status[data-status="active"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Lớp đang ở trạng thái bản nháp" }),
+    ).not.toBeInTheDocument();
+    const methods = requestsOf(fetchMock)
+      .filter((request) => pathOf(request).includes("/api/v1/classes"))
+      .map((request) => request.method)
+      .filter((method) => method !== "GET");
+    expect(methods).toEqual(["POST", "PATCH"]);
+    const patch = requestsOf(fetchMock).find(
+      (request) => request.method === "PATCH",
+    );
+    expect(patch?.headers.get("X-CSRF-Token")).toBe("class-csrf");
+    await expect(patch?.clone().json()).resolves.toEqual({
+      expected_version: 1,
+      status: "active",
+    });
+  });
+
+  it("keeps the new draft and offers activation when auto-activation hits the quota", async () => {
+    const draft = {
+      ...classroom,
+      status: "draft" as const,
+      version: 1,
+    };
+    let patches = 0;
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/tenants/${tenantID}`)) {
+        return Promise.resolve(jsonResponse({ timezone: classroom.timezone }));
+      }
+      if (path.endsWith("/api/v1/auth/csrf")) {
+        return Promise.resolve(jsonResponse({ csrf_token: "class-csrf" }));
+      }
+      if (path.endsWith("/api/v1/classes") && request.method === "POST") {
+        return Promise.resolve(jsonResponse(draft, 201));
+      }
+      if (
+        path.endsWith(`/api/v1/classes/${classID}`) &&
+        request.method === "PATCH"
+      ) {
+        patches += 1;
+        return Promise.resolve(
+          patches === 1
+            ? jsonResponse(
+                {
+                  type: "urn:tutorhub:problem:quota_exceeded",
+                  code: "quota_exceeded",
+                  title: "Quota exceeded",
+                  status: 429,
+                },
+                429,
+              )
+            : jsonResponse({ ...draft, status: "active", version: 2 }),
+        );
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(draft));
+      }
+      if (path.endsWith("/api/v1/classes") && request.method === "GET") {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute("/app/classrooms", fetchMock);
+
+    await screen.findByText("Workspace chưa có lớp học");
+    fireEvent.click(screen.getByRole("button", { name: "Tạo lớp học" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /^Mã lớp/ }), {
+      target: { value: "sec101" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Tên lớp" }), {
+      target: { value: classroom.title },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Tạo lớp" }));
+
+    const banner = await screen.findByRole("region", {
+      name: "Lớp đang ở trạng thái bản nháp",
+    });
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      `/app/classrooms/${classID}`,
+    );
+    expect(within(banner).getByRole("alert")).toHaveTextContent(
+      "Workspace đã đạt giới hạn số lớp đang hoạt động",
+    );
+    fireEvent.click(
+      within(banner).getByRole("button", { name: "Kích hoạt lớp ngay" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", {
+          name: "Lớp đang ở trạng thái bản nháp",
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(patches).toBe(2);
+  });
+
+  it("activates a draft in one tap from its class card", async () => {
+    let state: ClassroomClass = {
+      ...classroom,
+      status: "draft",
+      version: 1,
+    };
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith("/api/v1/auth/csrf")) {
+        return Promise.resolve(jsonResponse({ csrf_token: "card-csrf" }));
+      }
+      if (
+        path.endsWith(`/api/v1/classes/${classID}`) &&
+        request.method === "PATCH"
+      ) {
+        state = { ...state, status: "active", version: 2 };
+        return Promise.resolve(jsonResponse(state));
+      }
+      if (path.endsWith("/api/v1/classes") && request.method === "GET") {
+        return Promise.resolve(
+          jsonResponse({ items: [state], next_cursor: null }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute("/app/classrooms", fetchMock);
+
+    const titleLink = await screen.findByRole("link", {
+      name: classroom.title,
+    });
+    expect(titleLink).toHaveAttribute("href", `/app/classrooms/${classID}`);
+    const card = titleLink.closest("article");
+    expect(card).not.toBeNull();
+    const details = within(card!).getByRole("link", { name: "Chi tiết lớp" });
+    expect(details).toHaveAttribute("href", `/app/classrooms/${classID}`);
+    expect(details).toHaveAccessibleDescription(classroom.title);
+    expect(card!.querySelector("a button, button a")).toBeNull();
+
+    fireEvent.click(
+      within(card!).getByRole("button", { name: "Kích hoạt lớp" }),
+    );
+
+    expect(
+      await within(card!).findByRole("link", {
+        name: "Vào phòng học trực tuyến",
+      }),
+    ).toHaveAttribute("href", `/app/classrooms/${classID}/prejoin`);
+    const patch = requestsOf(fetchMock).find(
+      (request) => request.method === "PATCH",
+    );
+    expect(patch?.headers.get("X-CSRF-Token")).toBe("card-csrf");
+    await expect(patch?.clone().json()).resolves.toEqual({
+      expected_version: 1,
+      status: "active",
+    });
+  });
+
+  it("reuses a live session and opens its media pre-join with a return path", async () => {
+    const live = classSession({ status: "live" });
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(classroom));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              classSession({ id: "upcoming", status: "scheduled" }),
+              live,
+            ],
+            next_cursor: null,
+          }),
+        );
+      }
+      if (path.endsWith("/api/v1/media/spaces/resolve")) {
+        return Promise.resolve(jsonResponse(openSpace));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute(
+      `/app/classrooms/${classID}`,
+      fetchMock,
+      currentUser(),
+      true,
+    );
+
+    const hero = (
+      await screen.findByRole("heading", { name: classroom.title })
+    ).closest("header") as HTMLElement;
+    fireEvent.click(
+      within(hero).getByRole("button", { name: "Vào phòng học ngay" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Phòng chờ media" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      `/app/media/spaces/${spaceID}/prejoin`,
+    );
+    expect(
+      JSON.parse(screen.getByTestId("location-state").textContent ?? "null"),
+    ).toEqual({
+      classTitle: classroom.title,
+      returnTo: `/app/classrooms/${classID}`,
+    });
+    const resolve = requestsOf(fetchMock).find((request) =>
+      pathOf(request).endsWith("/api/v1/media/spaces/resolve"),
+    );
+    expect(new URL(resolve!.url).searchParams.get("class_session_id")).toBe(
+      live.id,
+    );
+    expect(
+      requestsOf(fetchMock).some((request) => request.method === "POST"),
+    ).toBe(false);
+  });
+
+  it("opens a 90-minute live session in the class timezone when nothing is running", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(
+      Date.parse("2026-07-20T02:15:42.500Z"),
+    );
+    const created = classSession({
+      id: "1d0b0b1e-8f2a-4bd1-9a71-1c8f6c1e2a10",
+      starts_at: "2026-07-20T02:15:00Z",
+      ends_at: "2026-07-20T03:45:00Z",
+    });
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith("/api/v1/auth/csrf")) {
+        return Promise.resolve(jsonResponse({ csrf_token: "session-csrf" }));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(classroom));
+      }
+      if (
+        path.endsWith(`/api/v1/classes/${classID}/sessions`) &&
+        request.method === "POST"
+      ) {
+        return Promise.resolve(jsonResponse(created, 201));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              classSession({ id: "ended", status: "ended" }),
+              classSession({
+                id: "later",
+                starts_at: "2026-07-20T05:00:00Z",
+                ends_at: "2026-07-20T06:00:00Z",
+              }),
+            ],
+            next_cursor: null,
+          }),
+        );
+      }
+      if (path.endsWith("/api/v1/media/spaces/resolve")) {
+        return Promise.resolve(jsonResponse(openSpace));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute(
+      `/app/classrooms/${classID}`,
+      fetchMock,
+      currentUser(),
+      true,
+    );
+
+    const hero = (
+      await screen.findByRole("heading", { name: classroom.title })
+    ).closest("header") as HTMLElement;
+    fireEvent.click(
+      within(hero).getByRole("button", { name: "Vào phòng học ngay" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Phòng chờ media" }),
+    ).toBeInTheDocument();
+
+    const lookup = requestsOf(fetchMock).find(
+      (request) =>
+        pathOf(request).endsWith("/sessions") &&
+        new URL(request.url).searchParams.get("range_start") ===
+          "2026-07-19T20:15:42.500Z",
+    );
+    expect(new URL(lookup!.url).searchParams.get("range_end")).toBe(
+      "2026-07-21T02:15:42.500Z",
+    );
+    const createRequest = requestsOf(fetchMock).find(
+      (request) =>
+        request.method === "POST" && pathOf(request).endsWith("/sessions"),
+    );
+    expect(createRequest?.headers.get("X-CSRF-Token")).toBe("session-csrf");
+    await expect(createRequest?.clone().json()).resolves.toEqual({
+      description: "",
+      ends_at: "2026-07-20T10:45:00+07:00",
+      starts_at: "2026-07-20T09:15:00+07:00",
+      timezone: "Asia/Ho_Chi_Minh",
+      title: "Cơ sở An toàn thông tin — Buổi học trực tiếp",
+    });
+    const resolve = requestsOf(fetchMock).find((request) =>
+      pathOf(request).endsWith("/api/v1/media/spaces/resolve"),
+    );
+    expect(new URL(resolve!.url).searchParams.get("class_session_id")).toBe(
+      created.id,
+    );
+  });
+
+  it("tells a learner when the instructor has not opened a live room yet", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(learnerView));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute(
+      `/app/classrooms/${classID}`,
+      fetchMock,
+      currentUser(),
+      true,
+    );
+
+    const hero = (
+      await screen.findByRole("heading", { name: classroom.title })
+    ).closest("header") as HTMLElement;
+    expect(
+      within(hero).queryByRole("button", { name: "Vào phòng học ngay" }),
+    ).toBeNull();
+    fireEvent.click(
+      within(hero).getByRole("button", { name: "Tham gia phòng học" }),
+    );
+
+    expect(await within(hero).findByRole("status")).toHaveTextContent(
+      "Giáo viên chưa mở phòng học trực tiếp cho lớp này.",
+    );
+    expect(
+      requestsOf(fetchMock).some((request) => request.method === "POST"),
+    ).toBe(false);
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      `/app/classrooms/${classID}`,
+    );
+  });
+
+  it("shows a calm notice in Materials when class file storage is turned off", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      if (pathOf(request).endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(classroom));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute(
+      `/app/classrooms/${classID}?tab=materials`,
+      fetchMock,
+      currentUser(),
+      false,
+      {
+        features: {
+          file_uploads: { configured_enabled: false, enabled: false },
+        },
+        filesResponse: () =>
+          jsonResponse(
+            {
+              type: "urn:tutorhub:problem:feature_disabled",
+              code: "feature_disabled",
+              title: "Feature disabled",
+              status: 503,
+            },
+            503,
+          ),
+      },
+    );
+
+    // The files query retries a 5xx once before settling on the error.
+    const notice = await screen.findByText(
+      "Tính năng tải tài liệu hiện đang tạm tắt trên môi trường này.",
+      undefined,
+      { timeout: 4000 },
+    );
+    expect(notice.closest('[role="status"]')).not.toBeNull();
+    const materials = screen.getByRole("tabpanel", { name: "Tài liệu" });
+    expect(within(materials).queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      within(materials).queryByRole("button", { name: "Thử lại" }),
+    ).toBeNull();
   });
 });

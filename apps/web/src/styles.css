@@ -245,18 +245,56 @@ textarea:focus-visible {
 }
 
 .app-sidebar__footer {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
   margin-top: auto;
-  padding: 18px 20px;
+  padding: 16px 20px;
   border-top: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+  transition: background 160ms ease;
+}
+
+.app-sidebar__footer:hover {
+  background: var(--color-canvas);
+}
+
+.app-sidebar__footer:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: -3px;
+}
+
+.app-sidebar__avatar {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+.app-sidebar__identity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.app-sidebar__footer strong,
+.app-sidebar__footer .app-sidebar__role {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app-sidebar__footer strong {
-  overflow: hidden;
   font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .app-workspace {
@@ -286,16 +324,29 @@ textarea:focus-visible {
   gap: 10px;
 }
 
+.app-topbar__context {
+  flex: 1 0 auto;
+}
+
+.app-topbar__actions {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.app-topbar__actions > * {
+  flex-shrink: 0;
+}
+
 .app-topbar__context strong {
-  overflow: hidden;
+  flex: 0 0 auto;
   font-size: 15px;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .app-topbar__eyebrow {
   color: var(--color-text-muted);
   font-size: 13px;
+  white-space: nowrap;
 }
 
 .menu-toggle {
@@ -332,8 +383,10 @@ textarea:focus-visible {
 }
 
 .language-select select {
+  min-width: max-content;
   min-height: 38px;
-  padding: 0 30px 0 10px;
+  padding: 0 32px 0 10px;
+  white-space: nowrap;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -342,7 +395,9 @@ textarea:focus-visible {
 
 .app-topbar__logout {
   min-height: 38px;
+  flex-shrink: 0;
   padding: 0 12px;
+  white-space: nowrap;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -356,6 +411,10 @@ textarea:focus-visible {
   background: var(--color-canvas);
 }
 
+.app-topbar__actions > .workspace-select {
+  flex-shrink: 1;
+}
+
 .workspace-select {
   display: inline-flex;
   min-width: 0;
@@ -364,7 +423,7 @@ textarea:focus-visible {
 
 .workspace-select span,
 .workspace-select select {
-  max-width: 190px;
+  max-width: min(16rem, 28vw);
   min-height: 38px;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -1757,44 +1816,6 @@ textarea:focus-visible {
   font-size: 13px;
 }
 
-.class-list {
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--color-border);
-  list-style: none;
-}
-
-.class-list li {
-  border-bottom: 1px solid var(--color-border);
-}
-
-.class-list a {
-  display: grid;
-  min-height: 92px;
-  grid-template-columns: minmax(0, 1fr) 112px 180px 22px;
-  gap: 18px;
-  align-items: center;
-  padding: 15px 12px;
-  color: var(--color-text);
-  text-decoration: none;
-  transition:
-    background 160ms ease,
-    padding 160ms ease;
-}
-
-.class-list a:hover {
-  padding-right: 8px;
-  padding-left: 16px;
-  background: var(--color-accent-soft);
-}
-
-.class-list__identity {
-  display: grid;
-  min-width: 0;
-  gap: 3px;
-}
-
-.class-list__identity code,
 .classroom-detail__identity code {
   width: fit-content;
   color: var(--color-accent);
@@ -1802,22 +1823,6 @@ textarea:focus-visible {
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-
-.class-list__identity strong {
-  overflow: hidden;
-  font-size: 15px;
-  font-weight: 680;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.class-list__identity small {
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .class-status {
@@ -1844,24 +1849,6 @@ textarea:focus-visible {
 .class-status[data-status="archived"] {
   background: #f0f1f4;
   color: #565d6b;
-}
-
-.class-list time {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.class-list__arrow {
-  color: var(--color-text-muted);
-  font-size: 18px;
-  transition: transform 160ms ease;
-}
-
-.class-list a:hover .class-list__arrow {
-  color: var(--color-accent);
-  transform: translateX(2px);
 }
 
 .classroom-empty-state {
@@ -1966,7 +1953,7 @@ textarea:focus-visible {
   margin-bottom: 14px;
 }
 
-.classroom-detail__header p {
+.classroom-detail__heading > p {
   max-width: 68ch;
   margin: 15px 0 0;
   color: var(--color-text-muted);
@@ -2936,14 +2923,6 @@ textarea:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .class-list a {
-    grid-template-columns: minmax(0, 1fr) 104px 22px;
-  }
-
-  .class-list time {
-    display: none;
-  }
-
   .classroom-detail__facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3033,7 +3012,6 @@ textarea:focus-visible {
 
   .language-select select {
     min-height: 36px;
-    max-width: 105px;
     padding-left: 8px;
   }
 
@@ -3195,27 +3173,6 @@ textarea:focus-visible {
     grid-column: 1;
   }
 
-  .class-list a {
-    min-height: 108px;
-    grid-template-columns: minmax(0, 1fr) 20px;
-    gap: 12px;
-    padding: 14px 6px;
-  }
-
-  .class-list a:hover {
-    padding-right: 4px;
-    padding-left: 8px;
-  }
-
-  .class-list .class-status {
-    grid-column: 1;
-  }
-
-  .class-list__arrow {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-
   .classroom-detail__facts {
     grid-template-columns: 1fr;
     gap: 0;
@@ -3320,9 +3277,10 @@ textarea:focus-visible {
 }
 
 .class-session-card__actions {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0.5rem;
   justify-content: flex-end;
 }
 
@@ -3479,11 +3437,12 @@ textarea:focus-visible {
 
   .workspace-select span,
   .workspace-select select {
-    max-width: 90px;
+    max-width: 76px;
   }
 
   .language-select select {
-    max-width: 86px;
+    padding: 0 26px 0 6px;
+    font-size: 12px;
   }
 
   .app-topbar__logout {
@@ -5118,6 +5077,22 @@ textarea:focus-visible {
 .media-p403-readiness {
   align-self: start;
   padding: 20px;
+}
+
+.media-p403-readiness .media-p403-join-error {
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.media-p403-readiness .media-p403-join-error h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.media-p403-readiness .media-p403-join-error p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .media-p403-readiness h2,

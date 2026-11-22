@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -126,6 +127,13 @@ function renderDetail(fetchMock: ReturnType<typeof vi.fn>) {
   return queryClient;
 }
 
+function clickTab(tab: HTMLElement) {
+  fireEvent.mouseDown(tab);
+  act(() => tab.focus());
+  fireEvent.mouseUp(tab);
+  fireEvent.click(tab);
+}
+
 describe("Classroom self-leave action", () => {
   afterEach(() => {
     cleanup();
@@ -163,7 +171,11 @@ describe("Classroom self-leave action", () => {
     expect(
       await screen.findByRole("heading", { name: classroom.title }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Leave class" }));
+    expect(
+      screen.queryByRole("button", { name: "Leave class" }),
+    ).not.toBeInTheDocument();
+    clickTab(screen.getByRole("tab", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Leave class" }));
     const dialog = screen.getByRole("dialog", {
       name: "Leave this class?",
     });

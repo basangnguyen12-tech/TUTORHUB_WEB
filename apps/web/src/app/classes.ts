@@ -139,21 +139,56 @@ async function synchronizeClass(
   await Promise.all(invalidations);
 }
 
+export interface CreateClassVariables {
+  input: CreateClassRequest;
+  /**
+   * Activate the freshly created draft (`version: 1`) right away. Activation
+   * failures never discard the created class: the draft is still returned.
+   */
+  activate?: boolean;
+}
+
+export interface CreateClassResult {
+  classroom: ClassroomClass;
+  activationError: Error | null;
+}
+
 export function useCreateClass(tenantID: string | undefined) {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: async (input: CreateClassRequest) => {
+  return useMutation<CreateClassResult, Error, CreateClassVariables>({
+    mutationFn: async ({ activate = false, input }) => {
       const csrf = await rotateCSRFToken({ baseUrl: getApiBaseUrl() });
-      return createClass(input, csrf.csrf_token, {
+      const created = await createClass(input, csrf.csrf_token, {
         baseUrl: getApiBaseUrl(),
       });
+      if (!activate || created.status !== "draft") {
+        return { classroom: created, activationError: null };
+      }
+      try {
+        const activationCSRF = await rotateCSRFToken({
+          baseUrl: getApiBaseUrl(),
+        });
+        const activated = await requestClassUpdate(
+          created.id,
+          { expected_version: created.version, status: "active" },
+          activationCSRF.csrf_token,
+          { baseUrl: getApiBaseUrl() },
+        );
+        return { classroom: activated, activationError: null };
+      } catch (error) {
+        return {
+          classroom: created,
+          activationError:
+            error instanceof Error ? error : new Error("activation_failed"),
+        };
+      }
     },
-    onSuccess: async (created) => {
+    onSuccess: async ({ classroom }) => {
       if (!tenantID) {
         return;
       }
-      await synchronizeClass(queryClient, tenantID, created);
+      await synchronizeClass(queryClient, tenantID, classroom);
     },
     onSettled: () =>
       Promise.all([

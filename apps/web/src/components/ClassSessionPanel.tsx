@@ -328,7 +328,7 @@ export function ClassSessionPanel({
                         size="sm"
                         variant="secondary"
                       >
-                        {t("classroom.editTitle")}
+                        {t("classSession.editAction")}
                       </Button>
                     )}
                     {cancellable && (

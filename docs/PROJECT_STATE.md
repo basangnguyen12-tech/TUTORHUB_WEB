@@ -4,18 +4,33 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Ngày cập nhật        | 2026-11-22                                                                                                                                             |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                  |
-| Nhánh làm việc       | `main`                                                                                                                                                 |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                            |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                              |
-| Phase hiện tại       | Phase 3 deferred carry-over vẫn hoạt động; Phase 5 collaboration đã đóng                                                                               |
-| Task `DONE` gần nhất | `AUTH-16` Lập lịch GitHub Actions hàng giờ chạy `cmd/auth-maintenance` trên Neon & chuyển repository sang `basangnguyen12-tech/TUTORHUB_WEB`           |
-| Mốc repository mới   | `security:actions` `3` workflow (`11/11` test PASS); Neon `staging` ở `52 false` + Cloudflare DMARC/Avatar; `@tutorhub/web` `928/928` (`100` file)     |
-| Task hiện tại        | Gắn secret `DATABASE_AUTH_MAINTENANCE_URL` + nối lại repo `basangnguyen12-tech/TUTORHUB_WEB` trên Render/Cloudflare Pages và smoke `workflow_dispatch` |
-| Task tiếp theo       | Theo dõi canary Public Beta trên `https://tutorhub.vn`, đối soát `Q12` trước khi gỡ ZITADEL; hoãn Facebook (chờ Meta duyệt) & `+84` Zalo ZNS/SMS       |
+| Thuộc tính           | Trạng thái                                                                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-23                                                                                                                                           |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                |
+| Nhánh làm việc       | `main`                                                                                                                                               |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                          |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                            |
+| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                      |
+| Task `DONE` gần nhất | `CLASS-UX-01` Lưới thẻ lớp học, Chi tiết lớp Hero + 4 Tab ngang, Vào phòng học 1 chạm, Tạo lớp `active` mặc định & sửa vỡ khung AppShell             |
+| Mốc repository mới   | `@tutorhub/web` `961/961` (`100` file), `security:bundle` `210` file, Chromium E2E `p2-08` `1/1` PASS; chờ GitHub Support mở lại repo để push `main` |
+| Task hiện tại        | `ROOM-UX-01` Chuẩn hóa màn Pre-Join kiểm tra Camera/Mic `16:9` tập trung & `ROOM-WB-01` Sân khấu Bảng trắng Excalidraw 1 chạm trong phòng học        |
+| Task tiếp theo       | Đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` khi GitHub Support mở khóa, nối lại Render/Cloudflare Pages & bật LiveKit + Whiteboard Runtime     |
+
+### Checkpoint `CLASS-UX-01` Đại tu Danh sách & Chi tiết Lớp học (Hero + 4 Tab), Vào Phòng học 1 Chạm & Mở khóa Loopback LiveKit (`DONE`) — 2026-11-23
+
+Claude Code triển khai `CLASS-UX-01` nâng cấp toàn diện luồng từ Danh sách lớp (`/app/classrooms`) → Chi tiết lớp (`/app/classrooms/:classId`) → Pre-Join phòng học trực tuyến; Gatekeeper (Antigravity) review `RESEARCH.md` và toàn bộ diff/bảo mật, kiểm chứng độc lập `pnpm verify` cùng bộ Chromium Playwright E2E `p2-08` trên cụm PostgreSQL 17.12 loopback disposable:
+
+- **Mở khóa LiveKit loopback `ws://` an toàn & Tự phục hồi `409` trên Pre-Join (`apps/web/src/app/media.ts`, `apps/web/src/pages/MediaSpacePages.tsx`)**:
+  - Bổ sung `isAllowedLiveKitServerURL(serverUrl, currentHostname)` dùng chung cho `readMediaRoomState` và `completeCredentialHandoff`: chặn mọi URL có `username`/`password`, `search`, `hash` hoặc `pathname` khác `/` (khớp ràng buộc `LIVEKIT_URL` của Go server); `wss:` luôn hợp lệ, còn `ws:` chỉ được chấp nhận khi cả origin trang web lẫn hostname của máy chủ media đều thuộc tập loopback (`localhost`, `127.0.0.1`, `[::1]`, `::1`).
+  - Trong `submitJoin`, khi `createMediaSpaceJoinAttempt` trả về `409 Conflict` (ví dụ sau khi tải lại trang Pre-Join làm lệch `expected_space_version` hoặc phiên cũ), hệ thống tự xóa `attempt` cục bộ, gọi `mediaSpace.refetch()`, xoay CSRF mới và thử lại đúng `1` lần với `join_attempt_id` mới; đưa thông báo lỗi tham gia ngay dưới cụm nút cột phải và kiểm chứng chặt `prejoinReturnPath` (chỉ nhận đường dẫn nội bộ `/app/...`) cho nút `← Quay lại lớp học`.
+- **Tạo lớp mặc định `Đang hoạt động` (`active`) & Kích hoạt 1 chạm (`apps/web/src/pages/ClassroomPages.tsx`, `apps/web/src/app/classes.ts`)**:
+  - Bổ sung tùy chọn `Lưu làm bản nháp (chưa mở lớp ngay)` mặc định bỏ chọn trong `CreateClassDialog`; `useCreateClass` gộp bước tạo và kích hoạt (`status: "active"`) trong một mutation duy nhất nhưng bảo toàn lớp `draft` kèm cảnh báo lý do trên trang chi tiết nếu bước kích hoạt chạm giới hạn quota (`429`/`403`). Thêm nút `Kích hoạt lớp` 1 chạm trên thẻ lớp và dải nhắc `Kích hoạt lớp ngay` trên trang chi tiết.
+- **Vào phòng học 1 chạm, Lưới thẻ lớp & Bố cục Hero + 4 Tab ngang (`apps/web/src/components/ClassroomQuickLaunchAction.tsx`, `apps/web/src/pages/ClassroomPages.tsx`, `apps/web/src/pages/ClassroomPages.css`, `apps/web/src/components/ClassSessionPanel.tsx`, `apps/web/src/components/ClassFilesPanel.tsx`)**:
+  - `ClassroomQuickLaunchAction` ưu tiên buổi `live`, kế đến buổi `scheduled` đang diễn ra hoặc bắt đầu trong `60` phút tới; nếu chưa có buổi nào, giáo viên tự động tạo buổi trực tiếp `90` phút (dùng `instantInTimezone` làm tròn đầu phút, cắt tiêu đề `<= 200` code point) rồi mở thẳng `MediaSpace` chuyển sang Pre-Join chỉ bằng 1 chạm, trong khi học sinh thấy thông báo trạng thái rõ ràng (`role="status"`). Bảo toàn link legacy `/prejoin` khi `classroom_media_rooms` tắt.
+  - Chuyển `/app/classrooms` sang lưới thẻ 2 cột (`.class-card-grid`, không lồng `<button>` trong `<Link>`); chuyển `/app/classrooms/:classId` sang Hero đầu trang (metadata tóm tắt, `ClassroomQuickLaunchAction` và `ClassConversationAction`) kết hợp 4 Tab ngang dùng `<Tabs>` của `@tutorhub/ui` đồng bộ `?tab=sessions|materials|members|settings`. Đổi nhãn sửa buổi học thành `Sửa buổi học` và hiển thị thông báo nhẹ nhàng trong tab `Tài liệu` khi `file_uploads` đang tắt (`503`/`feature_disabled`).
+- **Sửa vỡ bố cục `AppShell` (`apps/web/src/components/AppShell.tsx`, `apps/web/src/styles.css`)**: chống xuống dòng cho bộ chọn ngôn ngữ (`Tiếng Việt`), giữ nguyên tiêu đề mục không bị cắt cụt ở `1280×800`, giới hạn chiều rộng kèm `title` cho `.workspace-select` và biến chân Sidebar thành link `/app/settings` có vòng tròn chữ cái đầu tên hiển thị.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`961/961`** trên `100` file — tăng `33` bài test mới, `security:bundle` `210` file, Storybook build, Go `40` package + `go vet`), `pnpm exec tsc -p tsconfig.e2e.json --noEmit` và `git diff --check` sạch. Trên Chromium thật + cụm **PostgreSQL 17.12 loopback disposable** (migration `52`, tự xóa sạch sau khi chạy): `e2e/p2-08-core-workflows.spec.ts` (gồm thêm 2 lượt quét Axe `0` vi phạm `serious`/`critical` trên lưới thẻ lớp, Hero, dải draft và thanh 4 Tab) **`1/1` PASS** (`16.9s`).
 
 ### Checkpoint `AUTH-16` Lập lịch GitHub Actions Hàng giờ Chạy `cmd/auth-maintenance` & Chuyển Đổi Repository Chính Thức (`DONE`) — 2026-11-22
 

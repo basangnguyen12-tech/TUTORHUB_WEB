@@ -153,7 +153,10 @@ describe("ClassSessionPanel", () => {
     renderPanel(fetchMock);
 
     await screen.findByRole("heading", { name: classSession.title });
-    fireEvent.click(screen.getByRole("button", { name: "Edit class" }));
+    expect(screen.queryByRole("button", { name: "Edit class" })).toBeNull();
+    const editButton = screen.getByRole("button", { name: "Edit session" });
+    expect(editButton.closest(".class-session-card__actions")).not.toBeNull();
+    fireEvent.click(editButton);
 
     const dialog = await screen.findByRole("dialog", { name: "Edit session" });
     expect(
