@@ -491,6 +491,60 @@ test("P4-03 reports offline without probing health or opening media", async ({
   });
 });
 
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
+]) {
+  test(`PREJOIN-UX-01 keeps the 16:9 studio and join actions in view at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const observed = await installApiMocks(page, "admitted");
+    await openEnglishPrejoin(page);
+
+    // Focused studio: thin header, no AppShell sidebar navigation.
+    await expect(page.locator(".app-sidebar")).toHaveCount(0);
+    const banner = page.getByRole("banner");
+    await expect(banner).toContainText("TutorHub Test");
+    await expect(
+      banner.getByRole("link", { name: "← Back to Home" }),
+    ).toBeVisible();
+    const headerBox = await banner.boundingBox();
+    expect(headerBox?.height ?? 0).toBeLessThanOrEqual(64);
+
+    const preview = await page.locator(".media-p403-preview").boundingBox();
+    expect(preview).not.toBeNull();
+    expect(Math.abs(preview!.width / preview!.height - 16 / 9)).toBeLessThan(
+      0.02,
+    );
+    for (const name of [
+      "Test camera and microphone",
+      "Join with enabled devices",
+      "Join listen-only",
+    ]) {
+      await expect(page.getByRole("button", { name })).toBeInViewport({
+        ratio: 1,
+      });
+    }
+    const horizontalOverflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(horizontalOverflow).toBeLessThanOrEqual(1);
+    expect(await readMediaProbe(page)).toEqual({
+      enumerateDevicesCalls: 0,
+      getUserMediaCalls: 0,
+      stoppedTracks: 0,
+    });
+    expect(observed.order).toEqual([]);
+    expect(
+      (await new AxeBuilder({ page }).include(".media-p403-page").analyze())
+        .violations,
+    ).toEqual([]);
+  });
+}
+
 test("P4-03 keeps keyboard actions and reflow at forced colors and 320 CSS pixels", async ({
   page,
 }) => {

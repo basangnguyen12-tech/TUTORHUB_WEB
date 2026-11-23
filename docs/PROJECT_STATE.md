@@ -4,18 +4,31 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                            |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-23                                                                                                                                            |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                 |
-| Nhánh làm việc       | `main`                                                                                                                                                |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                           |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                             |
-| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                       |
-| Task `DONE` gần nhất | `ROOM-STAGE-01` Sân khấu Phòng học `100dvh`, Bảng trắng Excalidraw Sân khấu chính 1 chạm + Dải Camera cạnh bên & sửa dứt điểm burst `grant-exchanges` |
-| Mốc repository mới   | `@tutorhub/web` `977/977` (`100` file), `security:bundle` `211` file, `P5_COLLAB_14_BUNDLE` `issues: []`, Chromium E2E `p4-05..07` `18/18` PASS       |
-| Task hiện tại        | `PREJOIN-UX-01` Màn Pre-Join `16:9` tập trung ngoài `AppShell`, đồng bộ Bảng trắng tự động cho học sinh & mở cấu hình Bảng trắng chung cho tenant     |
-| Task tiếp theo       | Đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` khi GitHub Support mở khóa, nối lại Render/Cloudflare Pages & bật LiveKit + Whiteboard Runtime      |
+| Thuộc tính           | Trạng thái                                                                                                                                           |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-23                                                                                                                                           |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                |
+| Nhánh làm việc       | `main`                                                                                                                                               |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                          |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                            |
+| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                      |
+| Task `DONE` gần nhất | `PREJOIN-UX-01` Màn Pre-Join `16:9` Studio độc lập ngoài `AppShell` & tự động bung Sân khấu Bảng trắng phía Học sinh khi Giáo viên trình bày         |
+| Mốc repository mới   | `@tutorhub/web` `1002/1002` (`101` file), `security:bundle` `212` file, `P5_COLLAB_14_BUNDLE` `issues: []`, Chromium E2E `p4-03..07` `29/29` PASS    |
+| Task hiện tại        | Trải nghiệm & kiểm duyệt thực tế toàn luồng Lớp học → Pre-Join `16:9` → Sân khấu Phòng học + Bảng trắng; chờ GitHub Support mở khóa để push `main`   |
+| Task tiếp theo       | Đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB`, nối lại Render/Cloudflare Pages & cấu hình LiveKit Cloud + Whiteboard Runtime lên môi trường live |
+
+### Checkpoint `PREJOIN-UX-01` Màn Pre-Join `16:9` Studio Độc lập Ngoài `AppShell` & Tự động Đồng bộ Sân khấu Bảng trắng Phía Học sinh (`DONE`) — 2026-11-23
+
+Claude Code triển khai `PREJOIN-UX-01` hoàn thiện mảnh ghép giao diện trước khi vào phòng (`/app/media/spaces/:spaceId/prejoin`) và đồng bộ tự động Sân khấu Bảng trắng cho người học; Gatekeeper (Antigravity) review `RESEARCH.md` và toàn bộ diff/bảo mật, kiểm chứng độc lập `pnpm verify`, cổng giới hạn bundle `LazyWhiteboardEngine` và trọn bộ 29 bài Chromium E2E `p4-03..07`:
+
+- **Màn Pre-Join Studio `16:9` Độc lập Ngoài `<AppShell />` (`routes.tsx`, `MediaSpacePages.tsx`, `MediaSpacePrejoin.css`, `styles.css`, `i18n.tsx`)**:
+  - Chuyển route `media/spaces/:spaceId/prejoin` ra ngoài `<AppShell />` (đặt cùng cấp với route phòng học dưới `<WorkspaceRoute />`, có `RouteErrorBoundary`); giữ nguyên route legacy `classrooms/:classId/prejoin`.
+  - Bổ sung thanh Header tập trung mảnh `56px` ở mọi trạng thái Pre-Join (loading, lỗi, khôi phục, mở): link quay lại theo `returnTo`, cụm thương hiệu `TutorHub` kèm `classTitle` đã lọc ký tự điều khiển (`<= 80` code point), badge tên Workspace và bộ chọn ngôn ngữ `.language-select select`.
+  - Thiết kế lại lưới 2 cột căn giữa (`max-width: 1120px`) vừa gọn trong viewport `1280×800` và `1440×900`: cột trái là khung Camera `aspect-ratio: 16 / 9` nền `#0f172a` (giữ nguyên bất biến `getUserMedia = 0` và `enumerateDevices = 0` trước khi bấm kiểm tra, bảo toàn focus bàn phím khi nút kiểm tra đổi vị trí, lưới 2 cột chọn thiết bị không tràn chữ); cột phải là thẻ sẵn sàng sticky với nút CTA chính `<Button variant="primary" size="lg">` (`48px`), nút phụ `secondary` (`42px`, gỡ quy tắc cũ dùng nhầm biến `--color-primary` không tồn tại) và ngôn ngữ tự nhiên thay thế các thuật ngữ nội bộ (`Core API`, `SDP/ICE/IP`, `credential`).
+- **Tự động Bung Sân khấu Bảng trắng Phía Học sinh Khi Giáo viên Trình bày (`whiteboards.ts`, `MediaSpaceRoomPage.tsx`, `ClassroomMediaShell.tsx`)**:
+  - Bổ sung tùy chọn `pollIntervalMs` cho `useWhiteboardTool` (mặc định tắt; trên `MediaSpaceRoomPage` poll mỗi `4_000ms` khi phòng đã `connected`, `refetchIntervalInBackground: false` và tự dừng khi gặp mã lỗi đầu cuối `401`/`403`/`404`/`503`, chia sẻ chung query cache với `ClassroomWhiteboardTool`).
+  - Thêm `autoOpenKey?: string | null` vào `ClassroomToolDefinition`: khi `whiteboardDocument.status === "open"` và `can_exchange_grant === true`, `ClassroomMediaShell` tự động bung Sân khấu Bảng trắng tối đa `1` lần cho mỗi `id:current_generation` mà không tự cướp focus bàn phím, tôn trọng quyết định đóng tay của học sinh trong cùng generation và phát thông báo `role="status"` cho trình đọc màn hình.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1002/1002`** trên `101` file — tăng `25` bài test mới, `security:bundle` `212` file, Storybook build, Go `40` package + `go vet`), `node scripts/check-whiteboard-performance-bundle.mjs apps/web/dist` PASS (`issues: []`), `git diff --check` sạch, và trọn bộ Chromium Playwright E2E `p4-03..07` (`29/29` bài chạy thực tế gồm 2 bài đo khung hình `1280×800` / `1440×900` mới trên `p4-03`, reflow `320px`, forced-colors, reduced-motion và Axe `0` vi phạm) **`PASS` (`31.7s`)**.
 
 ### Checkpoint `ROOM-STAGE-01` Sân khấu Phòng học `100dvh`, Bảng trắng Excalidraw Sân khấu chính 1 Chạm & Khắc phục Burst `grant-exchanges` (`DONE`) — 2026-11-23
 

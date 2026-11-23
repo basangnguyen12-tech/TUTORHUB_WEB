@@ -4980,7 +4980,7 @@ textarea:focus-visible {
   text-align: center;
 }
 
-.media-p403-preview-placeholder span {
+.media-p403-preview-placeholder > span {
   max-width: 44ch;
   color: #c9ced8;
   line-height: 1.55;
@@ -4995,8 +4995,6 @@ textarea:focus-visible {
   margin-top: 14px;
 }
 
-.media-p403-actions button,
-.media-p403-join-actions button,
 .media-p403-speaker-actions button,
 .media-p403-waiting button,
 .media-p403-alert button {
@@ -5007,13 +5005,6 @@ textarea:focus-visible {
   background: var(--color-surface);
   color: var(--color-text);
   font-weight: 680;
-}
-
-.media-p403-join-actions button:first-child,
-.media-p403-actions button:first-child {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
 }
 
 .media-p403-device-controls {
@@ -6312,8 +6303,7 @@ textarea:focus-visible {
     flex-direction: column;
   }
 
-  .media-p403-actions button,
-  .media-p403-join-actions button,
+  .media-p403-actions .th-button,
   .media-p403-speaker-actions button {
     width: 100%;
   }

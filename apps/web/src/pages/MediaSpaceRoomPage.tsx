@@ -44,7 +44,11 @@ import {
 } from "../features/media/classroomSignals";
 
 import { useTenantCapabilities } from "../app/tenantCapabilities";
+import { useWhiteboardTool } from "../app/whiteboards";
 import "./ClassroomRoomStage.css";
+
+/** How often a connected room re-reads the whiteboard projection. */
+const whiteboardPollIntervalMs = 4_000;
 
 export function MediaSpaceRoomPage() {
   const { spaceId, roomInstanceId } = useParams();
@@ -136,6 +140,24 @@ function MediaSpaceRoomSession({
     activeRoom?.version ?? 0,
     signalScopeReady && roomStatus === "connected",
   );
+  // PREJOIN-UX-01: keep the server whiteboard projection fresh while the room
+  // is connected so a viewer's stage follows the presenter. It shares the
+  // tool's query key, so the mounted whiteboard reuses this cache entry.
+  const whiteboardTool = useWhiteboardTool(
+    tenantId,
+    spaceId ?? "",
+    whiteboardEnabled && signalScopeReady && roomStatus === "connected",
+    { pollIntervalMs: whiteboardPollIntervalMs },
+  );
+  const whiteboardDocument =
+    whiteboardEnabled && whiteboardTool.isSuccess
+      ? (whiteboardTool.data?.document ?? null)
+      : null;
+  const whiteboardAutoOpenKey =
+    whiteboardDocument?.status === "open" &&
+    whiteboardDocument.viewer_capabilities.can_exchange_grant
+      ? `${whiteboardDocument.id}:${whiteboardDocument.current_generation}`
+      : null;
   const signalMutation = useMutateMediaSignal(
     tenantId,
     spaceId ?? "",
@@ -456,6 +478,7 @@ function MediaSpaceRoomSession({
     signals: signalControls,
     tools: [
       {
+        autoOpenKey: whiteboardAutoOpenKey,
         content: (
           <ClassroomWhiteboardTool
             actorID={userId}

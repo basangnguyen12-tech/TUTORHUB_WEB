@@ -2325,7 +2325,7 @@ const messages = {
     "media.p403.backToClass": "← Quay lại lớp học",
     "media.p403.title": "Sẵn sàng vào phòng học",
     "media.p403.description":
-      "Camera và micro chỉ được mở sau khi bạn chọn kiểm tra. Lựa chọn thiết bị và credential chỉ tồn tại trong bộ nhớ của tab.",
+      "Kiểm tra hình ảnh và âm thanh trước khi bước vào lớp học.",
     "media.p403.previewLabel": "Bản xem trước camera cục bộ",
     "media.p403.previewOff": "Camera và micro đang tắt",
     "media.p403.previewConsent":
@@ -2335,13 +2335,18 @@ const messages = {
     "media.p403.stopPreview": "Tắt bản xem trước",
     "media.p403.deviceProblem": "Không thể dùng thiết bị đã chọn",
     "media.p403.readinessLabel": "Trạng thái sẵn sàng tham gia",
-    "media.p403.network": "Kết nối Core API",
+    "media.p403.network": "Chất lượng kết nối",
     "media.p403.effect": "Hiệu ứng hình ảnh",
     "media.p403.effectNone": "Không dùng hiệu ứng",
     "media.p403.networkPrivacy":
-      "Kiểm tra mạng chỉ gọi health endpoint cùng origin; không thu SDP, ICE, IP hoặc nhãn thiết bị.",
+      "Thiết bị chỉ mở khi bạn cho phép và có thể bật/tắt bất cứ lúc nào trong phòng.",
     "media.p403.joinWithDevices": "Tham gia với thiết bị đã bật",
     "media.p403.joinListenOnly": "Tham gia chỉ nghe",
+    "media.p403.joining": "Đang vào phòng…",
+    "media.p403.readyHeading": "Sẵn sàng vào lớp?",
+    "media.p403.readyDescription":
+      "Bạn có thể vào với camera và micro đã kiểm tra, hoặc chỉ nghe rồi bật thiết bị sau.",
+    "media.p403.studioClass": "Lớp học",
     "media.p403.waitingTitle": "Đang chờ được cho vào",
     "media.p403.waitingDescription":
       "TutorHub chưa cấp credential và chưa kết nối LiveKit trong khi bạn đang chờ.",
@@ -2561,6 +2566,7 @@ const messages = {
     "media.p405.railLabel": "Dải người tham gia",
     "media.p405.openParticipants": "Mở danh sách người tham gia",
     "media.p405.close": "Đóng",
+    "media.p506.toolAutoOpened": "{title} đang được trình bày trên sân khấu.",
     "media.p405.previousPage": "Trang video trước",
     "media.p405.nextPage": "Trang video tiếp theo",
     "media.p405.page": "Trang {page} trên {pages}",
@@ -5370,7 +5376,7 @@ const messages = {
     "media.p403.backToClass": "← Back to class",
     "media.p403.title": "Get ready for class",
     "media.p403.description":
-      "Camera and microphone access starts only after you choose to test them. Device choices and credentials stay in this tab's memory.",
+      "Check your camera and audio before entering the classroom.",
     "media.p403.previewLabel": "Local camera preview",
     "media.p403.previewOff": "Camera and microphone are off",
     "media.p403.previewConsent":
@@ -5380,13 +5386,18 @@ const messages = {
     "media.p403.stopPreview": "Stop preview",
     "media.p403.deviceProblem": "The selected device is unavailable",
     "media.p403.readinessLabel": "Join readiness status",
-    "media.p403.network": "Core API connection",
+    "media.p403.network": "Connection status",
     "media.p403.effect": "Video effect",
     "media.p403.effectNone": "No effect",
     "media.p403.networkPrivacy":
-      "The network check calls only the same-origin health endpoint; it collects no SDP, ICE, IP address or device label.",
+      "Your camera and microphone stay off until you test them and can be toggled anytime in class.",
     "media.p403.joinWithDevices": "Join with enabled devices",
     "media.p403.joinListenOnly": "Join listen-only",
+    "media.p403.joining": "Joining…",
+    "media.p403.readyHeading": "Ready to join?",
+    "media.p403.readyDescription":
+      "Join with the camera and microphone you tested, or listen only and turn devices on later.",
+    "media.p403.studioClass": "Class",
     "media.p403.waitingTitle": "Waiting to be admitted",
     "media.p403.waitingDescription":
       "TutorHub has not issued a credential or connected to LiveKit while you wait.",
@@ -5606,6 +5617,7 @@ const messages = {
     "media.p405.railLabel": "Participant rail",
     "media.p405.openParticipants": "Open participant list",
     "media.p405.close": "Close",
+    "media.p506.toolAutoOpened": "{title} is now being presented on the stage.",
     "media.p405.previousPage": "Previous video page",
     "media.p405.nextPage": "Next video page",
     "media.p405.page": "Page {page} of {pages}",

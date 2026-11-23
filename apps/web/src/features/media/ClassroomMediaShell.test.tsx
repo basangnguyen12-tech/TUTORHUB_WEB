@@ -638,6 +638,112 @@ describe("ClassroomMediaShell", () => {
     );
   });
 
+  it("auto-opens a presented tool once per key without stealing keyboard focus", async () => {
+    const whiteboardTool = (autoOpenKey: string | null) => ({
+      autoOpenKey,
+      content: <TestWhiteboardTool />,
+      icon: <span aria-hidden="true">W</span>,
+      id: "whiteboard" as const,
+      label: "Open whiteboard",
+      title: "Classroom whiteboard",
+    });
+    const view = renderShell({ tools: [whiteboardTool(null)] });
+    const mediaTile = view.container.querySelector(".media-p405-grid > li");
+    const opener = screen.getByRole("button", { name: "Open whiteboard" });
+    const microphone = screen.getByRole("button", {
+      name: "Turn microphone on",
+    });
+    microphone.focus();
+    expect(
+      screen.queryByRole("region", { name: "Classroom whiteboard" }),
+    ).not.toBeInTheDocument();
+
+    view.rerender(shellElement({ tools: [whiteboardTool("board-1:1")] }));
+
+    expect(
+      screen.getByRole("region", { name: "Classroom whiteboard" }),
+    ).toBeInTheDocument();
+    expect(opener).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByText(
+        "Classroom whiteboard is now being presented on the stage.",
+      ),
+    ).toBeInTheDocument();
+    await act(async () => {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
+    });
+    expect(microphone).toHaveFocus();
+    expect(toolLifecycle.mounts).toBe(1);
+    expect(view.container.querySelector(".media-p405-grid > li")).toBe(
+      mediaTile,
+    );
+
+    // A manual close sticks for the same presenter generation.
+    const close = screen
+      .getAllByRole("button", { name: "Close" })
+      .find((button) => button.textContent?.trim() === "Close");
+    fireEvent.click(close!);
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(
+      screen.queryByRole("region", { name: "Classroom whiteboard" }),
+    ).not.toBeInTheDocument();
+    view.rerender(shellElement({ tools: [whiteboardTool("board-1:1")] }));
+    view.rerender(shellElement({ tools: [whiteboardTool(null)] }));
+    view.rerender(shellElement({ tools: [whiteboardTool("board-1:1")] }));
+    expect(
+      screen.queryByRole("region", { name: "Classroom whiteboard" }),
+    ).not.toBeInTheDocument();
+    expect(opener).toHaveAttribute("aria-expanded", "false");
+
+    // A new presenter generation brings the stage back, still without focus.
+    microphone.focus();
+    view.rerender(shellElement({ tools: [whiteboardTool("board-1:2")] }));
+    expect(
+      screen.getByRole("region", { name: "Classroom whiteboard" }),
+    ).toBeInTheDocument();
+    await act(async () => {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
+    });
+    expect(microphone).toHaveFocus();
+    expect(toolLifecycle.mounts).toBe(2);
+  });
+
+  it("keeps a manually opened tool open and quiet when its key first appears", async () => {
+    const whiteboardTool = (autoOpenKey: string | null) => ({
+      autoOpenKey,
+      content: <TestWhiteboardTool />,
+      icon: <span aria-hidden="true">W</span>,
+      id: "whiteboard" as const,
+      label: "Open whiteboard",
+      title: "Classroom whiteboard",
+    });
+    const view = renderShell({ tools: [whiteboardTool(null)] });
+    const opener = screen.getByRole("button", { name: "Open whiteboard" });
+
+    fireEvent.click(opener);
+    const heading = await screen.findByRole("heading", {
+      name: "Classroom whiteboard",
+    });
+    await waitFor(() => expect(heading).toHaveFocus());
+
+    view.rerender(shellElement({ tools: [whiteboardTool("board-1:1")] }));
+
+    expect(heading).toHaveFocus();
+    expect(toolLifecycle.mounts).toBe(1);
+    expect(
+      screen.queryByText(
+        "Classroom whiteboard is now being presented on the stage.",
+      ),
+    ).not.toBeInTheDocument();
+
+    // Closing from the Dock is respected for that same key.
+    fireEvent.click(opener);
+    view.rerender(shellElement({ tools: [whiteboardTool("board-1:1")] }));
+    expect(
+      screen.queryByRole("region", { name: "Classroom whiteboard" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("keeps the waiting room inside the roster drawer and surfaces waiting requests", async () => {
     const view = renderShell({
       lobby: <section aria-label="Waiting room panel">Lobby queue</section>,

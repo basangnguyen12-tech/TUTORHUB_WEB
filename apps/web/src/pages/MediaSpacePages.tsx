@@ -8,6 +8,8 @@ import {
   type RecoverMediaSpaceRequest,
 } from "@tutorhub/api-client";
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@tutorhub/ui";
+import { Building2, MicOff, VideoOff } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -17,6 +19,7 @@ import {
   useState,
   useSyncExternalStore,
   type FormEvent,
+  type ReactNode,
 } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { useI18n, type TranslationKey } from "../app/i18n";
@@ -45,6 +48,7 @@ import {
 } from "../app/mediaDiagnostics";
 import { MediaSpaceInvitePanel } from "../components/MediaSpaceInvitePanel";
 import { MediaDiagnosticsPanel } from "../components/MediaDiagnosticsPanel";
+import "./MediaSpacePrejoin.css";
 
 type JoinStatus =
   | "idle"
@@ -90,6 +94,7 @@ export function MediaSpacePreJoinPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = prejoinReturnPath(location.state);
+  const classTitle = prejoinClassTitle(location.state);
   const { language, t } = useI18n();
   const session = useSession();
   const tenantId = session.currentUser?.active_tenant?.id ?? "";
@@ -140,6 +145,28 @@ export function MediaSpacePreJoinPage() {
     controller?.getSnapshot ?? getUnsupportedSnapshot,
     getUnsupportedSnapshot,
   );
+  const previewActive =
+    snapshot.status === "preview_ready" ||
+    snapshot.status === "switching_device";
+  const placeholderPreviewAction = useRef<HTMLButtonElement>(null);
+  const activePreviewAction = useRef<HTMLButtonElement>(null);
+  const previewFocusHandoff = useRef(false);
+
+  // The device-check button lives inside the 16:9 frame while the preview is
+  // off and below it once the preview runs. Keep keyboard focus on the
+  // equivalent control when one replaces the other instead of dropping it.
+  useLayoutEffect(() => {
+    if (!previewFocusHandoff.current) {
+      return;
+    }
+    const target = previewActive
+      ? activePreviewAction.current
+      : placeholderPreviewAction.current;
+    if (target) {
+      previewFocusHandoff.current = false;
+      target.focus();
+    }
+  }, [previewActive]);
 
   useEffect(() => {
     if (!controller) {
@@ -612,19 +639,26 @@ export function MediaSpacePreJoinPage() {
     void joinAttemptStatus.refetch();
   };
 
+  const frameProps = { classTitle, returnTo };
   if (!spaceId || !tenantId || !userId) {
-    return <MediaSpaceFailure message={t("media.p403.invalidSpace")} />;
+    return (
+      <PrejoinStudioFrame {...frameProps}>
+        <MediaSpaceFailure message={t("media.p403.invalidSpace")} />
+      </PrejoinStudioFrame>
+    );
   }
   if (mediaSpace.isPending) {
     return (
-      <div className="media-p403-page" aria-busy="true">
-        <p>{t("media.p403.loadingSpace")}</p>
-      </div>
+      <PrejoinStudioFrame {...frameProps} busy>
+        <p className="media-p403-studio__status" role="status">
+          {t("media.p403.loadingSpace")}
+        </p>
+      </PrejoinStudioFrame>
     );
   }
   if (mediaSpace.isError) {
     return (
-      <div className="media-p403-page">
+      <PrejoinStudioFrame {...frameProps}>
         <section className="media-p403-alert" role="alert">
           <h1>{t("media.p403.spaceUnavailable")}</h1>
           <p>{t("media.p403.spaceUnavailableDescription")}</p>
@@ -632,7 +666,7 @@ export function MediaSpacePreJoinPage() {
             {t("state.retry")}
           </button>
         </section>
-      </div>
+      </PrejoinStudioFrame>
     );
   }
   const room = projectedRoom;
@@ -646,7 +680,7 @@ export function MediaSpacePreJoinPage() {
       ((failedRoom && viewerOperations.canRecover) || recoveryCommand)
     ) {
       return (
-        <div className="media-p403-page">
+        <PrejoinStudioFrame {...frameProps}>
           <section className="media-p403-alert" role="alert">
             <h1>{t("media.p409.recoveryTitle")}</h1>
             <p>
@@ -670,39 +704,43 @@ export function MediaSpacePreJoinPage() {
               )}
             </button>
           </section>
-        </div>
+        </PrejoinStudioFrame>
       );
     }
-    return <MediaSpaceFailure message={t("media.p403.roomNotOpen")} />;
+    return (
+      <PrejoinStudioFrame {...frameProps}>
+        <MediaSpaceFailure message={t("media.p403.roomNotOpen")} />
+      </PrejoinStudioFrame>
+    );
   }
-  const previewActive =
-    snapshot.status === "preview_ready" ||
-    snapshot.status === "switching_device";
   const joinActionLocked =
     currentJoinStatus !== "idle" && currentJoinStatus !== "failed";
+  const joinInFlight =
+    currentJoinStatus === "creating_attempt" ||
+    currentJoinStatus === "credential";
+  const previewButtonDisabled =
+    !controller ||
+    snapshot.status === "requesting_permission" ||
+    snapshot.status === "switching_device";
+  const previewButtonLabel = snapshot.permissionGranted
+    ? t("media.p403.retryPreview")
+    : t("media.p403.startPreview");
 
   return (
-    <div className="media-p403-page">
-      <Link to={returnTo}>
-        {returnTo === "/app/home"
-          ? t("media.p403.back")
-          : t("media.p403.backToClass")}
-      </Link>
-      <header className="media-p403-heading">
+    <PrejoinStudioFrame {...frameProps}>
+      <div className="media-p403-heading">
         <p>{t("media.prejoin.kicker")}</p>
         <h1>{t("media.p403.title")}</h1>
         <span>{t("media.p403.description")}</span>
-      </header>
+      </div>
 
-      <section
-        className="media-p403-grid"
-        aria-busy={
-          currentJoinStatus === "creating_attempt" ||
-          currentJoinStatus === "credential"
-        }
-      >
+      <section className="media-p403-grid" aria-busy={joinInFlight}>
         <div className="media-p403-preview-panel">
-          <div className="media-p403-preview">
+          <div
+            className={`media-p403-preview${
+              previewActive ? " media-p403-preview--active" : ""
+            }`}
+          >
             <video
               aria-label={t("media.p403.previewLabel")}
               autoPlay
@@ -712,35 +750,57 @@ export function MediaSpacePreJoinPage() {
             />
             {!previewActive && (
               <div className="media-p403-preview-placeholder">
+                <span
+                  aria-hidden="true"
+                  className="media-p403-preview-placeholder__icons"
+                >
+                  <VideoOff />
+                  <MicOff />
+                </span>
                 <strong>{t("media.p403.previewOff")}</strong>
                 <span>{t("media.p403.previewConsent")}</span>
+                <Button
+                  className="media-p403-preview-placeholder__action"
+                  disabled={previewButtonDisabled}
+                  onClick={(event) => {
+                    previewFocusHandoff.current =
+                      document.activeElement === event.currentTarget;
+                    void controller?.startPreview();
+                  }}
+                  ref={placeholderPreviewAction}
+                  size="md"
+                  variant="primary"
+                >
+                  {previewButtonLabel}
+                </Button>
               </div>
             )}
           </div>
 
-          <div className="media-p403-actions">
-            <button
-              disabled={
-                !controller ||
-                snapshot.status === "requesting_permission" ||
-                snapshot.status === "switching_device"
-              }
-              onClick={() => void controller?.startPreview()}
-              type="button"
-            >
-              {snapshot.permissionGranted
-                ? t("media.p403.retryPreview")
-                : t("media.p403.startPreview")}
-            </button>
-            {previewActive && (
-              <button
-                onClick={() => void controller?.stopPreview()}
-                type="button"
+          {previewActive && (
+            <div className="media-p403-actions">
+              <Button
+                disabled={previewButtonDisabled}
+                onClick={() => void controller?.startPreview()}
+                ref={activePreviewAction}
+                size="md"
+                variant="secondary"
+              >
+                {previewButtonLabel}
+              </Button>
+              <Button
+                onClick={(event) => {
+                  previewFocusHandoff.current =
+                    document.activeElement === event.currentTarget;
+                  void controller?.stopPreview();
+                }}
+                size="md"
+                variant="quiet"
               >
                 {t("media.p403.stopPreview")}
-              </button>
-            )}
-          </div>
+              </Button>
+            </div>
+          )}
 
           {snapshot.errorCode && (
             <section className="media-p403-alert" role="alert">
@@ -758,50 +818,40 @@ export function MediaSpacePreJoinPage() {
           className="media-p403-readiness"
           aria-label={t("media.p403.readinessLabel")}
         >
-          <h2>{t("media.prejoin.checkHeading")}</h2>
-          <dl>
-            <div>
-              <dt>{t("media.p403.network")}</dt>
-              <dd aria-live="polite">
-                {t(networkStatusKey(networkStatus))}
-                {networkStatus === "ready" && networkLatency !== "unknown"
-                  ? ` · ${t(networkLatencyKey(networkLatency))}`
-                  : ""}
-              </dd>
-            </div>
-            <div>
-              <dt>{t("media.p403.effect")}</dt>
-              <dd>{t("media.p403.effectNone")}</dd>
-            </div>
-          </dl>
-          <p>{t("media.p403.networkPrivacy")}</p>
+          <h2>{t("media.p403.readyHeading")}</h2>
+          <p className="media-p403-readiness__lead">
+            {t("media.p403.readyDescription")}
+          </p>
 
           <div className="media-p403-join-actions">
-            <button
+            <Button
+              className="media-p403-join-primary"
               disabled={joinActionLocked}
               onClick={() =>
                 void submitJoin(
                   controller?.choices(false) ?? listenOnlyChoices(),
                 )
               }
-              type="button"
+              size="lg"
+              variant="primary"
             >
-              {currentJoinStatus === "creating_attempt" ||
-              currentJoinStatus === "credential"
-                ? t("media.prejoin.joining")
+              {joinInFlight
+                ? t("media.p403.joining")
                 : t("media.p403.joinWithDevices")}
-            </button>
-            <button
+            </Button>
+            <Button
+              className="media-p403-join-secondary"
               disabled={joinActionLocked}
               onClick={() =>
                 void submitJoin(
                   controller?.choices(true) ?? listenOnlyChoices(),
                 )
               }
-              type="button"
+              size="md"
+              variant="secondary"
             >
               {t("media.p403.joinListenOnly")}
-            </button>
+            </Button>
           </div>
           {currentJoinErrorKey && (
             <section
@@ -830,6 +880,25 @@ export function MediaSpacePreJoinPage() {
               </button>
             </section>
           )}
+
+          <dl>
+            <div>
+              <dt>{t("media.p403.network")}</dt>
+              <dd aria-live="polite">
+                {t(networkStatusKey(networkStatus))}
+                {networkStatus === "ready" && networkLatency !== "unknown"
+                  ? ` · ${t(networkLatencyKey(networkLatency))}`
+                  : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("media.p403.effect")}</dt>
+              <dd>{t("media.p403.effectNone")}</dd>
+            </div>
+          </dl>
+          <p className="media-p403-readiness__note">
+            {t("media.p403.networkPrivacy")}
+          </p>
         </aside>
       </section>
 
@@ -923,7 +992,7 @@ export function MediaSpacePreJoinPage() {
       {organizationRole === "org_admin" && (
         <MediaDiagnosticsPanel tenantID={tenantId} />
       )}
-    </div>
+    </PrejoinStudioFrame>
   );
 }
 
@@ -1102,16 +1171,126 @@ function prejoinReturnPath(state: unknown): string {
   return "/app/home";
 }
 
+const prejoinClassTitleLimit = 80;
+
+/**
+ * Accepts a launcher-provided class name only as short plain text; anything
+ * else is dropped so route state can never inject markup or a huge string.
+ */
+function prejoinClassTitle(state: unknown): string | null {
+  if (typeof state !== "object" || state === null || !("classTitle" in state)) {
+    return null;
+  }
+  const value = (state as { classTitle?: unknown }).classTitle;
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = Array.from(value, (character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? " " : character;
+  })
+    .join("")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (!normalized) {
+    return null;
+  }
+  const codePoints = Array.from(normalized);
+  return codePoints.length > prejoinClassTitleLimit
+    ? `${codePoints.slice(0, prejoinClassTitleLimit).join("").trimEnd()}…`
+    : normalized;
+}
+
+/**
+ * PREJOIN-UX-01 focused studio frame: a thin header (back link, brand, class,
+ * workspace, language) above a centred `<main>`, rendered for every Pre-Join
+ * state so the viewer can always switch language or leave.
+ */
+function PrejoinStudioFrame({
+  busy = false,
+  children,
+  classTitle,
+  returnTo,
+}: {
+  busy?: boolean;
+  children: ReactNode;
+  classTitle: string | null;
+  returnTo: string;
+}) {
+  const { language, setLanguage, t } = useI18n();
+  const session = useSession();
+  const workspaceName = session.currentUser?.active_tenant?.name?.trim() ?? "";
+
+  return (
+    <div className="media-p403-page media-p403-studio">
+      <header className="media-p403-studio__bar">
+        <div className="media-p403-studio__start">
+          <Link className="media-p403-studio__back" to={returnTo}>
+            {returnTo === "/app/home"
+              ? t("media.p403.back")
+              : t("media.p403.backToClass")}
+          </Link>
+          <span aria-hidden="true" className="media-p403-studio__divider" />
+          <span className="media-p403-studio__brand">
+            <span aria-hidden="true" className="media-p403-studio__mark">
+              TH
+            </span>
+            <strong>{t("brand.product")}</strong>
+            {classTitle && (
+              <span className="media-p403-studio__class" title={classTitle}>
+                <span className="visually-hidden">
+                  {t("media.p403.studioClass")}:{" "}
+                </span>
+                {classTitle}
+              </span>
+            )}
+          </span>
+        </div>
+        <div className="media-p403-studio__end">
+          {workspaceName && (
+            <span
+              className="media-p403-studio__workspace"
+              title={workspaceName}
+            >
+              <Building2 aria-hidden="true" />
+              <span className="visually-hidden">
+                {t("workspace.activeLabel")}:{" "}
+              </span>
+              <span className="media-p403-studio__workspace-name">
+                {workspaceName}
+              </span>
+            </span>
+          )}
+          <label className="language-select">
+            <span className="visually-hidden">{t("shell.language")}</span>
+            <select
+              aria-label={t("shell.language")}
+              onChange={(event) =>
+                setLanguage(event.target.value as typeof language)
+              }
+              value={language}
+            >
+              <option value="vi">Tiếng Việt</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+        </div>
+      </header>
+      <main aria-busy={busy || undefined} className="media-p403-studio__main">
+        {children}
+      </main>
+    </div>
+  );
+}
+
 function MediaSpaceFailure({ message }: { message: string }) {
   const { t } = useI18n();
   return (
-    <div className="media-p403-page">
-      <section className="media-p403-alert" role="alert">
-        <h1>{t("media.prejoin.unavailableTitle")}</h1>
-        <p>{message}</p>
-        <Link to="/app/home">{t("media.p403.back")}</Link>
-      </section>
-    </div>
+    <section className="media-p403-alert" role="alert">
+      <h1>{t("media.prejoin.unavailableTitle")}</h1>
+      <p>{message}</p>
+      <Link to="/app/home">{t("media.p403.back")}</Link>
+    </section>
   );
 }
 

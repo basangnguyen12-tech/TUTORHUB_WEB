@@ -30,10 +30,52 @@ function shouldRetryWhiteboardQuery(failureCount: number, error: Error) {
   );
 }
 
+/**
+ * Responses after which re-polling cannot succeed without a new decision
+ * (session, membership, missing space or the feature being switched off), so
+ * a background poll stops instead of hammering the Core API.
+ */
+const terminalWhiteboardPollStatuses: ReadonlySet<number> = new Set([
+  401, 403, 404, 503,
+]);
+
+export interface WhiteboardToolOptions {
+  /**
+   * Re-read the server projection on this interval while the tab is visible.
+   * Omitted (the default) keeps the one-shot behaviour of the tool itself.
+   */
+  readonly pollIntervalMs?: number;
+}
+
+/**
+ * Polling interval for the whiteboard projection: only when a positive
+ * interval is requested and the last fetch did not end in a terminal error.
+ */
+export function whiteboardToolPollInterval(
+  pollIntervalMs: number | undefined,
+  error: Error | null,
+): number | false {
+  if (
+    pollIntervalMs === undefined ||
+    !Number.isFinite(pollIntervalMs) ||
+    pollIntervalMs <= 0
+  ) {
+    return false;
+  }
+  if (
+    error instanceof APIRequestError &&
+    terminalWhiteboardPollStatuses.has(error.status)
+  ) {
+    return false;
+  }
+  return pollIntervalMs;
+}
+
 export function useWhiteboardTool(
   tenantID: string,
   mediaSpaceID: string,
   enabled: boolean,
+  { pollIntervalMs }: WhiteboardToolOptions = {},
 ) {
   return useQuery({
     queryKey: whiteboardQueryKeys.tool(tenantID, mediaSpaceID),
@@ -43,6 +85,9 @@ export function useWhiteboardTool(
         signal,
       }),
     enabled,
+    refetchInterval: (query) =>
+      whiteboardToolPollInterval(pollIntervalMs, query.state.error),
+    refetchIntervalInBackground: false,
     retry: shouldRetryWhiteboardQuery,
     staleTime: 5_000,
   });

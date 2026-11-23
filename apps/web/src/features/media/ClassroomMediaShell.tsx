@@ -126,6 +126,13 @@ export interface ClassroomMediaShellProps {
 export type ClassroomToolID = "whiteboard";
 
 export interface ClassroomToolDefinition {
+  /**
+   * PREJOIN-UX-01: a server-derived token (e.g. `documentID:generation`) that
+   * asks the shell to bring this tool onto the stage once. Each distinct key
+   * opens the stage at most one time without moving keyboard focus, so a
+   * viewer who closes it keeps camera view until a new key arrives.
+   */
+  readonly autoOpenKey?: string | null;
   readonly content: ReactNode;
   readonly icon: ReactNode;
   readonly id: ClassroomToolID;
@@ -199,6 +206,10 @@ const initialLayoutState: ClassroomLayoutState = {
   presentationRestore: null,
 };
 
+function classroomToolAutoOpenSeenKey(tool: ClassroomToolDefinition): string {
+  return `${tool.id}\u0000${tool.autoOpenKey ?? ""}`;
+}
+
 const layoutModes: readonly ClassroomLayoutMode[] = [
   "grid",
   "active-speaker",
@@ -243,6 +254,11 @@ export function ClassroomMediaShell({
   const [rosterOpen, setRosterOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [openToolID, setOpenToolID] = useState<ClassroomToolID | null>(null);
+  const [autoOpenedToolID, setAutoOpenedToolID] =
+    useState<ClassroomToolID | null>(null);
+  const [seenAutoOpenKeys, setSeenAutoOpenKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [signalFeedback, setSignalFeedback] = useState<TranslationKey | null>(
     null,
   );
@@ -904,12 +920,33 @@ export function ClassroomMediaShell({
     nextControl?.focus();
   };
 
+  // A presenter-driven key (for example the whiteboard opening a new
+  // generation) brings its tool onto the stage exactly once per key and never
+  // moves keyboard focus. A key already seen is ignored, so a manual close
+  // sticks until the server projects a different key. This adjusts state
+  // while rendering (React's "store information from previous renders"
+  // pattern) instead of a synchronous setState inside an effect.
+  const pendingAutoOpenTool = tools.find(
+    (tool) =>
+      Boolean(tool.autoOpenKey) &&
+      !seenAutoOpenKeys.has(classroomToolAutoOpenSeenKey(tool)),
+  );
+  if (pendingAutoOpenTool) {
+    const seenKey = classroomToolAutoOpenSeenKey(pendingAutoOpenTool);
+    setSeenAutoOpenKeys((current) => new Set(current).add(seenKey));
+    if (openToolID !== pendingAutoOpenTool.id) {
+      setOpenToolID(pendingAutoOpenTool.id);
+      setAutoOpenedToolID(pendingAutoOpenTool.id);
+    }
+  }
+
   const activeTool = tools.find((tool) => tool.id === openToolID) ?? null;
 
   // The tool stage is a non-modal region: the classroom Dock stays reachable
   // while drawing, so opening moves focus to the stage heading and closing
   // returns it to the exact toolbar control that owns the tool.
   const toggleTool = (toolID: ClassroomToolID) => {
+    setAutoOpenedToolID(null);
     if (openToolID === toolID) {
       setOpenToolID(null);
       return;
@@ -920,6 +957,7 @@ export function ClassroomMediaShell({
 
   const closeActiveTool = () => {
     if (!activeTool) return;
+    setAutoOpenedToolID(null);
     setOpenToolID(null);
     scheduleElementFocus(`media-p506-control-${activeTool.id}`);
   };
@@ -1068,6 +1106,16 @@ export function ClassroomMediaShell({
         role="status"
       >
         {reactionTotal > 0 ? reactionAnnouncement : ""}
+      </p>
+      <p
+        aria-atomic="true"
+        aria-live="polite"
+        className="visually-hidden"
+        role="status"
+      >
+        {activeTool && autoOpenedToolID === activeTool.id
+          ? t("media.p506.toolAutoOpened", { title: activeTool.title })
+          : ""}
       </p>
       {mediaError && (
         <div className="media-p405-error" role="alert">

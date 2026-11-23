@@ -1059,6 +1059,64 @@ describe("web shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("mở Pre-Join MediaSpace thành studio riêng ngoài AppShell", async () => {
+    const spaceID = "c2dc1048-1d90-4c90-ae50-5fb436bfb607";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request =
+          input instanceof Request ? input : new Request(input, init);
+        const { pathname } = new URL(request.url);
+        if (pathname === `/api/v1/media/spaces/${spaceID}`) {
+          return new Response(
+            JSON.stringify({
+              id: spaceID,
+              source: {
+                kind: "class_session",
+                class_session_id: "8477ee76-c4aa-431f-bb65-405f4b6575c9",
+              },
+              status: "open",
+              version: 4,
+              active_room_instance: {
+                id: "c5f918a5-a09e-4f94-9fab-fb0ab5702a4d",
+                status: "active",
+                version: 2,
+                created_at: "2030-08-03T00:00:00Z",
+                updated_at: "2030-08-03T00:01:00Z",
+              },
+              recovery_room_instance: null,
+              viewer_operations: {},
+              created_at: "2030-08-03T00:00:00Z",
+              updated_at: "2030-08-03T00:01:00Z",
+            }),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ status: "ok" }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    renderRoute(`/app/media/spaces/${spaceID}/prejoin`);
+
+    expect(
+      await screen.findByRole("heading", { name: "Sẵn sàng vào phòng học" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "Điều hướng chính" }),
+    ).not.toBeInTheDocument();
+    const banner = screen.getByRole("banner");
+    expect(within(banner).getByText("TutorHub Test")).toBeInTheDocument();
+    expect(
+      within(banner).getByRole("combobox", { name: "Ngôn ngữ" }),
+    ).toBeInTheDocument();
+    expect(
+      within(banner).getByRole("link", { name: "← Về Trang chủ" }),
+    ).toHaveAttribute("href", "/app/home");
+    expect(screen.getAllByRole("main")).toHaveLength(1);
+  });
+
   it("hiển thị trang 404 cho route không tồn tại", async () => {
     renderRoute("/khong-ton-tai");
 

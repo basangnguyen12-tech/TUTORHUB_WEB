@@ -320,10 +320,6 @@ export function createAppRoutes(): RouteObject[] {
                   element: <ClassroomPreJoinPage />,
                 },
                 {
-                  path: "media/spaces/:spaceId/prejoin",
-                  element: <MediaSpacePreJoinPage />,
-                },
-                {
                   path: "messages",
                   element: <ConversationsPage />,
                 },
@@ -384,6 +380,14 @@ export function createAppRoutes(): RouteObject[] {
             {
               path: "classrooms/:classId/room",
               element: <ClassroomRoomPage />,
+              errorElement: <RouteErrorBoundary />,
+            },
+            {
+              // PREJOIN-UX-01: a focused full-viewport studio with its own thin
+              // header (back link, brand, workspace, language) instead of the
+              // sidebar AppShell, matching the room stage it hands off to.
+              path: "media/spaces/:spaceId/prejoin",
+              element: <MediaSpacePreJoinPage />,
               errorElement: <RouteErrorBoundary />,
             },
             {

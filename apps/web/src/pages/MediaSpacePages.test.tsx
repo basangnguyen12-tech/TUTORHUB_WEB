@@ -15,6 +15,7 @@ import {
   APIRequestError,
   type CurrentUser,
   type MediaSpace,
+  type WhiteboardToolProjection,
 } from "@tutorhub/api-client";
 import { StrictMode } from "react";
 import {
@@ -51,6 +52,7 @@ const apiMocks = vi.hoisted(() => ({
   mutateSignal: vi.fn(),
   recordDiagnostic: vi.fn(),
   recoverMediaSpace: vi.fn(),
+  resolveWhiteboard: vi.fn(),
   rotateCSRFToken: vi.fn(),
 }));
 
@@ -103,6 +105,7 @@ vi.mock("@tutorhub/api-client", async (importOriginal) => {
     mutateMediaSpaceSignal: apiMocks.mutateSignal,
     recordMediaSpaceDiagnostic: apiMocks.recordDiagnostic,
     recoverMediaSpace: apiMocks.recoverMediaSpace,
+    resolveWhiteboard: apiMocks.resolveWhiteboard,
     rotateCSRFToken: apiMocks.rotateCSRFToken,
   };
 });
@@ -125,6 +128,7 @@ vi.mock("../features/media/ClassroomMediaShell", () => ({
     onLeave: () => void;
     onTerminalMediaCleanup: () => Promise<void>;
     tools?: Array<{
+      autoOpenKey?: string | null;
       content?: { props?: { enabled?: boolean } };
       id: string;
     }>;
@@ -212,6 +216,7 @@ const roomInstanceID = "c5f918a5-a09e-4f94-9fab-fb0ab5702a4d";
 const participantSessionID = "f680fd29-c7f1-4083-af9b-52ad1db14ba9";
 const joinAttemptID = "a860f06d-34f9-4c57-89f8-1541bfb3b6d7";
 const participantOpaqueID = "018f4c7b-9b0a-7a34-8a4c-96d26cb87221";
+const whiteboardDocumentID = "6f1d7e2a-3b9c-4d8e-9f10-2a3b4c5d6e7f";
 
 function tenantCapabilitiesWithWhiteboard(enabled: boolean) {
   const capabilities = availableTenantCapabilities(tenantID);
@@ -482,6 +487,47 @@ function renderedWhiteboardEnabled(): boolean | undefined {
     ?.props?.enabled;
 }
 
+function renderedWhiteboardAutoOpenKey(): string | null | undefined {
+  const shellProps = liveKitMocks.shellRender.mock.lastCall?.[0] as
+    { tools?: Array<{ autoOpenKey?: string | null; id: string }> } | undefined;
+
+  return shellProps?.tools?.find((tool) => tool.id === "whiteboard")
+    ?.autoOpenKey;
+}
+
+function whiteboardProjection(
+  overrides: {
+    canExchangeGrant?: boolean;
+    generation?: number;
+    status?: "created" | "open" | "suspended" | "closed";
+  } = {},
+): WhiteboardToolProjection {
+  return {
+    can_create: false,
+    document: {
+      id: whiteboardDocumentID,
+      media_space_id: spaceID,
+      status: overrides.status ?? "open",
+      current_generation: overrides.generation ?? 3,
+      revoke_generation: 1,
+      version: 5,
+      created_at: "2030-08-03T00:00:00Z",
+      updated_at: "2030-08-03T00:02:00Z",
+      viewer_capabilities: {
+        can_close: false,
+        can_create_snapshot: false,
+        can_exchange_grant: overrides.canExchangeGrant ?? true,
+        can_export: false,
+        can_open: false,
+        can_restore: false,
+        can_resume: false,
+        can_suspend: false,
+        capability: "view",
+      },
+    },
+  };
+}
+
 function putCanonicalRoomEscrow(
   choices: {
     audioEnabled: boolean;
@@ -592,6 +638,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     apiMocks.mutateSignal.mockReset();
     apiMocks.recordDiagnostic.mockReset();
     apiMocks.recoverMediaSpace.mockReset();
+    apiMocks.resolveWhiteboard.mockReset();
     apiMocks.rotateCSRFToken.mockReset();
     liveKitMocks.listeners.clear();
     liveKitMocks.roomConnect.mockReset().mockResolvedValue(undefined);
@@ -659,6 +706,199 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
       );
       expect(renderedWhiteboardEnabled()).toBe(false);
     });
+  });
+
+  it("passes a presenter auto-open key only for an open whiteboard the viewer can join", async () => {
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithWhiteboard(true),
+    );
+    apiMocks.resolveWhiteboard.mockResolvedValue(whiteboardProjection());
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    await waitFor(() => expect(renderedWhiteboardEnabled()).toBe(true));
+    // The projection is only read once the LiveKit room is connected.
+    expect(apiMocks.resolveWhiteboard).not.toHaveBeenCalled();
+    expect(renderedWhiteboardAutoOpenKey()).toBeNull();
+
+    act(() => emitRoomEvent("connected"));
+
+    await waitFor(() =>
+      expect(renderedWhiteboardAutoOpenKey()).toBe(`${whiteboardDocumentID}:3`),
+    );
+    expect(apiMocks.resolveWhiteboard).toHaveBeenCalledWith(
+      tenantID,
+      spaceID,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it.each([
+    { label: "a suspended board", overrides: { status: "suspended" as const } },
+    {
+      label: "a board without a grant",
+      overrides: { canExchangeGrant: false },
+    },
+  ])("keeps the whiteboard stage closed for $label", async ({ overrides }) => {
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithWhiteboard(true),
+    );
+    apiMocks.resolveWhiteboard.mockResolvedValue(
+      whiteboardProjection(overrides),
+    );
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    await waitFor(() => expect(renderedWhiteboardEnabled()).toBe(true));
+
+    act(() => emitRoomEvent("connected"));
+
+    await waitFor(() =>
+      expect(apiMocks.resolveWhiteboard).toHaveBeenCalledTimes(1),
+    );
+    await act(async () => Promise.resolve());
+    expect(renderedWhiteboardAutoOpenKey()).toBeNull();
+  });
+
+  it("renders the focused studio header outside the app shell", async () => {
+    renderPrejoin(fakeMediaDevices(fakeStream().stream), {
+      returnTo: "/app/classrooms/abc",
+      classTitle: "  Physics\u0000 10A  ",
+    });
+
+    await screen.findByRole("heading", { name: "Get ready for class" });
+    const banner = screen.getByRole("banner");
+    expect(
+      within(banner).getByRole("link", { name: "← Back to class" }),
+    ).toHaveAttribute("href", "/app/classrooms/abc");
+    expect(within(banner).getByText("TutorHub")).toBeInTheDocument();
+    expect(within(banner).getByText("Physics 10A")).toBeInTheDocument();
+    expect(within(banner).getByText("TutorHub Test")).toBeInTheDocument();
+    expect(screen.getByRole("main")).toContainElement(
+      screen.getByRole("heading", { name: "Get ready for class" }),
+    );
+    expect(
+      screen.queryByRole("navigation", { name: "Main navigation" }),
+    ).not.toBeInTheDocument();
+
+    const readiness = screen.getByRole("complementary", {
+      name: "Join readiness status",
+    });
+    expect(
+      within(readiness).getByRole("heading", { name: "Ready to join?" }),
+    ).toBeInTheDocument();
+    expect(within(readiness).getByText("Connection status")).toBeVisible();
+    expect(
+      within(readiness).getByText(
+        "Your camera and microphone stay off until you test them and can be toggled anytime in class.",
+      ),
+    ).toBeVisible();
+    expect(document.body).not.toHaveTextContent(
+      /Core API|credential|SDP|health endpoint/,
+    );
+    const primary = within(readiness).getByRole("button", {
+      name: "Join with enabled devices",
+    });
+    const secondary = within(readiness).getByRole("button", {
+      name: "Join listen-only",
+    });
+    expect(primary).toHaveClass("th-button--primary");
+    expect(secondary).toHaveClass("th-button--secondary");
+    expect(
+      primary.compareDocumentPosition(secondary) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const language = within(banner).getByRole("combobox", {
+      name: "Language",
+    });
+    expect(language.closest(".language-select")).not.toBeNull();
+    fireEvent.change(language, { target: { value: "vi" } });
+    expect(
+      await screen.findByRole("heading", { name: "Sẵn sàng vào phòng học" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Chất lượng kết nối")).toBeVisible();
+  });
+
+  it("drops a non-text class title and shortens an oversized one", async () => {
+    renderPrejoin(fakeMediaDevices(fakeStream().stream), {
+      returnTo: "/app/classrooms/abc",
+      classTitle: { html: "<img src=x>" },
+    });
+    await screen.findByRole("heading", { name: "Get ready for class" });
+    expect(
+      screen.getByRole("banner").querySelector(".media-p403-studio__class"),
+    ).toBeNull();
+
+    cleanup();
+    renderPrejoin(fakeMediaDevices(fakeStream().stream), {
+      classTitle: "A".repeat(200),
+    });
+    await screen.findByRole("heading", { name: "Get ready for class" });
+    expect(
+      screen.getByRole("banner").querySelector(".media-p403-studio__class")
+        ?.textContent,
+    ).toBe(`Class: ${"A".repeat(80)}…`);
+  });
+
+  it("keeps the language switch and back link available while the space loads", async () => {
+    const space = createDeferred<MediaSpace>();
+    apiMocks.getMediaSpace.mockReset().mockReturnValue(space.promise);
+    renderPrejoin(fakeMediaDevices(fakeStream().stream));
+
+    const banner = await screen.findByRole("banner");
+    expect(screen.getByRole("main")).toHaveAttribute("aria-busy", "true");
+    expect(
+      within(banner).getByRole("combobox", { name: "Language" }),
+    ).toBeInTheDocument();
+    expect(
+      within(banner).getByRole("link", { name: "← Back to Home" }),
+    ).toHaveAttribute("href", "/app/home");
+
+    await act(async () => {
+      space.resolve(mediaSpace);
+      await space.promise;
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Get ready for class" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("main")).not.toHaveAttribute("aria-busy");
+  });
+
+  it("moves keyboard focus with the device-check control between the frame and the toolbar", async () => {
+    const media = fakeMediaDevices(fakeStream().stream);
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Get ready for class" });
+
+    const start = screen.getByRole("button", {
+      name: "Test camera and microphone",
+    });
+    expect(start.closest(".media-p403-preview")).not.toBeNull();
+    start.focus();
+    fireEvent.click(start);
+
+    const retry = await screen.findByRole("button", {
+      name: "Test devices again",
+    });
+    expect(retry.closest(".media-p403-preview")).toBeNull();
+    await waitFor(() => expect(retry).toHaveFocus());
+
+    const stop = screen.getByRole("button", { name: "Stop preview" });
+    stop.focus();
+    fireEvent.click(stop);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Stop preview" }),
+      ).not.toBeInTheDocument(),
+    );
+    const placeholderAction = screen.getByRole("button", {
+      name: "Test devices again",
+    });
+    expect(placeholderAction.closest(".media-p403-preview")).not.toBeNull();
+    await waitFor(() => expect(placeholderAction).toHaveFocus());
+    expect(media.getUserMedia).toHaveBeenCalledTimes(1);
   });
 
   it("does not capture media or create a join attempt during initial render", async () => {
