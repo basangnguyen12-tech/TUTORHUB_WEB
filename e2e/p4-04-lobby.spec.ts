@@ -192,8 +192,13 @@ async function openEnglishPrejoin(page: Page) {
   const language = page.locator(".language-select select");
   await language.selectOption("en");
   await expect(
-    page.getByRole("heading", { name: "Get ready for class" }),
+    page.getByRole("heading", { name: "Enter Meeting" }),
   ).toBeVisible();
+}
+
+/** Joins without opening a device: nothing was enabled in the preview. */
+async function joinWithoutDevices(page: Page) {
+  await page.getByRole("button", { name: "Join", exact: true }).click();
 }
 
 function observeProviderWebSockets(page: Page) {
@@ -214,7 +219,7 @@ test("P4-04 waiting cancellation keeps provider credential and connection at zer
   const websockets = observeProviderWebSockets(page);
   await openEnglishPrejoin(page);
 
-  await page.getByRole("button", { name: "Join listen-only" }).click();
+  await joinWithoutDevices(page);
   await expect(
     page.getByRole("heading", { name: "Waiting to be admitted" }),
   ).toBeVisible();
@@ -247,7 +252,7 @@ test("P4-04 denied projection is terminal and never mints a credential", async (
   const fixture = await installWaitingFixture(page);
   const websockets = observeProviderWebSockets(page);
   await openEnglishPrejoin(page);
-  await page.getByRole("button", { name: "Join listen-only" }).click();
+  await joinWithoutDevices(page);
   await expect(
     page.getByRole("heading", { name: "Waiting to be admitted" }),
   ).toBeVisible();

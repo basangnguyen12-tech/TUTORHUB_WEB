@@ -5,37 +5,40 @@ import {
   issueMediaSpaceJoinCredential,
   recoverMediaSpace,
   rotateCSRFToken,
+  updateProfile,
+  type ProfileResponse,
   type RecoverMediaSpaceRequest,
 } from "@tutorhub/api-client";
 import { useQuery } from "@tanstack/react-query";
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
 } from "@tutorhub/ui";
 import {
-  Activity,
   AlertTriangle,
-  Building2,
-  ChevronDown,
-  Clock3,
-  Headphones,
-  Info,
+  EllipsisVertical,
+  Grip,
   Mic,
   MicOff,
   PowerOff,
   RefreshCw,
-  ShieldCheck,
+  Sparkles,
   Video,
   VideoOff,
   Volume2,
 } from "lucide-react";
 import {
+  forwardRef,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -43,6 +46,7 @@ import {
   useSyncExternalStore,
   type CSSProperties,
   type FormEvent,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
@@ -53,6 +57,7 @@ import {
   MediaPrejoinController,
   probeMediaNetwork,
   putMediaRoomEscrow,
+  type MediaAudioMode,
   type MediaJoinChoices,
   type MediaJoinAttemptProjection,
   type MediaNetworkStatus,
@@ -71,7 +76,9 @@ import {
   recordBoundedMediaDiagnostic,
 } from "../app/mediaDiagnostics";
 import { MediaSpaceInvitePanel } from "../components/MediaSpaceInvitePanel";
-import { MediaDiagnosticsPanel } from "../components/MediaDiagnosticsPanel";
+import { SignInLegalDialog } from "./SignInLegalDialog";
+import type { SignInLegalTab } from "./signInLegalContent";
+import "./SignInPage.css";
 import "./MediaSpacePrejoin.css";
 
 type JoinStatus =
@@ -91,6 +98,16 @@ interface MediaJoinState {
   errorKey: TranslationKey | null;
   attempt: MediaJoinAttemptProjection | null;
   choices: MediaJoinChoices | null;
+}
+/** The Pre-Join name input accepts this many characters (the API allows 120). */
+const prejoinDisplayNameLimit = 80;
+
+/** Marks a failed profile save so it maps to its own, actionable message. */
+class PrejoinNameSaveError extends Error {
+  constructor() {
+    super("prejoin_display_name_not_saved");
+    this.name = "PrejoinNameSaveError";
+  }
 }
 const unsupportedSnapshot: MediaPrejoinSnapshot = {
   status: "degraded",
@@ -125,9 +142,19 @@ export function MediaSpacePreJoinPage() {
   const session = useSession();
   const tenantId = session.currentUser?.active_tenant?.id ?? "";
   const userId = session.currentUser?.user.id ?? "";
-  const organizationRole = session.currentUser?.active_tenant?.role ?? "";
   // Only the display name is ever rendered; the account email never is.
-  const displayName = session.currentUser?.user.display_name.trim() ?? "";
+  const sessionDisplayName = session.currentUser?.user.display_name ?? "";
+  // `null` until the viewer types, so the field follows the session name
+  // (including when the session finishes loading) without an effect.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [rememberName, setRememberName] = useState(true);
+  const nameFieldId = useId();
+  const nameValue = nameDraft ?? sessionDisplayName;
+  // The camera frame shows the typed name, or the account name when empty.
+  const previewName = nameValue.trim() || sessionDisplayName.trim();
+  const [legalOpen, setLegalOpen] = useState(false);
+  const [legalTab, setLegalTab] = useState<SignInLegalTab>("agreement");
+  const legalReturnFocus = useRef<HTMLElement | null>(null);
   const [joinState, setJoinState] = useState<MediaJoinState>({
     scopeKey: "",
     status: "idle",
@@ -146,6 +173,9 @@ export function MediaSpacePreJoinPage() {
   const [recoveryError, setRecoveryError] = useState(false);
   const handoffCreated = useRef(false);
   const terminalHeading = useRef<HTMLHeadingElement>(null);
+  const waitingHeading = useRef<HTMLHeadingElement>(null);
+  const cameraToggle = useRef<HTMLButtonElement>(null);
+  const allowFocusHandoff = useRef(false);
   const activeJoinRequest = useRef<AbortController | null>(null);
   const cancelCommand = useRef<{ attemptID: string; key: string } | null>(null);
   const joinScopeKey = `${tenantId}\u0000${userId}\u0000${spaceId ?? ""}`;
@@ -176,9 +206,6 @@ export function MediaSpacePreJoinPage() {
   const previewActive =
     snapshot.status === "preview_ready" ||
     snapshot.status === "switching_device";
-  const placeholderPreviewAction = useRef<HTMLButtonElement>(null);
-  const activePreviewAction = useRef<HTMLButtonElement>(null);
-  const previewFocusHandoff = useRef(false);
   // A stable ref callback: an inline arrow would detach and re-attach the
   // preview stream on every render (the mic meter re-renders often).
   const attachPreview = useCallback(
@@ -186,21 +213,19 @@ export function MediaSpacePreJoinPage() {
     [controller],
   );
 
-  // The device-check button sits in the middle of the 16:9 frame while the
-  // preview is off and moves into the floating dock once the preview runs.
-  // Keep keyboard focus on the equivalent control when one replaces the other.
+  // "Allow microphone and camera" leaves the frame once access is granted;
+  // keep keyboard focus on the camera button that now sits in its place.
   useLayoutEffect(() => {
-    if (!previewFocusHandoff.current) {
+    if (!allowFocusHandoff.current) {
       return;
     }
-    const target = previewActive
-      ? activePreviewAction.current
-      : placeholderPreviewAction.current;
-    if (target) {
-      previewFocusHandoff.current = false;
-      target.focus();
+    if (snapshot.permissionGranted) {
+      allowFocusHandoff.current = false;
+      cameraToggle.current?.focus();
+    } else if (snapshot.status === "degraded") {
+      allowFocusHandoff.current = false;
     }
-  }, [previewActive]);
+  }, [snapshot.permissionGranted, snapshot.status]);
 
   useEffect(() => {
     if (!controller) {
@@ -370,7 +395,14 @@ export function MediaSpacePreJoinPage() {
     ],
   );
 
-  const submitJoin = async (choices: MediaJoinChoices) => {
+  /**
+   * `profileName` is the edited name to remember, or `null` to join with the
+   * account name as it is (no profile request at all).
+   */
+  const submitJoin = async (
+    choices: MediaJoinChoices,
+    profileName: string | null,
+  ) => {
     const room = mediaSpace.data?.active_room_instance;
     if (
       !spaceId ||
@@ -403,6 +435,32 @@ export function MediaSpacePreJoinPage() {
         .csrf_token;
       if (abort.signal.aborted) {
         return;
+      }
+      // Save a remembered, edited display name before the join attempt so the
+      // room roster and the LiveKit identity issued for this attempt use it.
+      const currentUser = session.currentUser;
+      if (
+        currentUser &&
+        profileName &&
+        profileName !== currentUser.user.display_name.trim().normalize("NFC")
+      ) {
+        let profile: ProfileResponse;
+        try {
+          profile = await updateProfile(
+            { display_name: profileName },
+            csrfToken,
+            { signal: abort.signal },
+          );
+        } catch {
+          if (abort.signal.aborted) {
+            return;
+          }
+          throw new PrejoinNameSaveError();
+        }
+        if (abort.signal.aborted) {
+          return;
+        }
+        session.replaceCurrentUser({ ...currentUser, user: profile.user });
       }
       let attempt: MediaJoinAttemptProjection;
       try {
@@ -601,9 +659,13 @@ export function MediaSpacePreJoinPage() {
     joinState.choices,
   ]);
 
+  // The Join form leaves the right column once a request is sent; move focus
+  // to the heading that replaces it so it never drops to the document body.
   useLayoutEffect(() => {
     if (isTerminalJoinStatus(currentJoinStatus)) {
       terminalHeading.current?.focus();
+    } else if (currentJoinStatus === "waiting") {
+      waitingHeading.current?.focus();
     }
   }, [currentJoinStatus]);
 
@@ -752,26 +814,17 @@ export function MediaSpacePreJoinPage() {
   const joinInFlight =
     currentJoinStatus === "creating_attempt" ||
     currentJoinStatus === "credential";
-  const previewButtonDisabled =
+  // While a capture or cleanup runs the device controls stay focusable
+  // (aria-disabled) so keyboard focus survives the state change.
+  const previewBusy =
     !controller ||
     snapshot.status === "requesting_permission" ||
-    snapshot.status === "switching_device";
-  const deviceToggleDisabled =
-    previewButtonDisabled || snapshot.status === "cleaning_up";
-  const previewButtonLabel = snapshot.permissionGranted
-    ? t("media.p403.retryPreview")
-    : t("media.p403.startPreview");
-  const requestingPermission = snapshot.status === "requesting_permission";
-  const placeholderTitle = requestingPermission
-    ? t("media.p403.requestingTitle")
-    : snapshot.permissionGranted
-      ? t("media.p403.previewOff")
-      : t("media.p403.inviteTitle");
-  const placeholderBody = requestingPermission
-    ? t("media.p403.requestingBody")
-    : snapshot.permissionGranted
-      ? t("media.p403.previewStoppedBody")
-      : t("media.p403.inviteBody");
+    snapshot.status === "switching_device" ||
+    snapshot.status === "cleaning_up";
+  // A sent request carries the devices chosen at that moment; lock the
+  // controls so the preview never suggests a change the request lacks.
+  const deviceControlsLocked = previewBusy || joinActionLocked;
+  const showVideo = previewActive && snapshot.videoEnabled;
   const microphoneState = deviceToggleState(
     snapshot.permissionGranted,
     snapshot.audioEnabled,
@@ -780,45 +833,78 @@ export function MediaSpacePreJoinPage() {
     snapshot.permissionGranted,
     snapshot.videoEnabled,
   );
-  const showVideo = previewActive && snapshot.videoEnabled;
-  const networkText = `${t(networkStatusKey(networkStatus))}${
-    networkStatus === "ready" && networkLatency !== "unknown"
-      ? ` · ${t(networkLatencyKey(networkLatency))}`
-      : ""
-  }`;
-  const roleKey = prejoinRoleKey(organizationRole);
   const joinPanel =
     currentJoinStatus === "waiting"
       ? "waiting"
       : isTerminalJoinStatus(currentJoinStatus)
         ? "terminal"
         : "actions";
-  // Once a join request is sent, the summary reports the devices that request
-  // carries (the handoff keeps them), not later preview changes.
-  const sentChoices =
-    joinPanel !== "actions" && joinStateIsCurrent ? joinState.choices : null;
-  const summaryAudio = sentChoices
-    ? sentChoices.audioEnabled
-    : snapshot.audioEnabled;
-  const summaryVideo = sentChoices
-    ? sentChoices.videoEnabled
-    : snapshot.videoEnabled;
+  const speakerPlaying = snapshot.speakerTestStatus === "playing";
+
+  const joinNow = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (joinActionLocked) {
+      return;
+    }
+    const typedName = nameValue.trim().normalize("NFC");
+    const accountName =
+      session.currentUser?.user.display_name.trim().normalize("NFC") ?? "";
+    // An empty field joins with the account name; an unchanged or
+    // not-remembered name sends no profile request.
+    const profileName =
+      rememberName && typedName && typedName !== accountName ? typedName : null;
+    void submitJoin(
+      controller?.choices(false) ?? listenOnlyChoices(),
+      profileName,
+    );
+  };
+
+  const allowDevices = (event: MouseEvent<HTMLButtonElement>) => {
+    if (!controller || deviceControlsLocked) {
+      return;
+    }
+    allowFocusHandoff.current = document.activeElement === event.currentTarget;
+    void controller.startPreview();
+  };
+
+  // The audio profile may change while a capture runs (the controller
+  // re-applies it), so only a sent request locks it.
+  const setAudioMode = (mode: MediaAudioMode) => {
+    if (!joinActionLocked) {
+      controller?.setAudioMode(mode);
+    }
+  };
+
+  const openLegal = (
+    tab: SignInLegalTab,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    legalReturnFocus.current = event.currentTarget;
+    setLegalTab(tab);
+    setLegalOpen(true);
+  };
+
+  const alerts = (
+    <>
+      {snapshot.errorCode && (
+        <InlineAlert>
+          <strong>{t("media.p403.deviceProblem")}</strong>{" "}
+          {t(deviceErrorKey(snapshot.errorCode))}
+        </InlineAlert>
+      )}
+      {networkStatus === "offline" && (
+        <InlineAlert>{t("media.p403.network.offline")}</InlineAlert>
+      )}
+    </>
+  );
 
   return (
-    <PrejoinStudioFrame
-      {...frameProps}
-      footerAction={
-        organizationRole === "org_admin" ? (
-          <MediaDiagnosticsDialog tenantId={tenantId} />
-        ) : null
-      }
-    >
-      <section className="media-p403-grid" aria-busy={joinInFlight}>
+    <PrejoinStudioFrame {...frameProps}>
+      <div className="media-p403-clone" aria-busy={joinInFlight}>
         <div className="media-p403-stage">
           <div
             className={[
               "media-p403-preview",
-              previewActive && "media-p403-preview--active",
               showVideo && "media-p403-preview--video",
             ]
               .filter(Boolean)
@@ -831,122 +917,121 @@ export function MediaSpacePreJoinPage() {
               playsInline
               ref={attachPreview}
             />
-
-            <div className="media-p403-hud">
-              <span className="media-p403-hud__pill media-p403-hud__self">
-                {microphoneState === "on" ? (
-                  <MicLevelBars level={snapshot.micLevel} />
-                ) : (
-                  <MicOff aria-hidden="true" />
+            {previewName && (
+              <p className="media-p403-preview__name">{previewName}</p>
+            )}
+            <Menu>
+              <MenuTrigger asChild>
+                <button
+                  aria-label={t("media.p403.moreOptions")}
+                  className="media-p403-preview__more"
+                  title={t("media.p403.moreOptions")}
+                  type="button"
+                >
+                  <EllipsisVertical aria-hidden="true" />
+                </button>
+              </MenuTrigger>
+              <MenuContent align="end" className="media-p403-menu">
+                <MenuItem
+                  disabled={!controller}
+                  onSelect={() =>
+                    void (speakerPlaying
+                      ? controller?.stopSpeakerTest()
+                      : controller?.testSpeaker())
+                  }
+                >
+                  <Volume2 aria-hidden="true" />
+                  {speakerPlaying
+                    ? t("media.p403.stopSpeaker")
+                    : t("media.prejoin.speakerTest")}
+                </MenuItem>
+                <MenuSeparator />
+                <MenuLabel>{t("media.p403.audioMode")}</MenuLabel>
+                <MenuRadioGroup
+                  onValueChange={(value) => setAudioMode(audioModeValue(value))}
+                  value={snapshot.audioMode}
+                >
+                  <MenuRadioItem disabled={joinActionLocked} value="speech">
+                    {t("media.p403.speech")}
+                  </MenuRadioItem>
+                  <MenuRadioItem
+                    disabled={joinActionLocked}
+                    value="original_sound"
+                  >
+                    {t("media.p403.originalSound")}
+                  </MenuRadioItem>
+                </MenuRadioGroup>
+                {previewActive && (
+                  <>
+                    <MenuSeparator />
+                    <MenuItem
+                      disabled={joinActionLocked}
+                      onSelect={() => void controller?.stopPreview()}
+                    >
+                      <PowerOff aria-hidden="true" />
+                      {t("media.p403.stopPreview")}
+                    </MenuItem>
+                  </>
                 )}
-                <span className="media-p403-hud__text">
-                  {displayName || t("media.p403.selfFallback")}
-                </span>
-              </span>
-              <span
-                aria-live="polite"
-                className={`media-p403-hud__pill media-p403-hud__network media-p403-hud__network--${networkTone(
-                  networkStatus,
-                  networkLatency,
-                )}`}
-              >
-                <span aria-hidden="true" className="media-p403-hud__dot" />
-                <span className="visually-hidden">
-                  {t("media.p403.network")}:{" "}
-                </span>
-                <span className="media-p403-hud__text">{networkText}</span>
-              </span>
-            </div>
+              </MenuContent>
+            </Menu>
 
-            <div className="media-p403-stage__center">
-              {!previewActive ? (
-                <div className="media-p403-preview-placeholder">
-                  <strong>{placeholderTitle}</strong>
-                  <span>{placeholderBody}</span>
-                  <Button
-                    className="media-p403-preview-placeholder__action"
-                    disabled={previewButtonDisabled}
-                    onClick={(event) => {
-                      previewFocusHandoff.current =
-                        document.activeElement === event.currentTarget;
-                      void controller?.startPreview();
-                    }}
-                    ref={placeholderPreviewAction}
-                    size="md"
-                    variant="primary"
-                  >
-                    {previewButtonLabel}
-                  </Button>
-                </div>
-              ) : !snapshot.videoEnabled ? (
-                <div className="media-p403-avatar">
-                  <span
-                    aria-hidden="true"
-                    className="media-p403-avatar__monogram"
-                  >
-                    {monogram(displayName)}
-                  </span>
-                  <span className="media-p403-avatar__label">
-                    {t("media.p403.cameraOff")}
-                  </span>
-                </div>
-              ) : null}
-            </div>
+            {!snapshot.permissionGranted ? (
+              <div className="media-p403-preview__invite">
+                <p className="media-p403-preview__question">
+                  {t("media.p403.inviteQuestion")}
+                </p>
+                <button
+                  aria-disabled={deviceControlsLocked || undefined}
+                  className="media-p403-preview__allow"
+                  onClick={allowDevices}
+                  type="button"
+                >
+                  {t("media.p403.allowDevices")}
+                </button>
+              </div>
+            ) : !showVideo ? (
+              <span aria-hidden="true" className="media-p403-preview__monogram">
+                {monogram(previewName)}
+              </span>
+            ) : null}
 
             <div
-              aria-label={t("media.p403.dockLabel")}
-              className="media-p403-dock"
+              aria-label={t("media.p403.deviceControls")}
+              className="media-p403-preview__controls"
               role="group"
             >
               <DeviceToggle
                 device="microphone"
-                disabled={deviceToggleDisabled}
+                disabled={deviceControlsLocked}
                 level={snapshot.micLevel}
                 onToggle={() => void controller?.toggleMicrophone()}
                 state={microphoneState}
               />
               <DeviceToggle
                 device="camera"
-                disabled={deviceToggleDisabled}
+                disabled={deviceControlsLocked}
                 onToggle={() => void controller?.toggleCamera()}
+                ref={cameraToggle}
                 state={cameraState}
               />
-              {previewActive && (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="media-p403-dock__divider"
-                  />
-                  <button
-                    className="media-p403-dock__tool"
-                    disabled={previewButtonDisabled}
-                    onClick={() => void controller?.startPreview()}
-                    ref={activePreviewAction}
-                    title={previewButtonLabel}
-                    type="button"
-                  >
-                    <RefreshCw aria-hidden="true" />
-                    <span className="media-p403-dock__label">
-                      {previewButtonLabel}
-                    </span>
-                  </button>
-                  <button
-                    className="media-p403-dock__tool"
-                    onClick={(event) => {
-                      previewFocusHandoff.current =
-                        document.activeElement === event.currentTarget;
-                      void controller?.stopPreview();
-                    }}
-                    title={t("media.p403.stopPreview")}
-                    type="button"
-                  >
-                    <PowerOff aria-hidden="true" />
-                    <span className="media-p403-dock__label">
-                      {t("media.p403.stopPreview")}
-                    </span>
-                  </button>
-                </>
-              )}
+              <button
+                aria-disabled={joinActionLocked || undefined}
+                aria-label={t("media.p403.noiseSuppression")}
+                aria-pressed={snapshot.audioMode === "speech"}
+                className="media-p403-round media-p403-round--effects"
+                onClick={() =>
+                  setAudioMode(
+                    snapshot.audioMode === "speech"
+                      ? "original_sound"
+                      : "speech",
+                  )
+                }
+                title={t("media.p403.noiseSuppression")}
+                type="button"
+              >
+                <Grip aria-hidden="true" />
+              </button>
               {!snapshot.permissionGranted && (
                 <span className="visually-hidden" id={permissionHintId}>
                   {t("media.p403.permissionHint")}
@@ -955,139 +1040,169 @@ export function MediaSpacePreJoinPage() {
             </div>
           </div>
 
-          {snapshot.errorCode && (
-            <div className="media-p403-device-alert" role="alert">
-              <AlertTriangle aria-hidden="true" />
-              <p>
-                <strong>{t("media.p403.deviceProblem")}</strong>{" "}
-                <span>{t(deviceErrorKey(snapshot.errorCode))}</span>
-              </p>
-            </div>
-          )}
-
-          {snapshot.permissionGranted && controller ? (
-            <DeviceControls controller={controller} snapshot={snapshot} />
-          ) : (
-            <p className="media-p403-device-hint">
-              <Headphones aria-hidden="true" />
-              <span>{t("media.p403.deviceHint")}</span>
-            </p>
-          )}
+          <div
+            aria-label={t("media.p403.devicesLabel")}
+            className="media-p403-pills"
+            role="group"
+          >
+            {snapshot.permissionGranted && controller ? (
+              <>
+                <DevicePill
+                  disabled={joinActionLocked}
+                  icon={<Mic />}
+                  label={t("media.prejoin.microphone")}
+                  onChange={(value) =>
+                    void controller.switchDevice("audioinput", value)
+                  }
+                  value={snapshot.selectedMicrophoneId}
+                >
+                  <DeviceOptions
+                    devices={snapshot.microphones}
+                    emptyLabel={t("media.p403.noDevice")}
+                  />
+                </DevicePill>
+                <DevicePill
+                  disabled={joinActionLocked}
+                  icon={<Volume2 />}
+                  label={t("media.p403.speaker")}
+                  onChange={(value) => controller.setSpeakerDevice(value)}
+                  value={snapshot.selectedSpeakerId}
+                >
+                  <option value="">{t("media.p403.systemDefault")}</option>
+                  {snapshot.speakers.map((item) => (
+                    <option key={item.deviceId} value={item.deviceId}>
+                      {item.label}
+                    </option>
+                  ))}
+                </DevicePill>
+                <DevicePill
+                  disabled={joinActionLocked}
+                  icon={<Video />}
+                  label={t("media.prejoin.camera")}
+                  onChange={(value) =>
+                    void controller.switchDevice("videoinput", value)
+                  }
+                  value={snapshot.selectedCameraId}
+                >
+                  <DeviceOptions
+                    devices={snapshot.cameras}
+                    emptyLabel={t("media.p403.noDevice")}
+                  />
+                </DevicePill>
+                <DevicePill
+                  disabled={joinActionLocked}
+                  icon={<Sparkles />}
+                  label={t("media.p403.audioMode")}
+                  onChange={(value) => setAudioMode(audioModeValue(value))}
+                  value={snapshot.audioMode}
+                >
+                  <option value="speech">{t("media.p403.speech")}</option>
+                  <option value="original_sound">
+                    {t("media.p403.originalSound")}
+                  </option>
+                </DevicePill>
+              </>
+            ) : (
+              // Before access is granted nothing is enumerated: four quiet,
+              // disabled placeholders keep the row's shape.
+              (
+                [
+                  ["microphone", <Mic key="icon" />],
+                  ["speaker", <Volume2 key="icon" />],
+                  ["camera", <Video key="icon" />],
+                  ["audioMode", <Sparkles key="icon" />],
+                ] as const
+              ).map(([kind, icon]) => (
+                <DevicePill
+                  disabled
+                  icon={icon}
+                  key={kind}
+                  label={t(pillLabelKey[kind])}
+                  onChange={ignoreChange}
+                  value=""
+                >
+                  <option value="">{t("media.p403.permissionNeeded")}</option>
+                </DevicePill>
+              ))
+            )}
+          </div>
         </div>
 
-        <aside
-          className="media-p403-readiness"
-          aria-label={t("media.p403.readinessLabel")}
-        >
-          <div className="media-p403-readiness__badges">
-            <span className="media-p403-live-badge">
-              <span aria-hidden="true" className="media-p403-live-badge__dot" />
-              {t("media.p403.liveOpen")}
-            </span>
-            {roleKey && (
-              <span className="media-p403-role-badge">{t(roleKey)}</span>
-            )}
-          </div>
-
-          <div className="media-p403-readiness__heading">
-            <h1>{t("media.p403.title")}</h1>
-            {joinPanel === "actions" && (
-              <p>{t("media.p403.readyDescription")}</p>
-            )}
-          </div>
-
-          <section className="media-p403-summary">
-            <h2>{t("media.p403.summaryTitle")}</h2>
-            <ul>
-              <JoinSummaryRow
-                enabled={summaryAudio}
-                icon={summaryAudio ? <Mic /> : <MicOff />}
-                label={t("media.prejoin.microphone")}
-              />
-              <JoinSummaryRow
-                enabled={summaryVideo}
-                icon={summaryVideo ? <Video /> : <VideoOff />}
-                label={t("media.prejoin.camera")}
-              />
-            </ul>
-            <p>
-              {summaryAudio || summaryVideo
-                ? t("media.p403.summaryDevices")
-                : t("media.p403.summaryListenOnly")}
-            </p>
-          </section>
-
+        <div className="media-p403-side">
           {joinPanel === "actions" && (
-            <>
-              <div className="media-p403-join-actions">
-                <Button
-                  className="media-p403-join-primary"
+            <form className="media-p403-form" noValidate onSubmit={joinNow}>
+              <h1>{t("media.p403.title")}</h1>
+              <label className="media-p403-form__label" htmlFor={nameFieldId}>
+                {t("media.p403.nameLabel")}
+              </label>
+              <input
+                autoComplete="name"
+                className="media-p403-form__name"
+                id={nameFieldId}
+                maxLength={prejoinDisplayNameLimit}
+                onChange={(event) => setNameDraft(event.currentTarget.value)}
+                readOnly={joinActionLocked}
+                spellCheck={false}
+                type="text"
+                value={nameValue}
+              />
+              <label className="media-p403-form__remember">
+                <input
+                  checked={rememberName}
                   disabled={joinActionLocked}
-                  onClick={() =>
-                    void submitJoin(
-                      controller?.choices(false) ?? listenOnlyChoices(),
-                    )
+                  onChange={(event) =>
+                    setRememberName(event.currentTarget.checked)
                   }
-                  size="lg"
-                  variant="primary"
-                >
-                  {joinInFlight
-                    ? t("media.p403.joining")
-                    : t("media.p403.joinWithDevices")}
-                </Button>
-                <Button
-                  className="media-p403-join-secondary"
-                  disabled={joinActionLocked}
-                  leadingIcon={<Headphones />}
-                  onClick={() =>
-                    void submitJoin(
-                      controller?.choices(true) ?? listenOnlyChoices(),
-                    )
-                  }
-                  size="md"
-                  variant="secondary"
-                >
-                  {t("media.p403.joinListenOnly")}
-                </Button>
-              </div>
+                  type="checkbox"
+                />
+                <span>{t("media.p403.rememberName")}</span>
+              </label>
+              <button
+                aria-disabled={joinActionLocked || undefined}
+                className="media-p403-form__join"
+                type="submit"
+              >
+                {joinInFlight ? t("media.p403.joining") : t("media.p403.join")}
+              </button>
               {currentJoinErrorKey && (
-                <section
-                  className="media-p403-alert media-p403-join-error"
-                  role="alert"
-                >
-                  <h2>{t("media.prejoin.cannotJoin")}</h2>
-                  <p>{t(currentJoinErrorKey)}</p>
-                  <button
-                    onClick={() => {
-                      setJoinState((current) =>
-                        current.scopeKey === joinScopeKey
-                          ? { ...current, status: "idle", errorKey: null }
-                          : {
-                              scopeKey: joinScopeKey,
-                              status: "idle",
-                              errorKey: null,
-                              attempt: null,
-                              choices: null,
-                            },
-                      );
-                    }}
-                    type="button"
-                  >
-                    {t("state.retry")}
-                  </button>
+                <section className="media-p403-inline-alert" role="alert">
+                  <AlertTriangle aria-hidden="true" />
+                  <div>
+                    <h2>{t("media.prejoin.cannotJoin")}</h2>
+                    <p>{t(currentJoinErrorKey)}</p>
+                  </div>
                 </section>
               )}
-            </>
+              {alerts}
+              <p className="media-p403-form__terms">
+                {t("media.p403.termsLead")}
+                <button
+                  aria-haspopup="dialog"
+                  className="media-p403-form__link"
+                  onClick={(event) => openLegal("agreement", event)}
+                  type="button"
+                >
+                  {t("media.p403.termsOfService")}
+                </button>
+                {t("media.p403.termsJoin")}
+                <button
+                  aria-haspopup="dialog"
+                  className="media-p403-form__link"
+                  onClick={(event) => openLegal("privacy", event)}
+                  type="button"
+                >
+                  {t("media.p403.privacyStatement")}
+                </button>
+                {t("media.p403.termsTail")}
+              </p>
+            </form>
           )}
 
           {joinPanel === "waiting" && (
             <section className="media-p403-waitroom">
-              <div className="media-p403-waitroom__head">
-                <span aria-hidden="true" className="media-p403-waitroom__pulse">
-                  <Clock3 />
-                </span>
-                <h2>{t("media.p403.waitingTitle")}</h2>
-              </div>
+              <h1 ref={waitingHeading} tabIndex={-1}>
+                {t("media.p403.waitingTitle")}
+              </h1>
               <p aria-live="polite" role="status">
                 {t("media.p403.waitingDescription")}
               </p>
@@ -1101,7 +1216,7 @@ export function MediaSpacePreJoinPage() {
                   })}
                 </p>
               )}
-              <div className="media-p403-waitroom__actions">
+              <div className="media-p403-side__actions">
                 <Button
                   disabled={joinAttemptStatus.isFetching}
                   leadingIcon={<RefreshCw />}
@@ -1136,6 +1251,7 @@ export function MediaSpacePreJoinPage() {
                   )}
                 </p>
               )}
+              {alerts}
             </section>
           )}
 
@@ -1147,40 +1263,59 @@ export function MediaSpacePreJoinPage() {
                 )}`}
                 role="alert"
               >
-                <h2 ref={terminalHeading} tabIndex={-1}>
+                <h1 ref={terminalHeading} tabIndex={-1}>
                   {t(terminalJoinTitleKey(currentJoinStatus))}
-                </h2>
+                </h1>
                 <p>{t(terminalJoinDescriptionKey(currentJoinStatus))}</p>
                 {(currentJoinStatus === "cancelled" ||
                   currentJoinStatus === "timeout") && (
-                  <Button
-                    onClick={resetJoinRequest}
-                    size="md"
-                    variant="secondary"
-                  >
-                    {t("media.p404.waiting.newRequest")}
-                  </Button>
+                  <div className="media-p403-side__actions">
+                    <Button
+                      onClick={resetJoinRequest}
+                      size="md"
+                      variant="secondary"
+                    >
+                      {t("media.p404.waiting.newRequest")}
+                    </Button>
+                  </div>
                 )}
                 {(currentJoinStatus === "denied" ||
                   currentJoinStatus === "provider_unavailable") && (
-                  <Button
-                    onClick={recheckTerminalAdmission}
-                    size="md"
-                    variant="secondary"
-                  >
-                    {t("media.p404.waiting.checkAgain")}
-                  </Button>
+                  <div className="media-p403-side__actions">
+                    <Button
+                      onClick={recheckTerminalAdmission}
+                      size="md"
+                      variant="secondary"
+                    >
+                      {t("media.p404.waiting.checkAgain")}
+                    </Button>
+                  </div>
                 )}
               </section>
             )}
-        </aside>
-      </section>
+        </div>
+      </div>
 
+      <span aria-live="polite" className="visually-hidden">
+        {snapshot.speakerTestStatus === "idle"
+          ? ""
+          : t(speakerStatusKey(snapshot.speakerTestStatus))}
+      </span>
       {snapshot.announcement && (
         <p className="sr-only" role="status" aria-live="polite">
           {t("media.p403.deviceReset")}
         </p>
       )}
+
+      <SignInLegalDialog
+        activeTab={legalTab}
+        // Reading the terms here is informational; nothing is recorded.
+        onAccept={() => undefined}
+        onOpenChange={setLegalOpen}
+        onTabChange={setLegalTab}
+        open={legalOpen}
+        returnFocusRef={legalReturnFocus}
+      />
 
       <MediaSpaceInvitePanel
         enabled={
@@ -1203,7 +1338,22 @@ function getUnsupportedSnapshot(): MediaPrejoinSnapshot {
   return unsupportedSnapshot;
 }
 
+function ignoreChange(): void {
+  // Placeholder pills are disabled; there is nothing to change yet.
+}
+
+function audioModeValue(value: string): MediaAudioMode {
+  return value === "original_sound" ? "original_sound" : "speech";
+}
+
 const permissionHintId = "media-p403-permission-hint";
+
+const pillLabelKey = {
+  microphone: "media.prejoin.microphone",
+  speaker: "media.p403.speaker",
+  camera: "media.prejoin.camera",
+  audioMode: "media.p403.audioMode",
+} as const satisfies Record<string, TranslationKey>;
 
 type DeviceToggleState = "needs-permission" | "on" | "off";
 
@@ -1216,31 +1366,35 @@ function deviceToggleState(
 }
 
 /**
- * Round microphone / camera control on the floating dock. The label names the
- * action (Meet / Teams convention) and is distinct from the "Test camera and
- * microphone" call to action so each control keeps a unique accessible name.
+ * Round microphone / camera button inside the camera frame. The accessible
+ * name stays "Microphone" / "Camera" and `aria-pressed` reports on/off; before
+ * access is granted a yellow "!" marks it and the hint explains the prompt.
+ * It stays focusable while a capture runs (aria-disabled instead of disabled).
  */
-function DeviceToggle({
-  device,
-  disabled,
-  level = 0,
-  onToggle,
-  state,
-}: {
-  device: "microphone" | "camera";
-  disabled: boolean;
-  level?: number;
-  onToggle: () => void;
-  state: DeviceToggleState;
-}) {
+const DeviceToggle = forwardRef<
+  HTMLButtonElement,
+  {
+    device: "microphone" | "camera";
+    disabled: boolean;
+    level?: number;
+    onToggle: () => void;
+    state: DeviceToggleState;
+  }
+>(function DeviceToggle({ device, disabled, level = 0, onToggle, state }, ref) {
   const { t } = useI18n();
   const on = state === "on";
   const label =
     device === "microphone"
-      ? t(on ? "media.p403.micTurnOff" : "media.p403.micTurnOn")
-      : t(on ? "media.p403.cameraTurnOff" : "media.p403.cameraTurnOn");
+      ? t("media.prejoin.microphone")
+      : t("media.prejoin.camera");
   const Icon =
-    device === "microphone" ? (on ? Mic : MicOff) : on ? Video : VideoOff;
+    device === "microphone"
+      ? state === "off"
+        ? MicOff
+        : Mic
+      : state === "off"
+        ? VideoOff
+        : Video;
   const levelStyle =
     device === "microphone" && on
       ? ({ "--media-p403-level": String(level) } as CSSProperties)
@@ -1250,283 +1404,90 @@ function DeviceToggle({
       aria-describedby={
         state === "needs-permission" ? permissionHintId : undefined
       }
+      aria-disabled={disabled || undefined}
       aria-label={label}
-      className={`media-p403-toggle media-p403-toggle--${state}`}
-      disabled={disabled}
-      onClick={onToggle}
+      aria-pressed={on}
+      className={`media-p403-round media-p403-round--${state}`}
+      onClick={() => {
+        if (!disabled) onToggle();
+      }}
+      ref={ref}
       style={levelStyle}
       title={label}
       type="button"
     >
       <Icon aria-hidden="true" />
       {state === "needs-permission" && (
-        <span aria-hidden="true" className="media-p403-toggle__badge">
+        <span aria-hidden="true" className="media-p403-round__badge">
           !
         </span>
       )}
     </button>
   );
-}
+});
 
-const micLevelBarWeights = [0.55, 1, 0.7] as const;
-
-function MicLevelBars({ level }: { level: number }) {
-  return (
-    <span aria-hidden="true" className="media-p403-level">
-      {micLevelBarWeights.map((weight, index) => (
-        <span
-          key={index}
-          style={
-            {
-              "--media-p403-bar": String(
-                Math.max(0.22, Math.min(1, level * weight * 1.6)),
-              ),
-            } as CSSProperties
-          }
-        />
-      ))}
-    </span>
-  );
-}
-
-function JoinSummaryRow({
-  enabled,
-  icon,
-  label,
-}: {
-  enabled: boolean;
-  icon: ReactNode;
-  label: string;
-}) {
-  const { t } = useI18n();
-  return (
-    <li>
-      <span className="media-p403-summary__device">
-        <span aria-hidden="true" className="media-p403-summary__icon">
-          {icon}
-        </span>
-        {label}
-      </span>
-      <span
-        className={`media-p403-summary__state media-p403-summary__state--${
-          enabled ? "on" : "off"
-        }`}
-      >
-        {enabled ? t("media.p403.summaryOn") : t("media.p403.summaryOff")}
-      </span>
-    </li>
-  );
-}
-
+/** One of the four slim device pills under the camera frame. */
 function DevicePill({
   children,
+  disabled,
   icon,
   label,
   onChange,
   value,
 }: {
   children: ReactNode;
+  disabled: boolean;
   icon: ReactNode;
   label: string;
   onChange: (value: string) => void;
   value: string;
 }) {
   return (
-    <label className="media-p403-device-pill">
-      <span aria-hidden="true" className="media-p403-device-pill__icon">
+    <span className="media-p403-pill">
+      <span aria-hidden="true" className="media-p403-pill__icon">
         {icon}
       </span>
-      <span className="visually-hidden">{label}</span>
       <select
+        aria-label={label}
+        disabled={disabled}
         onChange={(event) => onChange(event.currentTarget.value)}
+        title={label}
         value={value}
       >
         {children}
       </select>
-      <ChevronDown
-        aria-hidden="true"
-        className="media-p403-device-pill__chevron"
-      />
-    </label>
+      <span aria-hidden="true" className="media-p403-pill__caret" />
+    </span>
   );
 }
 
-function DeviceControls({
-  controller,
-  snapshot,
+function DeviceOptions({
+  devices,
+  emptyLabel,
 }: {
-  controller: MediaPrejoinController;
-  snapshot: MediaPrejoinSnapshot;
+  devices: MediaPrejoinSnapshot["microphones"];
+  emptyLabel: string;
 }) {
-  const { t } = useI18n();
-  const submitAudioMode = (event: FormEvent<HTMLInputElement>) => {
-    controller.setAudioMode(
-      event.currentTarget.value === "original_sound"
-        ? "original_sound"
-        : "speech",
-    );
-  };
-  const speakerPlaying = snapshot.speakerTestStatus === "playing";
+  if (devices.length === 0) {
+    return <option value="">{emptyLabel}</option>;
+  }
   return (
-    <div className="media-p403-devices">
-      <div
-        aria-label={t("media.p403.devicesLabel")}
-        className="media-p403-devices__row"
-        role="group"
-      >
-        <DevicePill
-          icon={<Mic />}
-          label={t("media.prejoin.microphone")}
-          onChange={(value) =>
-            void controller.switchDevice("audioinput", value)
-          }
-          value={snapshot.selectedMicrophoneId}
-        >
-          {snapshot.microphones.map((item) => (
-            <option key={item.deviceId} value={item.deviceId}>
-              {item.label}
-            </option>
-          ))}
-        </DevicePill>
-        <DevicePill
-          icon={<Volume2 />}
-          label={t("media.p403.speaker")}
-          onChange={(value) => controller.setSpeakerDevice(value)}
-          value={snapshot.selectedSpeakerId}
-        >
-          <option value="">{t("media.p403.systemDefault")}</option>
-          {snapshot.speakers.map((item) => (
-            <option key={item.deviceId} value={item.deviceId}>
-              {item.label}
-            </option>
-          ))}
-        </DevicePill>
-        <DevicePill
-          icon={<Video />}
-          label={t("media.prejoin.camera")}
-          onChange={(value) =>
-            void controller.switchDevice("videoinput", value)
-          }
-          value={snapshot.selectedCameraId}
-        >
-          {snapshot.cameras.map((item) => (
-            <option key={item.deviceId} value={item.deviceId}>
-              {item.label}
-            </option>
-          ))}
-        </DevicePill>
-      </div>
-
-      <div className="media-p403-devices__tools">
-        <fieldset className="media-p403-segmented">
-          <legend className="visually-hidden">
-            {t("media.p403.audioMode")}
-          </legend>
-          <label>
-            <input
-              checked={snapshot.audioMode === "speech"}
-              name="media-audio-mode"
-              onChange={submitAudioMode}
-              type="radio"
-              value="speech"
-            />
-            <span>{t("media.p403.speech")}</span>
-          </label>
-          <label>
-            <input
-              checked={snapshot.audioMode === "original_sound"}
-              name="media-audio-mode"
-              onChange={submitAudioMode}
-              type="radio"
-              value="original_sound"
-            />
-            <span>{t("media.p403.originalSound")}</span>
-          </label>
-        </fieldset>
-
-        <div className="media-p403-speaker-test">
-          <button
-            className="media-p403-chip-button"
-            disabled={speakerPlaying}
-            onClick={() => void controller.testSpeaker()}
-            type="button"
-          >
-            <Volume2 aria-hidden="true" />
-            {speakerPlaying
-              ? t("media.prejoin.speakerPlaying")
-              : t("media.prejoin.speakerTest")}
-          </button>
-          {speakerPlaying && (
-            <button
-              className="media-p403-chip-button media-p403-chip-button--quiet"
-              onClick={() => void controller.stopSpeakerTest()}
-              type="button"
-            >
-              {t("media.p403.stopSpeaker")}
-            </button>
-          )}
-          <span
-            aria-live="polite"
-            className={
-              snapshot.speakerTestStatus === "idle"
-                ? "visually-hidden"
-                : "media-p403-speaker-status"
-            }
-          >
-            {t(speakerStatusKey(snapshot.speakerTestStatus))}
-          </span>
-        </div>
-
-        <details className="media-p403-audio-info">
-          <summary>
-            <Info aria-hidden="true" />
-            <span>{t("media.p403.processingLabel")}</span>
-          </summary>
-          <p>
-            {t("media.p403.actualProcessing", {
-              echo: processingValue(
-                snapshot.actualAudioProcessing.echoCancellation,
-                t,
-              ),
-              noise: processingValue(
-                snapshot.actualAudioProcessing.noiseSuppression,
-                t,
-              ),
-              gain: processingValue(
-                snapshot.actualAudioProcessing.autoGainControl,
-                t,
-              ),
-            })}
-          </p>
-        </details>
-      </div>
-    </div>
+    <>
+      {devices.map((item) => (
+        <option key={item.deviceId} value={item.deviceId}>
+          {item.label}
+        </option>
+      ))}
+    </>
   );
 }
 
-/**
- * Org-admin only: the 24-hour diagnostics export lives behind a footer link
- * in a dialog so it never pushes the studio past one viewport.
- */
-function MediaDiagnosticsDialog({ tenantId }: { tenantId: string }) {
-  const { t } = useI18n();
+function InlineAlert({ children }: { children: ReactNode }) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button className="media-p403-studio__footer-link" type="button">
-          <Activity aria-hidden="true" />
-          {t("media.p403.diagnosticsOpen")}
-        </button>
-      </DialogTrigger>
-      <DialogContent
-        className="media-p403-diagnostics-dialog"
-        closeLabel={t("media.p404.closeDialog")}
-      >
-        <DialogTitle>{t("media.p410.title")}</DialogTitle>
-        <DialogDescription>{t("media.p410.privacy")}</DialogDescription>
-        <MediaDiagnosticsPanel tenantID={tenantId} variant="embedded" />
-      </DialogContent>
-    </Dialog>
+    <div className="media-p403-inline-alert" role="alert">
+      <AlertTriangle aria-hidden="true" />
+      <p>{children}</p>
+    </div>
   );
 }
 
@@ -1540,22 +1501,6 @@ function monogram(name: string): string {
       ? (Array.from(words[words.length - 1] ?? "")[0] ?? "")
       : "";
   return `${first}${last}`.toLocaleUpperCase();
-}
-
-function prejoinRoleKey(role: string): TranslationKey | null {
-  if (role === "teacher") return "shell.role.teacher";
-  if (role === "student") return "shell.role.student";
-  if (role === "org_admin") return "shell.role.admin";
-  return null;
-}
-
-function networkTone(
-  status: MediaNetworkStatus,
-  latency: "fast" | "moderate" | "slow" | "unknown",
-): "good" | "warn" | "bad" {
-  if (status === "ready") return latency === "slow" ? "warn" : "good";
-  if (status === "checking") return "warn";
-  return "bad";
 }
 
 /**
@@ -1609,29 +1554,26 @@ function prejoinClassTitle(state: unknown): string | null {
 }
 
 /**
- * PREJOIN-STUDIO-02 focused studio frame: a thin header (back link, brand,
- * class | workspace, identity chip, language) above a vertically centred
- * `<main>` and a slim privacy footer. Rendered for every Pre-Join state so the
- * viewer can always switch language or leave. The identity chip shows only
- * the display name and its monogram — never the account email.
+ * PREJOIN-CLONE-04 frame: a thin header (back link with the class and
+ * workspace names on the left, the language switch on the right) over a
+ * vertically centred `<main>`, closed by one hairline rule. Rendered for every
+ * Pre-Join state so the viewer can always switch language or leave. There is
+ * no footer and the account email is never rendered.
  */
 function PrejoinStudioFrame({
   busy = false,
   children,
   classTitle,
-  footerAction = null,
   returnTo,
 }: {
   busy?: boolean;
   children: ReactNode;
   classTitle: string | null;
-  footerAction?: ReactNode;
   returnTo: string;
 }) {
   const { language, setLanguage, t } = useI18n();
   const session = useSession();
   const workspaceName = session.currentUser?.active_tenant?.name?.trim() ?? "";
-  const displayName = session.currentUser?.user.display_name.trim() ?? "";
 
   return (
     <div className="media-p403-page media-p403-studio">
@@ -1642,75 +1584,44 @@ function PrejoinStudioFrame({
               ? t("media.p403.back")
               : t("media.p403.backToClass")}
           </Link>
-          <span aria-hidden="true" className="media-p403-studio__divider" />
-          <span className="media-p403-studio__brand">
-            <span aria-hidden="true" className="media-p403-studio__mark">
-              TH
-            </span>
-            <strong>{t("brand.product")}</strong>
-            {classTitle && (
-              <span className="media-p403-studio__class" title={classTitle}>
-                <span className="visually-hidden">
-                  {t("media.p403.studioClass")}:{" "}
+          {(classTitle || workspaceName) && (
+            <p className="media-p403-studio__context">
+              {classTitle && (
+                <span className="media-p403-studio__class" title={classTitle}>
+                  {classTitle}
                 </span>
-                {classTitle}
-              </span>
-            )}
-          </span>
-        </div>
-        <div className="media-p403-studio__end">
-          {workspaceName && (
-            <span
-              className="media-p403-studio__workspace"
-              title={workspaceName}
-            >
-              <Building2 aria-hidden="true" />
-              <span className="visually-hidden">
-                {t("workspace.activeLabel")}:{" "}
-              </span>
-              <span className="media-p403-studio__workspace-name">
-                {workspaceName}
-              </span>
-            </span>
+              )}
+              {workspaceName && (
+                <span
+                  className="media-p403-studio__workspace"
+                  title={workspaceName}
+                >
+                  <span className="visually-hidden">
+                    {t("workspace.activeLabel")}:{" "}
+                  </span>
+                  {workspaceName}
+                </span>
+              )}
+            </p>
           )}
-          {displayName && (
-            <span className="media-p403-studio__identity" title={displayName}>
-              <span aria-hidden="true" className="media-p403-studio__monogram">
-                {monogram(displayName)}
-              </span>
-              <span className="visually-hidden">
-                {t("media.p403.signedInAs")}:{" "}
-              </span>
-              <span className="media-p403-studio__identity-name">
-                {displayName}
-              </span>
-            </span>
-          )}
-          <label className="language-select">
-            <span className="visually-hidden">{t("shell.language")}</span>
-            <select
-              aria-label={t("shell.language")}
-              onChange={(event) =>
-                setLanguage(event.target.value as typeof language)
-              }
-              value={language}
-            >
-              <option value="vi">Tiếng Việt</option>
-              <option value="en">English</option>
-            </select>
-          </label>
         </div>
+        <label className="language-select">
+          <span className="visually-hidden">{t("shell.language")}</span>
+          <select
+            aria-label={t("shell.language")}
+            onChange={(event) =>
+              setLanguage(event.target.value as typeof language)
+            }
+            value={language}
+          >
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">English</option>
+          </select>
+        </label>
       </header>
       <main aria-busy={busy || undefined} className="media-p403-studio__main">
         {children}
       </main>
-      <footer className="media-p403-studio__footer">
-        <p className="media-p403-studio__privacy">
-          <ShieldCheck aria-hidden="true" />
-          <span>{t("media.p403.networkPrivacy")}</span>
-        </p>
-        {footerAction}
-      </footer>
     </div>
   );
 }
@@ -1763,6 +1674,9 @@ function joinProblemMatches(error: APIRequestError, code: string): boolean {
 }
 
 function joinProblemKey(error: unknown): TranslationKey {
+  if (error instanceof PrejoinNameSaveError) {
+    return "media.p403.nameSaveError";
+  }
   if (error instanceof APIRequestError) {
     if (joinProblemMatches(error, "room_not_open"))
       return "media.p403.roomNotOpen";
@@ -1783,28 +1697,10 @@ function joinProblemKey(error: unknown): TranslationKey {
   return "media.prejoin.joinError";
 }
 
-function networkStatusKey(status: MediaNetworkStatus): TranslationKey {
-  return `media.p403.network.${status}` as TranslationKey;
-}
-
-function networkLatencyKey(
-  latency: "fast" | "moderate" | "slow",
-): TranslationKey {
-  return `media.p403.network.${latency}` as TranslationKey;
-}
-
 function speakerStatusKey(
   status: MediaPrejoinSnapshot["speakerTestStatus"],
 ): TranslationKey {
   return `media.p403.speaker.${status}` as TranslationKey;
-}
-
-function processingValue(
-  value: boolean | null,
-  t: (key: TranslationKey, values?: Record<string, string | number>) => string,
-): string {
-  if (value === null) return t("media.p403.unknown");
-  return value ? t("media.p403.on") : t("media.p403.off");
 }
 
 type TerminalJoinStatus = Extract<

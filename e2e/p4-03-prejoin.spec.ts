@@ -61,6 +61,7 @@ interface ObservedRequests {
   credentialBodies: unknown[];
   healthCalls: number;
   order: string[];
+  profileBodies: unknown[];
 }
 
 interface MediaProbeState {
@@ -237,6 +238,7 @@ async function installApiMocks(page: Page, admission: "waiting" | "admitted") {
     credentialBodies: [],
     healthCalls: 0,
     order: [],
+    profileBodies: [],
   };
 
   await page.route("**/api/**", async (route) => {
@@ -264,6 +266,15 @@ async function installApiMocks(page: Page, admission: "waiting" | "admitted") {
       pathname === `/api/v1/media/spaces/${spaceID}`
     ) {
       await fulfillJSON(route, 200, mediaSpace);
+      return;
+    }
+    if (request.method() === "PATCH" && pathname === "/api/v1/me/profile") {
+      observed.order.push("profile");
+      const body = request.postDataJSON() as { display_name: string };
+      observed.profileBodies.push(body);
+      await fulfillJSON(route, 200, {
+        user: { ...currentUser.user, display_name: body.display_name },
+      });
       return;
     }
     if (request.method() === "GET" && pathname === "/api/v1/auth/csrf") {
@@ -330,14 +341,28 @@ async function openEnglishPrejoin(page: Page) {
   await page.goto(prejoinPath);
   await expect(
     page.getByRole("heading", {
-      name: /^(?:Sẵn sàng vào phòng học|Get ready for class)$/,
+      level: 1,
+      name: /^(?:Vào phòng học|Enter Meeting)$/,
     }),
   ).toBeVisible();
   const language = page.locator(".language-select select");
   await language.selectOption("en");
   await expect(
-    page.getByRole("heading", { name: "Get ready for class" }),
+    page.getByRole("heading", { level: 1, name: "Enter Meeting" }),
   ).toBeVisible();
+}
+
+/** Joins without opening a device: nothing was enabled in the preview. */
+async function joinWithoutDevices(page: Page) {
+  await page.getByRole("button", { name: "Join", exact: true }).click();
+}
+
+function allowButton(page: Page) {
+  return page.getByRole("button", { name: "Allow microphone and camera" });
+}
+
+function deviceButton(page: Page, name: "Microphone" | "Camera") {
+  return page.getByRole("button", { name, exact: true });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -357,9 +382,7 @@ test("P4-03 keeps initial capture at zero and starts a keyboard-accessible expli
   });
   expect(observed.order).toEqual([]);
 
-  const probe = page.getByRole("button", {
-    name: "Test camera and microphone",
-  });
+  const probe = allowButton(page);
   await probe.focus();
   await expect(probe).toBeFocused();
   await probe.press("Enter");
@@ -373,6 +396,17 @@ test("P4-03 keeps initial capture at zero and starts a keyboard-accessible expli
   await expect(page.getByRole("combobox", { name: "Camera" })).toHaveValue(
     "camera-1",
   );
+  // The Allow button leaves the frame; focus moves to the camera button.
+  await expect(probe).toHaveCount(0);
+  await expect(deviceButton(page, "Camera")).toBeFocused();
+  await expect(deviceButton(page, "Camera")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(deviceButton(page, "Microphone")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   expect(observed.order).toEqual([]);
   expect(
     (await new AxeBuilder({ page }).include(".media-p403-page").analyze())
@@ -380,13 +414,13 @@ test("P4-03 keeps initial capture at zero and starts a keyboard-accessible expli
   ).toEqual([]);
 });
 
-test("P4-03 listen-only waiting never captures, requests a credential, or navigates", async ({
+test("P4-03 a device-free waiting request never captures, requests a credential, or navigates", async ({
   page,
 }) => {
   const observed = await installApiMocks(page, "waiting");
   await openEnglishPrejoin(page);
 
-  await page.getByRole("button", { name: "Join listen-only" }).click();
+  await joinWithoutDevices(page);
 
   await expect(
     page.getByRole("heading", { name: "Waiting to be admitted" }),
@@ -415,7 +449,7 @@ test("P4-03 requests an admitted attempt before a memory-only credential handoff
   const observed = await installApiMocks(page, "admitted");
   await openEnglishPrejoin(page);
 
-  await page.getByRole("button", { name: "Join listen-only" }).click();
+  await joinWithoutDevices(page);
 
   await expect(page).toHaveURL(new RegExp(`${roomPath}$`));
   expect(observed.order).toEqual(["csrf", "attempt", "credential"]);
@@ -439,28 +473,28 @@ test("P4-03 requests an admitted attempt before a memory-only credential handoff
   expect(privacySurfaces.sessionStorage).not.toContain(credentialToken);
 });
 
-test("P4-03 permission denial remains bounded and preserves listen-only waiting", async ({
+test("P4-03 permission denial remains bounded and still allows a device-free join", async ({
   page,
 }) => {
   await installDeniedMediaProbe(page);
   const observed = await installApiMocks(page, "waiting");
   await openEnglishPrejoin(page);
 
-  await page
-    .getByRole("button", { name: "Test camera and microphone" })
-    .click();
+  await allowButton(page).click();
   await expect(
     page.getByText(
-      "Camera or microphone permission was denied. You can still join listen-only.",
+      "Camera or microphone permission was denied. You can still join without them.",
     ),
   ).toBeVisible();
+  // The invitation stays in the frame so the viewer can try again.
+  await expect(allowButton(page)).toBeVisible();
   expect(await readMediaProbe(page)).toMatchObject({
     enumerateDevicesCalls: 0,
     getUserMediaCalls: 1,
     stoppedTracks: 0,
   });
 
-  await page.getByRole("button", { name: "Join listen-only" }).click();
+  await joinWithoutDevices(page);
   await expect(
     page.getByRole("heading", { name: "Waiting to be admitted" }),
   ).toBeVisible();
@@ -491,47 +525,206 @@ test("P4-03 reports offline without probing health or opening media", async ({
   });
 });
 
+test("PREJOIN-CLONE-04 saves a remembered, edited name before the attempt and never renders the email", async ({
+  page,
+}) => {
+  const observed = await installApiMocks(page, "waiting");
+  await openEnglishPrejoin(page);
+  await expect(page.locator("body")).not.toContainText("student@example.test");
+
+  const name = page.getByRole("textbox", { name: "Your Name" });
+  await expect(name).toHaveValue("Student One");
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Remember my name for future meetings",
+    }),
+  ).toBeChecked();
+  await name.fill("  Lan Anh  ");
+  // The frame label follows the field.
+  await expect(page.locator(".media-p403-preview__name")).toHaveText("Lan Anh");
+  await joinWithoutDevices(page);
+
+  await expect(
+    page.getByRole("heading", { name: "Waiting to be admitted" }),
+  ).toBeVisible();
+  // csrf → PATCH /api/v1/me/profile → attempt; an unchanged name skips the
+  // profile step (see the admitted handoff test above).
+  expect(observed.order).toEqual(["csrf", "profile", "attempt"]);
+  expect(observed.profileBodies).toEqual([{ display_name: "Lan Anh" }]);
+  expect(observed.credentialBodies).toEqual([]);
+  expect(await readMediaProbe(page)).toMatchObject({
+    enumerateDevicesCalls: 0,
+    getUserMediaCalls: 0,
+  });
+  await expect(page.locator("body")).not.toContainText("student@example.test");
+});
+
+test("PREJOIN-CLONE-04 skips the profile request when the name is not remembered or is cleared", async ({
+  page,
+}) => {
+  const observed = await installApiMocks(page, "waiting");
+  await openEnglishPrejoin(page);
+
+  // A cleared field joins with the account name and shows no extra error.
+  const name = page.getByRole("textbox", { name: "Your Name" });
+  await name.fill("   ");
+  await expect(page.locator(".media-p403-preview__name")).toHaveText(
+    "Student One",
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  // An edited name that is not remembered is not saved either.
+  await name.fill("Lan Anh");
+  await page
+    .getByRole("checkbox", { name: "Remember my name for future meetings" })
+    .uncheck();
+  await joinWithoutDevices(page);
+
+  await expect(
+    page.getByRole("heading", { name: "Waiting to be admitted" }),
+  ).toBeVisible();
+  expect(observed.order).toEqual(["csrf", "attempt"]);
+  expect(observed.profileBodies).toEqual([]);
+});
+
+test("PREJOIN-CLONE-04 opens the terms dialog from the agreement line and restores focus", async ({
+  page,
+}) => {
+  const observed = await installApiMocks(page, "admitted");
+  await openEnglishPrejoin(page);
+
+  const terms = page.getByRole("button", { name: "Terms of Service" });
+  await terms.click();
+  const dialog = page.getByRole("dialog", { name: "Terms & Privacy Policy" });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole("tab", { name: "User Agreement" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(terms).toBeFocused();
+
+  await page.getByRole("button", { name: "Privacy Statement" }).click();
+  await expect(
+    dialog.getByRole("tab", { name: "Privacy Policy" }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(observed.order).toEqual([]);
+  expect(await readMediaProbe(page)).toMatchObject({
+    enumerateDevicesCalls: 0,
+    getUserMediaCalls: 0,
+  });
+});
+
 for (const viewport of [
   { width: 1280, height: 800 },
   { width: 1440, height: 900 },
 ]) {
-  test(`PREJOIN-UX-01 keeps the 16:9 studio and join actions in view at ${viewport.width}x${viewport.height}`, async ({
+  test(`PREJOIN-CLONE-04 keeps the 16:9 frame, three round buttons, four pills and the Enter Meeting form in one viewport at ${viewport.width}x${viewport.height}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
     const observed = await installApiMocks(page, "admitted");
     await openEnglishPrejoin(page);
 
-    // Focused studio: thin header, no AppShell sidebar navigation.
+    // Focused studio: thin header, no AppShell sidebar navigation, no footer.
     await expect(page.locator(".app-sidebar")).toHaveCount(0);
+    await expect(page.getByRole("contentinfo")).toHaveCount(0);
     const banner = page.getByRole("banner");
     await expect(banner).toContainText("TutorHub Test");
     await expect(
       banner.getByRole("link", { name: "← Back to Home" }),
     ).toBeVisible();
+    await expect(banner.locator(".language-select select")).toBeVisible();
     const headerBox = await banner.boundingBox();
-    expect(headerBox?.height ?? 0).toBeLessThanOrEqual(64);
+    expect(headerBox?.height ?? 0).toBeGreaterThanOrEqual(48);
+    expect(headerBox?.height ?? 0).toBeLessThanOrEqual(56);
 
     const preview = await page.locator(".media-p403-preview").boundingBox();
     expect(preview).not.toBeNull();
     expect(Math.abs(preview!.width / preview!.height - 16 / 9)).toBeLessThan(
       0.02,
     );
-    for (const name of [
-      "Test camera and microphone",
-      "Join with enabled devices",
-      "Join listen-only",
-    ]) {
-      await expect(page.getByRole("button", { name })).toBeInViewport({
-        ratio: 1,
-      });
+
+    // Three separate 48px circles inside the frame's bottom edge.
+    const circles = page.locator(".media-p403-preview .media-p403-round");
+    await expect(circles).toHaveCount(3);
+    for (const circle of await circles.all()) {
+      const box = await circle.boundingBox();
+      expect(Math.round(box!.width)).toBe(48);
+      expect(Math.round(box!.height)).toBe(48);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(
+        preview!.y + preview!.height,
+      );
     }
-    const horizontalOverflow = await page.evaluate(
-      () =>
+
+    // Four equal 32px pills directly under the frame, spanning its width.
+    const pills = page.locator(".media-p403-pill");
+    await expect(pills).toHaveCount(4);
+    const pillBoxes = await Promise.all(
+      (await pills.all()).map((pill) => pill.boundingBox()),
+    );
+    for (const box of pillBoxes) {
+      expect(Math.round(box!.height)).toBe(32);
+      expect(Math.abs(box!.width - pillBoxes[0]!.width)).toBeLessThanOrEqual(1);
+      expect(box!.y).toBeGreaterThan(preview!.y + preview!.height);
+    }
+    expect(Math.abs(pillBoxes[0]!.x - preview!.x)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(
+        pillBoxes[3]!.x + pillBoxes[3]!.width - (preview!.x + preview!.width),
+      ),
+    ).toBeLessThanOrEqual(1);
+    for (const pill of await page.locator(".media-p403-pill select").all()) {
+      await expect(pill).toBeDisabled();
+      await expect(pill).toHaveText("Permission needed");
+    }
+
+    // The form column starts on the frame's top edge.
+    const title = await page
+      .getByRole("heading", { level: 1, name: "Enter Meeting" })
+      .boundingBox();
+    expect(Math.abs(title!.y - preview!.y)).toBeLessThanOrEqual(8);
+    expect(title!.x).toBeGreaterThan(preview!.x + preview!.width);
+
+    for (const control of [
+      page.getByRole("button", { name: "More options" }),
+      allowButton(page),
+      deviceButton(page, "Microphone"),
+      deviceButton(page, "Camera"),
+      page.getByRole("button", { name: "Noise suppression" }),
+      page.getByRole("combobox", { name: "Speaker" }),
+      page.getByRole("combobox", { name: "Audio mode" }),
+      page.getByRole("textbox", { name: "Your Name" }),
+      page.getByRole("checkbox", {
+        name: "Remember my name for future meetings",
+      }),
+      page.getByRole("button", { name: "Join", exact: true }),
+      page.getByRole("button", { name: "Terms of Service" }),
+      page.getByRole("button", { name: "Privacy Statement" }),
+    ]) {
+      await expect(control).toBeInViewport({ ratio: 1 });
+    }
+    // Nothing from earlier, wordier drafts.
+    for (const removed of [
+      "Join now",
+      "Join listen-only",
+      "Don't use audio",
+      "Connection diagnostics (24h)",
+      "Live session open",
+      "You'll join with",
+    ]) {
+      await expect(page.getByText(removed)).toHaveCount(0);
+    }
+    const overflow = await page.evaluate(() => ({
+      horizontal:
         document.documentElement.scrollWidth -
         document.documentElement.clientWidth,
-    );
-    expect(horizontalOverflow).toBeLessThanOrEqual(1);
+      vertical:
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight,
+    }));
+    expect(overflow.horizontal).toBeLessThanOrEqual(1);
+    expect(overflow.vertical).toBeLessThanOrEqual(1);
     expect(await readMediaProbe(page)).toEqual({
       enumerateDevicesCalls: 0,
       getUserMediaCalls: 0,
@@ -553,20 +746,44 @@ test("P4-03 keeps keyboard actions and reflow at forced colors and 320 CSS pixel
   await installApiMocks(page, "admitted");
   await openEnglishPrejoin(page);
 
-  const probe = page.getByRole("button", {
-    name: "Test camera and microphone",
-  });
-  const listenOnly = page.getByRole("button", { name: "Join listen-only" });
+  const probe = allowButton(page);
+  const join = page.getByRole("button", { name: "Join", exact: true });
   await expect(probe).toBeVisible();
-  await expect(listenOnly).toBeVisible();
+  await expect(join).toBeVisible();
   await probe.focus();
   await expect(probe).toBeFocused();
+  const cameraButton = deviceButton(page, "Camera");
+  await cameraButton.focus();
+  await expect(cameraButton).toBeFocused();
+  await join.focus();
+  await expect(join).toBeFocused();
+  const headerBox = await page.getByRole("banner").boundingBox();
+  expect(headerBox?.height ?? 0).toBeLessThanOrEqual(56);
   const horizontalOverflow = await page.evaluate(
     () =>
       document.documentElement.scrollWidth -
       document.documentElement.clientWidth,
   );
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p403-page").analyze())
+      .violations,
+  ).toEqual([]);
+});
+
+test("PREJOIN-CLONE-04 reports zero Axe violations at forced colors on desktop", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ forcedColors: "active" });
+  await installApiMocks(page, "admitted");
+  await openEnglishPrejoin(page);
+
+  await allowButton(page).click();
+  await expect(deviceButton(page, "Microphone")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   expect(
     (await new AxeBuilder({ page }).include(".media-p403-page").analyze())
       .violations,

@@ -1101,7 +1101,7 @@ describe("web shell", () => {
     renderRoute(`/app/media/spaces/${spaceID}/prejoin`);
 
     expect(
-      await screen.findByRole("heading", { name: "Sẵn sàng vào phòng học" }),
+      await screen.findByRole("heading", { name: "Vào phòng học" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("navigation", { name: "Điều hướng chính" }),

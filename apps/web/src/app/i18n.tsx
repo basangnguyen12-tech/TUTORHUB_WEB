@@ -2323,61 +2323,23 @@ const messages = {
     "media.p403.roomLocked": "Phòng đang khóa và không nhận lượt tham gia mới.",
     "media.p403.back": "← Về Trang chủ",
     "media.p403.backToClass": "← Quay lại lớp học",
-    "media.p403.title": "Sẵn sàng vào phòng học",
-    "media.p403.description":
-      "Kiểm tra hình ảnh và âm thanh trước khi bước vào lớp học.",
+    "media.p403.title": "Vào phòng học",
     "media.p403.previewLabel": "Bản xem trước camera cục bộ",
-    "media.p403.previewOff": "Camera và micro đang tắt",
-    "media.p403.previewConsent":
-      "Chọn kiểm tra thiết bị để trình duyệt hỏi quyền truy cập.",
-    "media.p403.retryPreview": "Kiểm tra lại thiết bị",
-    "media.p403.startPreview": "Kiểm tra camera và micro",
-    "media.p403.stopPreview": "Tắt bản xem trước",
+    "media.p403.inviteQuestion":
+      "Bạn có muốn mọi người nhìn thấy và nghe thấy bạn trong buổi học?",
+    "media.p403.allowDevices": "Cho phép micro và camera",
+    "media.p403.stopPreview": "Tắt xem trước",
     "media.p403.deviceProblem": "Không thể dùng thiết bị đã chọn",
-    "media.p403.readinessLabel": "Trạng thái sẵn sàng tham gia",
-    "media.p403.network": "Chất lượng kết nối",
-    "media.p403.effect": "Hiệu ứng hình ảnh",
-    "media.p403.effectNone": "Không dùng hiệu ứng",
-    "media.p403.networkPrivacy":
-      "Thiết bị chỉ mở khi bạn cho phép và có thể bật/tắt bất cứ lúc nào trong phòng.",
-    "media.p403.joinWithDevices": "Tham gia với thiết bị đã bật",
-    "media.p403.joinListenOnly": "Tham gia chỉ nghe",
-    "media.p403.joining": "Đang vào phòng…",
-    "media.p403.readyHeading": "Sẵn sàng vào lớp?",
-    "media.p403.readyDescription":
-      "Bạn có thể vào với camera và micro đã kiểm tra, hoặc chỉ nghe rồi bật thiết bị sau.",
-    "media.p403.studioClass": "Lớp học",
-    "media.p403.liveOpen": "Phòng học đang mở",
-    "media.p403.inviteTitle": "Kiểm tra hình ảnh và âm thanh của bạn",
-    "media.p403.inviteBody":
-      "Trình duyệt chỉ hỏi quyền khi bạn bấm kiểm tra. Bạn vẫn có thể vào lớp chỉ nghe.",
-    "media.p403.requestingTitle": "Đang chờ bạn cho phép",
-    "media.p403.requestingBody":
-      "Chọn Cho phép trong hộp thoại của trình duyệt để tiếp tục.",
-    "media.p403.previewStoppedBody":
-      "Bật lại micro hoặc camera bằng các nút bên dưới khi bạn sẵn sàng.",
-    "media.p403.cameraOff": "Camera đang tắt",
-    "media.p403.micTurnOn": "Bật micro",
-    "media.p403.micTurnOff": "Tắt micro",
-    "media.p403.cameraTurnOn": "Bật camera",
-    "media.p403.cameraTurnOff": "Tắt camera",
+    "media.p403.join": "Tham gia",
+    "media.p403.joining": "Đang vào…",
     "media.p403.permissionHint":
       "Trình duyệt sẽ hỏi quyền khi bạn bật thiết bị này.",
-    "media.p403.dockLabel": "Điều khiển micro và camera",
+    "media.p403.permissionNeeded": "Cần cấp quyền",
+    "media.p403.noDevice": "Không tìm thấy thiết bị",
+    "media.p403.deviceControls": "Micro và camera",
     "media.p403.devicesLabel": "Chọn thiết bị",
-    "media.p403.deviceHint":
-      "Micro, loa và camera sẽ hiện ở đây sau khi kiểm tra. Đeo tai nghe giúp tránh tiếng vọng.",
-    "media.p403.summaryTitle": "Bạn sẽ vào lớp với",
-    "media.p403.summaryOn": "Bật",
-    "media.p403.summaryOff": "Tắt",
-    "media.p403.summaryListenOnly":
-      "Bạn sẽ vào lớp ở chế độ chỉ nghe và có thể bật micro hoặc camera bất cứ lúc nào.",
-    "media.p403.summaryDevices":
-      "Bạn có thể bật hoặc tắt từng thiết bị bất cứ lúc nào trong lớp.",
-    "media.p403.diagnosticsOpen": "Chẩn đoán kết nối (24h)",
-    "media.p403.selfFallback": "Bạn",
-    "media.p403.signedInAs": "Đang đăng nhập",
-    "media.p403.processingLabel": "Xử lý âm thanh",
+    "media.p403.moreOptions": "Tùy chọn khác",
+    "media.p403.noiseSuppression": "Lọc ồn",
     "media.p403.waitingTitle": "Đang chờ được cho vào",
     "media.p403.waitingDescription":
       "Giáo viên sẽ cho bạn vào lớp trong giây lát. Micro và camera chưa kết nối với lớp khi bạn đang chờ.",
@@ -2385,14 +2347,19 @@ const messages = {
     "media.p403.deviceReset":
       "Thiết bị đã chọn không còn khả dụng. TutorHub đã chuyển về thiết bị mặc định.",
     "media.p403.speaker": "Loa",
-    "media.p403.systemDefault": "Loa mặc định của hệ thống",
-    "media.p403.micLevel": "Mức micro",
+    "media.p403.systemDefault": "Loa mặc định",
     "media.p403.audioMode": "Chế độ âm thanh",
-    "media.p403.speech": "Giọng nói (khử vọng & lọc ồn)",
+    "media.p403.speech": "Giọng nói",
     "media.p403.originalSound": "Âm thanh gốc",
-    "media.p403.actualProcessing":
-      "Thực tế: khử vọng {echo}, lọc ồn {noise}, tự cân bằng {gain}.",
     "media.p403.stopSpeaker": "Dừng thử loa",
+    "media.p403.nameLabel": "Tên của bạn",
+    "media.p403.rememberName": "Ghi nhớ tên của tôi cho các buổi học sau",
+    "media.p403.nameSaveError": "Chưa lưu được tên mới. Hãy thử lại.",
+    "media.p403.termsLead": "Bằng việc nhấn “Tham gia”, bạn đồng ý với ",
+    "media.p403.termsOfService": "Điều khoản dịch vụ",
+    "media.p403.termsJoin": " và ",
+    "media.p403.privacyStatement": "Chính sách bảo mật",
+    "media.p403.termsTail": " của chúng tôi.",
     "media.p403.providerUnavailable":
       "Dịch vụ media đang tạm thời không khả dụng.",
     "media.p403.featureDisabled":
@@ -2403,16 +2370,7 @@ const messages = {
     "media.p403.rateLimited":
       "Bạn đã thử tham gia quá nhiều lần. Hãy chờ rồi thử lại.",
     "media.p403.leave": "Rời phòng",
-    "media.p403.unknown": "không xác định",
-    "media.p403.on": "bật",
-    "media.p403.off": "tắt",
-    "media.p403.network.checking": "Đang kiểm tra",
-    "media.p403.network.ready": "Sẵn sàng",
     "media.p403.network.offline": "Thiết bị đang ngoại tuyến",
-    "media.p403.network.unavailable": "Không thể xác nhận kết nối",
-    "media.p403.network.fast": "nhanh",
-    "media.p403.network.moderate": "trung bình",
-    "media.p403.network.slow": "chậm",
     "media.p403.speaker.idle": "Chưa kiểm tra",
     "media.p403.speaker.playing": "Đang phát âm thử",
     "media.p403.speaker.success": "Đã phát âm thử",
@@ -2422,9 +2380,9 @@ const messages = {
       "Trình duyệt dùng loa mặc định của hệ thống.",
     "media.p403.speaker.failed": "Không thể phát âm thử.",
     "media.p403.error.media_permission_denied_or_blocked":
-      "Quyền camera hoặc micro bị từ chối. Bạn vẫn có thể tham gia chỉ nghe.",
+      "Quyền camera hoặc micro bị từ chối. Bạn vẫn có thể vào lớp mà không cần thiết bị.",
     "media.p403.error.media_device_not_found":
-      "Không tìm thấy camera hoặc micro. Bạn vẫn có thể tham gia chỉ nghe.",
+      "Không tìm thấy camera hoặc micro. Bạn vẫn có thể vào lớp mà không cần thiết bị.",
     "media.p403.error.media_device_busy_or_unreadable":
       "Thiết bị đang được ứng dụng khác sử dụng. Hãy đóng ứng dụng đó rồi thử lại.",
     "media.p403.error.media_constraints_unavailable":
@@ -2437,7 +2395,7 @@ const messages = {
     "media.p403.error.media_playback_blocked":
       "Trình duyệt đã chặn phát âm thử. Hãy chọn Thử loa lần nữa.",
     "media.p403.error.media_device_unknown":
-      "Thiết bị gặp lỗi chưa xác định. Bạn vẫn có thể tham gia chỉ nghe.",
+      "Thiết bị gặp lỗi chưa xác định. Bạn vẫn có thể vào lớp mà không cần thiết bị.",
     "media.p404.refresh": "Làm mới",
     "media.p404.refreshing": "Đang làm mới...",
     "media.p404.reload": "Tải lại trạng thái",
@@ -5407,61 +5365,23 @@ const messages = {
       "The room is locked and is not accepting new join attempts.",
     "media.p403.back": "← Back to Home",
     "media.p403.backToClass": "← Back to class",
-    "media.p403.title": "Get ready for class",
-    "media.p403.description":
-      "Check your camera and audio before entering the classroom.",
+    "media.p403.title": "Enter Meeting",
     "media.p403.previewLabel": "Local camera preview",
-    "media.p403.previewOff": "Camera and microphone are off",
-    "media.p403.previewConsent":
-      "Choose the device check to let the browser request access.",
-    "media.p403.retryPreview": "Test devices again",
-    "media.p403.startPreview": "Test camera and microphone",
+    "media.p403.inviteQuestion":
+      "Do you want people to see and hear you in the meeting?",
+    "media.p403.allowDevices": "Allow microphone and camera",
     "media.p403.stopPreview": "Stop preview",
     "media.p403.deviceProblem": "The selected device is unavailable",
-    "media.p403.readinessLabel": "Join readiness status",
-    "media.p403.network": "Connection status",
-    "media.p403.effect": "Video effect",
-    "media.p403.effectNone": "No effect",
-    "media.p403.networkPrivacy":
-      "Your camera and microphone stay off until you test them and can be toggled anytime in class.",
-    "media.p403.joinWithDevices": "Join with enabled devices",
-    "media.p403.joinListenOnly": "Join listen-only",
+    "media.p403.join": "Join",
     "media.p403.joining": "Joining…",
-    "media.p403.readyHeading": "Ready to join?",
-    "media.p403.readyDescription":
-      "Join with the camera and microphone you tested, or listen only and turn devices on later.",
-    "media.p403.studioClass": "Class",
-    "media.p403.liveOpen": "Live session open",
-    "media.p403.inviteTitle": "Check how you look and sound",
-    "media.p403.inviteBody":
-      "Your browser asks for access only when you start the check. You can still join listen-only.",
-    "media.p403.requestingTitle": "Waiting for your permission",
-    "media.p403.requestingBody":
-      "Choose Allow in your browser's prompt to continue.",
-    "media.p403.previewStoppedBody":
-      "Turn your microphone or camera back on with the buttons below when you're ready.",
-    "media.p403.cameraOff": "Camera is off",
-    "media.p403.micTurnOn": "Turn on microphone",
-    "media.p403.micTurnOff": "Turn off microphone",
-    "media.p403.cameraTurnOn": "Turn on camera",
-    "media.p403.cameraTurnOff": "Turn off camera",
     "media.p403.permissionHint":
       "Your browser will ask for permission when you turn this on.",
-    "media.p403.dockLabel": "Microphone and camera controls",
-    "media.p403.devicesLabel": "Choose devices",
-    "media.p403.deviceHint":
-      "Your microphone, speaker and camera appear here after the check. Headphones help prevent echo.",
-    "media.p403.summaryTitle": "You'll join with",
-    "media.p403.summaryOn": "On",
-    "media.p403.summaryOff": "Off",
-    "media.p403.summaryListenOnly":
-      "You'll join listen-only and can turn on your microphone or camera anytime.",
-    "media.p403.summaryDevices":
-      "You can turn each device on or off anytime in class.",
-    "media.p403.diagnosticsOpen": "Connection diagnostics (24h)",
-    "media.p403.selfFallback": "You",
-    "media.p403.signedInAs": "Signed in as",
-    "media.p403.processingLabel": "Audio processing",
+    "media.p403.permissionNeeded": "Permission needed",
+    "media.p403.noDevice": "No device found",
+    "media.p403.deviceControls": "Microphone and camera",
+    "media.p403.devicesLabel": "Devices",
+    "media.p403.moreOptions": "More options",
+    "media.p403.noiseSuppression": "Noise suppression",
     "media.p403.waitingTitle": "Waiting to be admitted",
     "media.p403.waitingDescription":
       "Your teacher will let you in shortly. Your microphone and camera aren't connected to the class while you wait.",
@@ -5469,14 +5389,19 @@ const messages = {
     "media.p403.deviceReset":
       "The selected device is no longer available. TutorHub switched to the browser default.",
     "media.p403.speaker": "Speaker",
-    "media.p403.systemDefault": "System default speaker",
-    "media.p403.micLevel": "Microphone level",
+    "media.p403.systemDefault": "Default speaker",
     "media.p403.audioMode": "Audio mode",
-    "media.p403.speech": "Voice (echo & noise reduction)",
+    "media.p403.speech": "Voice",
     "media.p403.originalSound": "Original sound",
-    "media.p403.actualProcessing":
-      "Actual: echo cancellation {echo}, noise suppression {noise}, auto gain {gain}.",
     "media.p403.stopSpeaker": "Stop speaker test",
+    "media.p403.nameLabel": "Your Name",
+    "media.p403.rememberName": "Remember my name for future meetings",
+    "media.p403.nameSaveError": "Your new name couldn't be saved. Try again.",
+    "media.p403.termsLead": "By clicking “Join”, you agree to our ",
+    "media.p403.termsOfService": "Terms of Service",
+    "media.p403.termsJoin": " and ",
+    "media.p403.privacyStatement": "Privacy Statement",
+    "media.p403.termsTail": ".",
     "media.p403.providerUnavailable":
       "The media service is temporarily unavailable.",
     "media.p403.featureDisabled":
@@ -5487,16 +5412,7 @@ const messages = {
     "media.p403.rateLimited":
       "Too many join attempts. Wait before trying again.",
     "media.p403.leave": "Leave room",
-    "media.p403.unknown": "unknown",
-    "media.p403.on": "on",
-    "media.p403.off": "off",
-    "media.p403.network.checking": "Checking",
-    "media.p403.network.ready": "Ready",
     "media.p403.network.offline": "This device is offline",
-    "media.p403.network.unavailable": "Connection could not be confirmed",
-    "media.p403.network.fast": "fast",
-    "media.p403.network.moderate": "moderate",
-    "media.p403.network.slow": "slow",
     "media.p403.speaker.idle": "Not tested",
     "media.p403.speaker.playing": "Playing test sound",
     "media.p403.speaker.success": "Test sound played",
@@ -5506,9 +5422,9 @@ const messages = {
       "The browser will use the system default speaker.",
     "media.p403.speaker.failed": "The test sound could not be played.",
     "media.p403.error.media_permission_denied_or_blocked":
-      "Camera or microphone permission was denied. You can still join listen-only.",
+      "Camera or microphone permission was denied. You can still join without them.",
     "media.p403.error.media_device_not_found":
-      "No camera or microphone was found. You can still join listen-only.",
+      "No camera or microphone was found. You can still join without them.",
     "media.p403.error.media_device_busy_or_unreadable":
       "Another application is using the device. Close it and try again.",
     "media.p403.error.media_constraints_unavailable":
@@ -5521,7 +5437,7 @@ const messages = {
     "media.p403.error.media_playback_blocked":
       "The browser blocked the test sound. Choose Test speaker again.",
     "media.p403.error.media_device_unknown":
-      "The device reported an unknown error. You can still join listen-only.",
+      "The device reported an unknown error. You can still join without it.",
     "media.p404.refresh": "Refresh",
     "media.p404.refreshing": "Refreshing...",
     "media.p404.reload": "Reload current state",

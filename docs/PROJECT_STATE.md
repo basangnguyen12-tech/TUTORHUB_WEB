@@ -4,18 +4,28 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                                 |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-23                                                                                                                                                 |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                      |
-| Nhánh làm việc       | `main`                                                                                                                                                     |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                  |
-| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                            |
-| Task `DONE` gần nhất | `PREJOIN-STUDIO-02` Thiết kế lại màn Chuẩn bị vào lớp (Pre-Join Studio) chuẩn Public Beta kết hợp Google Meet, Zoom & Microsoft Teams                      |
-| Mốc repository mới   | `@tutorhub/web` `1018/1018` (`101` file), Chromium E2E `p4-03..07` `29/29` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `212` file             |
-| Task hiện tại        | Trải nghiệm màn Pre-Join Studio mới & chuẩn bị nâng cấp tiếp giao diện bên trong Phòng học trực tuyến chuẩn Public Beta; chờ GitHub mở khóa để push `main` |
-| Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages  |
+| Thuộc tính           | Trạng thái                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-23                                                                                                                                                    |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                         |
+| Nhánh làm việc       | `main`                                                                                                                                                        |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                   |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                     |
+| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                               |
+| Task `DONE` gần nhất | `PREJOIN-CLONE-04` Dựng chuẩn 1:1 màn Pre-Join theo mẫu tinh gọn (khung `16:9` `#202124` + 3 nút tròn + 4 pill mảnh & form `Enter Meeting` / `Vào phòng học`) |
+| Mốc repository mới   | `@tutorhub/web` `1025/1025` (`101` file), Chromium E2E `p4-03..07` `33/33` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `212` file                |
+| Task hiện tại        | Trải nghiệm màn Pre-Join 1:1 mới & chuẩn bị nâng cấp tiếp giao diện bên trong Phòng học trực tuyến; chờ GitHub mở khóa để push `main`                         |
+| Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages     |
+
+### Checkpoint `PREJOIN-CLONE-04` Dựng Chuẩn 1:1 Màn Pre-Join Tinh Gọn (Khung `16:9` `#202124` + 3 Nút Tròn + 4 Pill & Form `Enter Meeting` / `Vào phòng học`) (`DONE`) — 2026-11-23
+
+Claude Code triển khai `PREJOIN-CLONE-04` theo đúng mẫu chuẩn của chủ dự án; Gatekeeper (Antigravity) review `RESEARCH.md`, đối chiếu ảnh render `1440×900` với mẫu chuẩn, cập nhật 1 dòng kiểm tra tiêu đề tại `apps/web/src/App.test.tsx:1104`, chạy độc lập `pnpm verify`, cổng giới hạn bundle `LazyWhiteboardEngine` và trọn bộ 33 bài Chromium Playwright E2E `p4-03..07`:
+
+- **Bố cục Nền trắng `#ffffff` Tinh gọn 2 Đường kẻ ngang & Header mảnh `50px` (`MediaSpacePages.tsx`, `MediaSpacePrejoin.css`, `i18n.tsx`)**:
+  - Loại bỏ toàn bộ các khối chữ/badge/thẻ thừa và xóa hẳn `<footer>` + nút chẩn đoán trên Pre-Join; giữ header mảnh `50px` (link quay lại, tên lớp · workspace, `.language-select`) cùng đường kẻ ngang trên/dưới `#d1d5db` trên nền `#ffffff`.
+  - **Cột trái (`16:9` `#202124`, bo `12px`)**: góc trên-trái hiển thị chữ trắng phẳng tên người dùng đồng bộ trực tiếp theo ô nhập tên, góc trên-phải có nút `⋮` mở `<Menu>` của `@tutorhub/ui` (`Thử loa`, `Giọng nói / Âm thanh gốc`, `Tắt xem trước`); chính giữa khi chưa cấp quyền chỉ hiển thị đúng câu hỏi mời và nút `#1a73e8` `Cho phép micro và camera` / `Allow microphone and camera` (khi tắt camera hiện monogram tròn); cạnh dưới gồm 3 nút tròn `48px` rời nhau (Micro, Camera có chấm vàng `!` trước khi cấp quyền / nền đỏ `#ea4335` khi tắt, và nút tròn thứ 3 `#5f6368` chuyển chế độ lọc ồn); ngay bên dưới khung là 1 hàng 4 pill mảnh `32px` (`Cần cấp quyền` / `Permission needed` bị khóa trước khi cấp quyền, sau khi cấp quyền mở chọn `Micro`, `Loa`, `Camera`, `Chế độ âm thanh`).
+  - **Cột phải (form phẳng không viền trên nền trắng)**: tiêu đề `<h1>` `Vào phòng học` / `Enter Meeting` căn ngang mép trên khung video, ô `Tên của bạn` / `Your Name` (`44px`), checkbox `Ghi nhớ tên của tôi cho các buổi học sau` (mặc định tích; chỉ gọi `PATCH /api/v1/me` `updateProfile` khi đang tích và tên đã chuẩn hóa `NFC` khác tên tài khoản, giữ nguyên thứ tự `csrf -> attempt -> credential` và `0` lần gọi media khi bấm `Tham gia` / `Join` lúc chưa bật thiết bị), nút `#0e71eb` `Tham gia` / `Join` (`46px` full-width) và dòng điều khoản mở trực tiếp `<SignInLegalDialog>` (`agreement` / `privacy`) có sẵn kèm trả focus chuẩn.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1025/1025`** trên `101` file, `security:bundle` `212` file, Storybook build, Go `40` package + `go vet`), `node scripts/check-whiteboard-performance-bundle.mjs apps/web/dist` PASS (`issues: []`), `git diff --check` sạch, và trọn bộ Chromium Playwright E2E `p4-03..07` (`33/33` bài chạy thực tế — tăng `4` bài E2E mới cho lưu/bỏ lưu tên hiển thị, mở hộp thoại điều khoản, đo kích thước 3 nút tròn `48px` + 4 pill `32px` trong 1 viewport `1280×800`/`1440×900` và Axe `forced-colors`) **`PASS` (`40.2s`)**.
 
 ### Checkpoint `PREJOIN-STUDIO-02` Thiết kế lại Màn Chuẩn bị Vào lớp (Pre-Join Studio) Chuẩn Public Beta Kết hợp Google Meet, Zoom & Microsoft Teams (`DONE`) — 2026-11-23
 
