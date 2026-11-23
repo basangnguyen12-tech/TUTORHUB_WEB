@@ -1351,8 +1351,20 @@ export function ClassroomMediaShell({
       ref={shellRef}
     >
       <header className="media-p405-header">
-        <div>
+        <div className="media-p405-header-title">
+          <span
+            aria-hidden="true"
+            className="media-p405-connection-dot"
+            data-connection={connectionStatus}
+          />
           <h1>{t("media.room.title")}</h1>
+          <span aria-hidden="true" className="media-p405-header-divider" />
+          <SessionClock
+            live={
+              connectionStatus === "connected" ||
+              connectionStatus === "reconnecting"
+            }
+          />
           <p aria-live="polite" role="status">
             {t(roomStatusKey(connectionStatus))}
             {" / "}
@@ -1561,6 +1573,7 @@ export function ClassroomMediaShell({
             projection.items.length > 0 ? (
               <ul
                 className={`media-p405-grid media-p405-grid--capacity-${projection.capacity}`}
+                data-tile-count={projection.items.length}
               >
                 {projection.items.map((item) => (
                   <li key={item.id}>
@@ -1685,6 +1698,7 @@ export function ClassroomMediaShell({
           {canPublishCameraMicrophone && (
             <>
               <IconButton
+                className="media-p405-dock-button media-p405-dock-button--av"
                 data-media-control="microphone"
                 disabled={pendingControl !== null || controlsTerminated}
                 id="media-p405-control-microphone"
@@ -1703,9 +1717,13 @@ export function ClassroomMediaShell({
                 tabIndex={toolbarTabIndex("microphone")}
                 variant={isMicrophoneEnabled ? "secondary" : "danger"}
               >
-                {isMicrophoneEnabled ? <Mic /> : <MicOff />}
+                <DockGlyph
+                  caption={t("media.room.dock.mic")}
+                  icon={isMicrophoneEnabled ? <Mic /> : <MicOff />}
+                />
               </IconButton>
               <IconButton
+                className="media-p405-dock-button media-p405-dock-button--av"
                 data-media-control="camera"
                 disabled={
                   pendingControl !== null ||
@@ -1728,12 +1746,17 @@ export function ClassroomMediaShell({
                 tabIndex={toolbarTabIndex("camera")}
                 variant={isCameraEnabled ? "secondary" : "danger"}
               >
-                {isCameraEnabled ? <Camera /> : <CameraOff />}
+                <DockGlyph
+                  caption={t("media.room.dock.camera")}
+                  icon={isCameraEnabled ? <Camera /> : <CameraOff />}
+                />
               </IconButton>
+              <DockDivider />
             </>
           )}
           {canShareScreen && (
             <IconButton
+              className="media-p405-dock-button"
               data-media-control="screen-share"
               disabled={pendingControl !== null || controlsTerminated}
               id="media-p405-control-screen-share"
@@ -1752,11 +1775,21 @@ export function ClassroomMediaShell({
               tabIndex={toolbarTabIndex("screen-share")}
               variant={isScreenShareEnabled ? "danger" : "secondary"}
             >
-              {isScreenShareEnabled ? <ScreenShareOff /> : <ScreenShare />}
+              <DockGlyph
+                caption={t(
+                  isScreenShareEnabled
+                    ? "media.room.dock.shareStop"
+                    : "media.room.dock.share",
+                )}
+                icon={
+                  isScreenShareEnabled ? <ScreenShareOff /> : <ScreenShare />
+                }
+              />
             </IconButton>
           )}
           <IconButton
             aria-expanded={devicePanelOpen}
+            className="media-p405-dock-button"
             data-media-control="devices"
             disabled={controlsTerminated}
             id="media-p405-control-devices"
@@ -1766,7 +1799,10 @@ export function ClassroomMediaShell({
             tabIndex={toolbarTabIndex("devices")}
             variant="secondary"
           >
-            <Settings2 />
+            <DockGlyph
+              caption={t("media.room.dock.devices")}
+              icon={<Settings2 />}
+            />
           </IconButton>
 
           {canPublishCameraMicrophone && (
@@ -1776,6 +1812,7 @@ export function ClassroomMediaShell({
               }
               aria-expanded={effectsOpen && effectsAvailable}
               aria-haspopup="dialog"
+              className="media-p405-dock-button"
               data-media-control="effects"
               disabled={controlsTerminated}
               id="media-p405-control-effects"
@@ -1785,7 +1822,10 @@ export function ClassroomMediaShell({
               tabIndex={toolbarTabIndex("effects")}
               variant={effectsActive ? "primary" : "secondary"}
             >
-              <Sparkles />
+              <DockGlyph
+                caption={t("media.room.dock.effects")}
+                icon={<Sparkles />}
+              />
             </IconButton>
           )}
           {canPublishCameraMicrophone && effectsActive && (
@@ -1797,6 +1837,7 @@ export function ClassroomMediaShell({
           {signals?.projection?.viewer_operations.can_raise_hand && (
             <IconButton
               aria-pressed={Boolean(selfHand)}
+              className="media-p405-dock-button"
               data-media-control="hand"
               disabled={
                 signals.mutating || signals.loading || controlsTerminated
@@ -1818,7 +1859,12 @@ export function ClassroomMediaShell({
               tabIndex={toolbarTabIndex("hand")}
               variant={selfHand ? "primary" : "secondary"}
             >
-              <Hand />
+              <DockGlyph
+                caption={t(
+                  selfHand ? "media.room.dock.lower" : "media.room.dock.raise",
+                )}
+                icon={<Hand />}
+              />
             </IconButton>
           )}
 
@@ -1826,6 +1872,7 @@ export function ClassroomMediaShell({
             <Menu modal={false}>
               <MenuTrigger asChild>
                 <IconButton
+                  className="media-p405-dock-button"
                   data-media-control="reaction"
                   disabled={signals.mutating || controlsTerminated}
                   id="media-p406-control-reaction"
@@ -1834,7 +1881,10 @@ export function ClassroomMediaShell({
                   tabIndex={toolbarTabIndex("reaction")}
                   variant="secondary"
                 >
-                  <Smile />
+                  <DockGlyph
+                    caption={t("media.room.dock.react")}
+                    icon={<Smile />}
+                  />
                 </IconButton>
               </MenuTrigger>
               <MenuContent
@@ -1864,6 +1914,7 @@ export function ClassroomMediaShell({
             <Drawer onOpenChange={setChatOpen} open={chatOpen}>
               <DrawerTrigger asChild>
                 <IconButton
+                  className="media-p405-dock-button"
                   data-media-control="chat"
                   id="media-p408-control-chat"
                   label={t("media.p408.openChat")}
@@ -1871,7 +1922,10 @@ export function ClassroomMediaShell({
                   tabIndex={toolbarTabIndex("chat")}
                   variant="secondary"
                 >
-                  <MessageCircle />
+                  <DockGlyph
+                    caption={t("media.room.dock.chat")}
+                    icon={<MessageCircle />}
+                  />
                 </IconButton>
               </DrawerTrigger>
               <DrawerContent
@@ -1894,6 +1948,7 @@ export function ClassroomMediaShell({
               <IconButton
                 aria-controls={open ? `media-p506-stage-${tool.id}` : undefined}
                 aria-expanded={open}
+                className="media-p405-dock-button"
                 data-media-control={`tool-${tool.id}`}
                 id={`media-p506-control-${tool.id}`}
                 key={tool.id}
@@ -1903,7 +1958,10 @@ export function ClassroomMediaShell({
                 tabIndex={toolbarTabIndex(`tool-${tool.id}`)}
                 variant={open ? "primary" : "secondary"}
               >
-                {tool.icon}
+                <DockGlyph
+                  caption={t(toolCaptionKey(tool.id))}
+                  icon={tool.icon}
+                />
               </IconButton>
             );
           })}
@@ -1912,7 +1970,7 @@ export function ClassroomMediaShell({
             <Drawer onOpenChange={setRosterOpen} open={rosterOpen}>
               <DrawerTrigger asChild>
                 <IconButton
-                  className="media-p406-roster-control"
+                  className="media-p405-dock-button media-p406-roster-control"
                   data-media-control="roster"
                   disabled={controlsTerminated}
                   id="media-p406-control-roster"
@@ -1927,7 +1985,10 @@ export function ClassroomMediaShell({
                   tabIndex={toolbarTabIndex("roster")}
                   variant={waitingCount > 0 ? "primary" : "secondary"}
                 >
-                  <Users />
+                  <DockGlyph
+                    caption={t("media.room.dock.people")}
+                    icon={<Users />}
+                  />
                   {waitingCount > 0 && (
                     <span className="media-p406-roster-badge">
                       {waitingCount > 99 ? "99+" : waitingCount}
@@ -1972,37 +2033,58 @@ export function ClassroomMediaShell({
             </Drawer>
           )}
 
+          <DockDivider />
           <div
             aria-label={t("media.p405.layoutGroup")}
             className="media-p405-layout-controls"
             role="group"
           >
-            {layoutModes.map((mode) => (
-              <IconButton
-                aria-pressed={projection.mode === mode}
-                data-media-control={`layout-${mode}`}
-                disabled={mode === "presentation" && !presenterID}
-                id={`media-p405-layout-${mode}`}
-                key={mode}
-                label={t(layoutModeKey(mode))}
-                onClick={() => changeLayout(mode)}
-                onFocus={() => setToolbarFocusKey(`layout-${mode}`)}
-                tabIndex={toolbarTabIndex(`layout-${mode}`)}
-                variant={projection.mode === mode ? "primary" : "quiet"}
-              >
-                {mode === "grid" ? (
-                  <Grid2X2 />
-                ) : mode === "active-speaker" ? (
-                  <UserRound />
-                ) : (
-                  <Presentation />
-                )}
-              </IconButton>
-            ))}
+            <div className="media-p405-layout-pill">
+              {layoutModes.map((mode) => (
+                <IconButton
+                  aria-pressed={projection.mode === mode}
+                  className="media-p405-layout-button"
+                  data-media-control={`layout-${mode}`}
+                  disabled={mode === "presentation" && !presenterID}
+                  id={`media-p405-layout-${mode}`}
+                  key={mode}
+                  label={t(layoutModeKey(mode))}
+                  onClick={() => changeLayout(mode)}
+                  onFocus={() => setToolbarFocusKey(`layout-${mode}`)}
+                  tabIndex={toolbarTabIndex(`layout-${mode}`)}
+                  variant={projection.mode === mode ? "primary" : "quiet"}
+                >
+                  {mode === "grid" ? (
+                    <Grid2X2 />
+                  ) : mode === "active-speaker" ? (
+                    <UserRound />
+                  ) : (
+                    <Presentation />
+                  )}
+                </IconButton>
+              ))}
+            </div>
+            <DockCaption>{t("media.room.dock.layout")}</DockCaption>
           </div>
         </div>
 
+        <DockDivider />
         <LeaveRoomDialog onLeave={handleLeave} />
+
+        {/*
+          Anchored to the Dock (not the shell) so the device popover stays
+          centred above it whatever its height or a side drawer's width.
+          Rendered after Leave, so the Tab order is unchanged.
+        */}
+        {devicePanelOpen && !controlsTerminated && (
+          <DevicePanel
+            canPublish={canPublishCameraMicrophone}
+            onChange={(name, action) =>
+              void runControl(name, () => Promise.resolve(action()))
+            }
+            onDeviceError={handleDeviceError}
+          />
+        )}
       </footer>
 
       {canPublishCameraMicrophone && (
@@ -2040,6 +2122,7 @@ export function ClassroomMediaShell({
               isTrackReference(localCameraTrackRef) ? (
                 <VideoTrack
                   aria-label={t("media.fx.selfPreview")}
+                  className="media-p405-video--mirror"
                   manageSubscription={false}
                   trackRef={localCameraTrackRef}
                 />
@@ -2069,18 +2152,76 @@ export function ClassroomMediaShell({
           </DrawerContent>
         </Drawer>
       )}
-
-      {devicePanelOpen && !controlsTerminated && (
-        <DevicePanel
-          canPublish={canPublishCameraMicrophone}
-          onChange={(name, action) =>
-            void runControl(name, () => Promise.resolve(action()))
-          }
-          onDeviceError={handleDeviceError}
-        />
-      )}
     </div>
   );
+}
+
+/**
+ * ROOM-STUDIO-02 Dock content: icon plus a short caption. The caption is
+ * decorative (`aria-hidden`); the button keeps its full accessible label.
+ * It stays visually hidden unless the room stylesheet reveals it on wide
+ * screens, so hosts that only load the base styles keep 40px icon buttons.
+ */
+function DockGlyph({ caption, icon }: { caption: string; icon: ReactNode }) {
+  return (
+    <>
+      <span className="media-p405-dock-icon">{icon}</span>
+      <DockCaption>{caption}</DockCaption>
+    </>
+  );
+}
+
+function DockCaption({ children }: { children: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="media-p405-dock-caption visually-hidden"
+    >
+      {children}
+    </span>
+  );
+}
+
+function DockDivider() {
+  return <span aria-hidden="true" className="media-p405-dock-divider" />;
+}
+
+/**
+ * Elapsed time since the room first connected (kept through reconnects).
+ * Its own component so only this text re-renders every second. Hidden from
+ * assistive technology: the polite status line already conveys the room
+ * state and a ticking value would be noise.
+ */
+function SessionClock({ live }: { live: boolean }) {
+  const startedAt = useRef<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!live) return undefined;
+    startedAt.current ??= Date.now();
+    const origin = startedAt.current;
+    const timer = globalThis.setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - origin) / 1_000)));
+    }, 1_000);
+    return () => globalThis.clearInterval(timer);
+  }, [live]);
+  return (
+    <span aria-hidden="true" className="media-p405-session-clock">
+      {formatSessionClock(elapsedSeconds)}
+    </span>
+  );
+}
+
+function formatSessionClock(totalSeconds: number): string {
+  const safe = Number.isFinite(totalSeconds)
+    ? Math.max(0, Math.floor(totalSeconds))
+    : 0;
+  const hours = Math.floor(safe / 3_600);
+  const minutes = Math.floor((safe % 3_600) / 60);
+  const seconds = safe % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours > 0
+    ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+    : `${pad(minutes)}:${pad(seconds)}`;
 }
 
 function ClassroomRoster({
@@ -2146,11 +2287,24 @@ function ClassroomRoster({
             participant.participant_key === projection.self_participant_key;
           return (
             <li key={participant.participant_key}>
-              <div>
+              <div className="media-p406-roster-person">
                 <strong>{participant.display_name}</strong>
-                {isSelf && <span> ({t("media.p406.you")})</span>}
-                <span>{t(instanceRoleKey(participant.instance_role))}</span>
-                <span>
+                {isSelf && (
+                  <span className="media-p406-roster-self">
+                    {" "}
+                    ({t("media.p406.you")})
+                  </span>
+                )}
+                <span
+                  className="media-p406-roster-role"
+                  data-role={participant.instance_role}
+                >
+                  {t(instanceRoleKey(participant.instance_role))}
+                </span>
+                <span
+                  className="media-p406-roster-connection"
+                  data-connection={participant.connection_state}
+                >
                   {t(connectionStateKey(participant.connection_state))}
                 </span>
               </div>
@@ -2208,6 +2362,8 @@ function MediaTile({
     { name: displayName },
   );
   const pinButtonID = useId();
+  // Self-view reads like a mirror; screen shares and other people never flip.
+  const mirrorVideo = item.isLocal && !isPresentation;
 
   return (
     <ParticipantTile
@@ -2219,11 +2375,16 @@ function MediaTile({
       {attachVideo && isTrackReference(trackRef) && (
         <VideoTrack
           aria-label={label}
+          className={mirrorVideo ? "media-p405-video--mirror" : undefined}
           manageSubscription={false}
           trackRef={trackRef}
         />
       )}
-      <div aria-hidden="true" className="media-p405-avatar">
+      <div
+        aria-hidden="true"
+        className="media-p405-avatar"
+        data-tone={avatarTone(displayName)}
+      >
         {displayName.slice(0, 1).toLocaleUpperCase()}
       </div>
       <div className="media-p405-tile-meta">
@@ -2246,6 +2407,15 @@ function MediaTile({
       </div>
     </ParticipantTile>
   );
+}
+
+/** A stable colour slot (0–5) for the camera-off avatar, from the name. */
+function avatarTone(name: string): number {
+  let hash = 0;
+  for (const character of name) {
+    hash = (hash * 31 + (character.codePointAt(0) ?? 0)) >>> 0;
+  }
+  return hash % 6;
 }
 
 function ParticipantRail({
@@ -2390,6 +2560,7 @@ function LeaveRoomDialog({ onLeave }: { onLeave: () => void }) {
     <Dialog>
       <DialogTrigger asChild>
         <Button
+          className="media-p405-dock-leave"
           id="media-p405-control-leave"
           leadingIcon={<LogOut />}
           variant="danger"
@@ -2570,6 +2741,13 @@ function degradationStatusKey(
 
 function roomStatusKey(status: ClassroomConnectionStatus): TranslationKey {
   return `media.room.${status}` as TranslationKey;
+}
+
+function toolCaptionKey(toolID: ClassroomToolID): TranslationKey {
+  switch (toolID) {
+    case "whiteboard":
+      return "media.room.dock.board";
+  }
 }
 
 function layoutModeKey(mode: ClassroomLayoutMode): TranslationKey {

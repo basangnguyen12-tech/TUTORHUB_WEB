@@ -113,6 +113,26 @@
   background: var(--color-danger-hover);
 }
 
+/*
+ * The dark-theme --color-danger (#f09aa0) is tuned for text and badges on dark
+ * surfaces; as a fill under white text it is only 2.13:1. Dark danger buttons
+ * use a crimson fill instead (#dc2626 / white = 4.83:1, WCAG AA).
+ */
+:is(
+  [data-theme="dark"] .th-button--danger,
+  .th-button--danger[data-theme="dark"]
+) {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+:is(
+    [data-theme="dark"] .th-button--danger,
+    .th-button--danger[data-theme="dark"]
+  ):hover:not(:disabled) {
+  background: #b91c1c;
+}
+
 .th-button__icon,
 .th-icon-button__icon {
   display: inline-flex;

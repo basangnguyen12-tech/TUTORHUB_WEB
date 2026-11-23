@@ -171,8 +171,8 @@ vi.mock("@livekit/components-react", () => ({
       {children}
     </div>
   ),
-  VideoTrack: (props: { "aria-label"?: string }) => (
-    <video aria-label={props["aria-label"]} />
+  VideoTrack: (props: { "aria-label"?: string; className?: string }) => (
+    <video aria-label={props["aria-label"]} className={props.className} />
   ),
   isTrackReference: (trackRef: MockTrackReference) =>
     Boolean(trackRef.publication),
@@ -1500,6 +1500,233 @@ describe("ClassroomMediaShell", () => {
 
     expect(focus).toHaveBeenCalledTimes(focusCallsBeforeUnmount);
     focus.mockRestore();
+  });
+
+  describe("ROOM-STUDIO-02 studio surface", () => {
+    it.each([
+      { participants: 1, tiles: 1 },
+      { participants: 2, tiles: 2 },
+      { participants: 5, tiles: 5 },
+      { participants: 25, tiles: 12 },
+    ])(
+      "reports $tiles visible tiles for $participants participants to the adaptive stage",
+      ({ participants, tiles }) => {
+        liveKitState.cameraTrackRefs = createCameraTracks(participants);
+        liveKitState.audioTrackRefs = createAudioTracks(participants);
+        const { container } = renderShell();
+        const grid = container.querySelector(".media-p405-grid");
+
+        expect(grid).toHaveAttribute("data-tile-count", String(tiles));
+        expect(grid).toHaveClass(
+          "media-p405-grid",
+          "media-p405-grid--capacity-12",
+        );
+        expect(
+          container.querySelectorAll(".media-p405-grid > li"),
+        ).toHaveLength(tiles);
+      },
+    );
+
+    it("shows a session clock hidden from assistive technology beside the unchanged status", () => {
+      vi.useFakeTimers();
+      liveKitState.cameraTrackRefs = createCameraTracks(2);
+      liveKitState.audioTrackRefs = createAudioTracks(2);
+      const { container } = renderShell();
+      const clock = container.querySelector(".media-p405-session-clock");
+
+      expect(clock).toHaveAttribute("aria-hidden", "true");
+      expect(clock).toHaveTextContent("00:00");
+      const status = screen.getByText("Connected / 2 participants");
+      expect(status).toHaveAttribute("role", "status");
+      expect(status).toHaveAttribute("aria-live", "polite");
+      expect(status).not.toContainElement(clock as HTMLElement);
+
+      act(() => {
+        vi.advanceTimersByTime(65_000);
+      });
+      expect(clock).toHaveTextContent(/^01:05$/);
+      act(() => {
+        vi.advanceTimersByTime(3_540_000);
+      });
+      expect(clock).toHaveTextContent(/^01:00:05$/);
+      expect(screen.getByText("Connected / 2 participants")).toBe(status);
+    });
+
+    it("keeps the clock at 00:00 until the room connects", () => {
+      vi.useFakeTimers();
+      liveKitState.cameraTrackRefs = createCameraTracks(1);
+      liveKitState.audioTrackRefs = createAudioTracks(1);
+      const view = renderShell({ connectionStatus: "connecting" });
+      const clock = () =>
+        view.container.querySelector(".media-p405-session-clock");
+
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(clock()).toHaveTextContent("00:00");
+      view.rerender(shellElement({ connectionStatus: "connected" }));
+      act(() => {
+        vi.advanceTimersByTime(3_000);
+      });
+      expect(clock()).toHaveTextContent("00:03");
+    });
+
+    it("adds decorative captions and cluster dividers without changing names or roving order", () => {
+      liveKitState.cameraTrackRefs = createCameraTracks(5);
+      liveKitState.audioTrackRefs = createAudioTracks(5);
+      renderShell({
+        chat: <p>Room chat</p>,
+        signals: createSignalControls(),
+        tools: [
+          {
+            content: <TestWhiteboardTool />,
+            icon: <span aria-hidden="true">W</span>,
+            id: "whiteboard",
+            label: "Open whiteboard",
+            title: "Classroom whiteboard",
+          },
+        ],
+      });
+      const toolbar = screen.getByRole("toolbar", {
+        name: "Classroom controls",
+      });
+
+      expect(
+        Array.from(
+          toolbar.querySelectorAll<HTMLElement>("[data-media-control]"),
+        ).map((control) => control.dataset.mediaControl),
+      ).toEqual([
+        "microphone",
+        "camera",
+        "screen-share",
+        "devices",
+        "effects",
+        "hand",
+        "reaction",
+        "chat",
+        "tool-whiteboard",
+        "roster",
+        "layout-grid",
+        "layout-active-speaker",
+        "layout-presentation",
+      ]);
+      for (const [name, caption] of [
+        ["Turn microphone on", "Mic"],
+        ["Turn camera on", "Camera"],
+        ["Share screen", "Share"],
+        ["Devices", "Setup"],
+        ["Backgrounds and effects", "Effects"],
+        ["Raise hand", "Raise"],
+        ["Send a reaction", "React"],
+        ["Open in-room chat", "Chat"],
+        ["Open whiteboard", "Board"],
+        ["Open classroom roster", "People"],
+      ] as const) {
+        const button = within(toolbar).getByRole("button", { name });
+        const captionElement = button.querySelector(".media-p405-dock-caption");
+        expect(captionElement).toHaveTextContent(caption);
+        expect(captionElement).toHaveAttribute("aria-hidden", "true");
+      }
+      const layoutGroup = within(toolbar).getByRole("group", {
+        name: "Layout mode",
+      });
+      expect(
+        layoutGroup.querySelector(".media-p405-dock-caption"),
+      ).toHaveAttribute("aria-hidden", "true");
+      const dividers = document.querySelectorAll(".media-p405-dock-divider");
+      expect(dividers).toHaveLength(3);
+      dividers.forEach((divider) => {
+        expect(divider).toHaveAttribute("aria-hidden", "true");
+        expect(divider).not.toHaveAttribute("data-media-control");
+      });
+
+      const microphone = within(toolbar).getByRole("button", {
+        name: "Turn microphone on",
+      });
+      expect(microphone).toHaveAttribute("tabindex", "0");
+      const camera = within(toolbar).getByRole("button", {
+        name: "Turn camera on",
+      });
+      camera.focus();
+      fireEvent.keyDown(camera, { key: "ArrowRight" });
+      expect(
+        within(toolbar).getByRole("button", { name: "Share screen" }),
+      ).toHaveFocus();
+      fireEvent.keyDown(document.activeElement as HTMLElement, {
+        key: "End",
+      });
+      expect(
+        within(toolbar).getByRole("button", { name: "Active speaker" }),
+      ).toHaveFocus();
+      fireEvent.keyDown(document.activeElement as HTMLElement, {
+        key: "Home",
+      });
+      expect(microphone).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Leave room" })).toHaveClass(
+        "media-p405-dock-leave",
+        "th-button--danger",
+      );
+    });
+
+    it("anchors the device popover inside the Dock after Leave", () => {
+      liveKitState.cameraTrackRefs = createCameraTracks(2);
+      liveKitState.audioTrackRefs = createAudioTracks(2);
+      const { container } = renderShell();
+      fireEvent.click(screen.getByRole("button", { name: "Devices" }));
+
+      const panel = container.querySelector(".media-p405-device-panel");
+      const footer = container.querySelector(".media-p405-footer");
+      expect(footer).toContainElement(panel as HTMLElement);
+      expect(
+        screen
+          .getByRole("button", { name: "Leave room" })
+          .compareDocumentPosition(panel as HTMLElement) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("mirrors only the local camera self-view, never remote cameras or a shared screen", async () => {
+      liveKitState.cameraTrackRefs = createCameraTracks(3);
+      liveKitState.audioTrackRefs = createAudioTracks(3);
+      const view = renderShell();
+      const gridVideos = () =>
+        Array.from(
+          view.container.querySelectorAll<HTMLVideoElement>(
+            ".media-p405-tile video",
+          ),
+        ).map((video) => ({
+          label: video.getAttribute("aria-label"),
+          mirrored: video.classList.contains("media-p405-video--mirror"),
+        }));
+
+      expect(gridVideos()).toEqual([
+        { label: "Video from Learner 1", mirrored: true },
+        { label: "Video from Learner 2", mirrored: false },
+        { label: "Video from Learner 3", mirrored: false },
+      ]);
+
+      liveKitState.screenShareTrackRefs = [
+        {
+          participant: liveKitState.cameraTrackRefs[0]!.participant,
+          publication: {},
+          source: "screen_share",
+        },
+      ];
+      view.rerender(shellElement());
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Presentation" }),
+        ).toHaveAttribute("aria-pressed", "true"),
+      );
+      const shared = view.container.querySelector<HTMLVideoElement>(
+        ".media-p405-stage .media-p405-tile--stage video",
+      );
+      expect(shared).toHaveAttribute(
+        "aria-label",
+        "Screen shared by Learner 1",
+      );
+      expect(shared).not.toHaveClass("media-p405-video--mirror");
+    });
   });
 });
 

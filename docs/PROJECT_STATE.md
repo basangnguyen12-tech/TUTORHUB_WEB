@@ -4,18 +4,31 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                                |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-23                                                                                                                                                |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                     |
-| Nhánh làm việc       | `main`                                                                                                                                                    |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                               |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                 |
-| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                           |
-| Task `DONE` gần nhất | `PREJOIN-SCALE-06` Khôi phục Bố cục Chuẩn `f13c383` & Nhân Đồng đều Tỷ lệ `× 1.10` (`110%`) Toàn khối Pre-Join Khớp 1:1 Ảnh mẫu                           |
-| Mốc repository mới   | `@tutorhub/web` `1073/1073` (`104` file), Chromium E2E `p4-03..07` `38/38` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file            |
-| Task hiện tại        | Trải nghiệm thực tế Pre-Join chuẩn `110%` + Nền & Hiệu ứng trên trình duyệt; chuẩn bị nâng cấp giao diện trong Phòng học; chờ GitHub mở khóa              |
-| Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages |
+| Thuộc tính           | Trạng thái                                                                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-24                                                                                                                                              |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                   |
+| Nhánh làm việc       | `main`                                                                                                                                                  |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                             |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                               |
+| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                         |
+| Task `DONE` gần nhất | `ROOM-STUDIO-02` Đại tu Giao diện Phòng học Cinema Studio (Lưới Thích ứng 1–12 Người, Thanh Dock Nổi Có Nhãn Cụm, Đồng hồ Phiên & Nút Danger `#dc2626`) |
+| Mốc repository mới   | `@tutorhub/web` `1082/1082` (`104` file), Chromium E2E `p4-03..07` `44/44` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file          |
+| Task hiện tại        | Trải nghiệm trực tiếp toàn trình Danh sách lớp → Pre-Join chuẩn `110%` → Phòng học Cinema Studio + Nền & Hiệu ứng + Bảng trắng; chờ GitHub mở khóa      |
+| Task tiếp theo       | Tinh chỉnh theo phản hồi thực tế của chủ dự án, đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages                     |
+
+### Checkpoint `ROOM-STUDIO-02` Đại tu Toàn diện Giao diện Phòng học Trực tuyến — Sân khấu Cinema Thích ứng 1–12 Người, Thanh Dock Nổi Phân cụm Có Nhãn & Chuẩn Tương phản `#dc2626` (`DONE`) — 2026-11-24
+
+Claude Code nghiên cứu đối chiếu trực tiếp 4 bề mặt (TutorHub V2 cũ, Google Meet, Microsoft Teams, TutorHub V1) và triển khai `ROOM-STUDIO-02` trong `Allowed Scope`; Gatekeeper (Antigravity) review `RESEARCH.md` và bộ 6 ảnh chụp thực tế, gỡ bỏ ngoại lệ `.exclude("#media-p405-control-leave")` trong bài quét Axe cũ, kiểm định độc lập `pnpm verify`, ngân sách bundle và trọn bộ 44 bài Chromium Playwright E2E `p4-03..07`:
+
+- **Sửa Triệt để Tương phản Nút Danger Nền tối & Hệ màu Obsidian Broadcast Studio (`packages/ui/src/styles.css`, `apps/web/src/pages/ClassroomRoomStage.css`)**:
+  - Đặt nền đỏ crimson `#dc2626` (hover `#b91c1c`, chữ trắng `#ffffff`, đạt tương phản **`4.83:1` >= `4.5:1`** chuẩn WCAG AA) cho `:is([data-theme="dark"] .th-button--danger, .th-button--danger[data-theme="dark"])` mà không sửa `--color-danger` gốc của `StatusBadge`; chấm dứt màu hồng nhạt `#f09aa0` (`2.13:1`) trên nút `Rời phòng`, `Kết thúc phòng`, hộp thoại xác nhận và nút tắt `Micro`/`Camera`.
+  - Chuyển nền `.media-p405-shell` sang tông đen than chì sâu liền mạch (`#111318`), bỏ hộp viền lồng nhau trên `.media-p405-stage`; thiết kế ô `.media-p405-tile` bo `16px` với gradient than đá tinh tế, vòng sáng người đang nói, 6 tông màu avatar ổn định theo tên, viên thuốc kính mờ tên người tham gia ở góc dưới-trái, nút ghim tròn ở góc trên-phải và lật gương `scaleX(-1)` riêng cho camera cục bộ (không lật `screen_share` hay camera người khác).
+- **Sân khấu Video Tự Thích ứng Số Người (`1–12`) Không Cuộn Dọc & Thanh Dock Nổi Có Nhãn Chữ Ngắn (`ClassroomMediaShell.tsx`, `ClassroomRoomStage.css`, `i18n.tsx`)**:
+  - Bổ sung `data-tile-count` trên `.media-p405-grid` kết hợp container query `cqh` để sân khấu tự bố cục theo số người thực tế mà không sinh thanh cuộn dọc: `1` người → khung `16:9` lớn chính giữa (`1120×630 px` ở `1440×900`, chấm dứt lỗi dạt sang cột 1 góc trái); `2` người → `2` khung lớn song song cân tâm; `3–4` → `2×2`; `5–6` → `3×2` căn giữa hàng lẻ; `7–9` → `3×3`; `10–12` → `4×3`.
+  - Biến `<footer className="media-p405-footer">` thành **Floating Studio Dock** kính mờ căn chính giữa dưới đáy, chia 4 cụm bằng vạch ngăn dọc mảnh (`Micro · Camera | Chia sẻ · Thiết bị · Hiệu ứng · Giơ tay · Cảm xúc · Trò chuyện · Bảng trắng · Thành viên | Bố cục | Rời phòng`) với icon + nhãn ngắn song ngữ `aria-hidden="true"` trên màn `>= 1024px` (dưới `1024px` tự thu gọn về icon `44px`), giữ nguyên 100% `id`, `aria-label`, thứ tự DOM và `roving tabindex` của `p4-05..07`.
+  - Bổ sung chấm trạng thái kết nối và component riêng `<SessionClock>` (`MM:SS` / `HH:MM:SS` `aria-hidden="true"`, chỉ tự re-render phần tử đồng hồ mỗi giây) trên Header; neo Popover thiết bị nổi chính giữa phía trên Dock (tự dịch chuyển cân tâm khi mở ngăn Hiệu ứng phải `360px`); đồng bộ giao diện Sân khấu Bảng trắng (`256px` dải camera phụ), menu Cảm xúc, ngăn Thành viên và cặp màu tường minh cho `@media (forced-colors: active)`.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1082/1082`** trên `104` file — tăng `9` unit test mới, `security:bundle` `218` file, Storybook build, Go `40` package + `go vet`), `check-whiteboard-performance-bundle.mjs` PASS (`entryRawBytes = 720,529` B, `issues: []`), và trọn bộ Chromium Playwright E2E `p4-03..07` (**`44/44`** bài — tăng `6` bài `ROOM-STUDIO-02` cho phòng `1` người, `2` người, `5` người, Bảng trắng không remount `<video>`, Popover thiết bị + ngăn Hiệu ứng, reflow `320px` `forced-colors` và quét Axe toàn bộ `.media-p405-shell` `0` ngoại lệ `0` vi phạm) **`PASS` (`51.2s`)**.
 
 ### Checkpoint `PREJOIN-SCALE-06` Khôi phục Bố cục Chuẩn `f13c383` & Nhân Đồng đều Tỷ lệ `× 1.10` (`110%`) Toàn khối Pre-Join Khớp 1:1 Ảnh mẫu (`DONE`) — 2026-11-23
 
