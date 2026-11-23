@@ -12,10 +12,20 @@
 | Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                               |
 | Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                 |
 | Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                           |
-| Task `DONE` gần nhất | `PREJOIN-SCALE-05` Phóng to Khung Video `16:9` Pre-Join theo `dvh`, Thu gọn Khoảng trắng Bốn phía & Căn tâm Quang học Cột Form                            |
+| Task `DONE` gần nhất | `PREJOIN-SCALE-06` Khôi phục Bố cục Chuẩn `f13c383` & Nhân Đồng đều Tỷ lệ `× 1.10` (`110%`) Toàn khối Pre-Join Khớp 1:1 Ảnh mẫu                           |
 | Mốc repository mới   | `@tutorhub/web` `1073/1073` (`104` file), Chromium E2E `p4-03..07` `38/38` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file            |
-| Task hiện tại        | Trải nghiệm thực tế Pre-Join khung lớn + Nền & Hiệu ứng trên trình duyệt; chuẩn bị nâng cấp giao diện trong Phòng học; chờ GitHub mở khóa                 |
+| Task hiện tại        | Trải nghiệm thực tế Pre-Join chuẩn `110%` + Nền & Hiệu ứng trên trình duyệt; chuẩn bị nâng cấp giao diện trong Phòng học; chờ GitHub mở khóa              |
 | Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages |
+
+### Checkpoint `PREJOIN-SCALE-06` Khôi phục Bố cục Chuẩn `f13c383` & Nhân Đồng đều Tỷ lệ `× 1.10` (`110%`) Toàn khối Pre-Join Khớp 1:1 Ảnh mẫu (`DONE`) — 2026-11-23
+
+Theo phản hồi của chủ dự án sau khi thử trực tiếp trên trình duyệt (bản `PREJOIN-SCALE-05` mở theo `dvh` lên `1020×574 px` quá to), Claude Code triển khai `PREJOIN-SCALE-06` viết lại từ baseline `f13c383` và nhân đồng đều `× 1.10` cho toàn bộ khối ở mức zoom trình duyệt `100%`; Gatekeeper (Antigravity) đối chiếu ảnh blend `50/50` + anaglyph (sai lệch độ sáng trung bình chỉ `2.44/255`), chạy độc lập `pnpm verify`, cổng ngân sách bundle và trọn bộ 38 bài Chromium Playwright E2E:
+
+- **Khớp Chuẩn 1:1 với Phiên bản `f13c383` ở Chrome Zoom `110%` (`apps/web/src/pages/MediaSpacePrejoin.css`, `e2e/p4-03-prejoin.spec.ts`)**:
+  - Khôi phục `--prejoin-rule-width: min(91%, calc(100% - 35px))`, lề đường kẻ đáy `clamp(18px, 8dvh, 96px)` và căn mép trên `align-items: start` giữa khung video với tiêu đề `Vào phòng học`.
+  - Cố định khối 2 cột `.media-p403-clone` ở `max-width: 1144px` (`1040px × 1.10`, `grid-template-columns: minmax(0, 1.45fr) minmax(352px, 418px)`, `gap: 48.4px`), cho ra khung camera `16:9` đúng **`677.6 × 381.1 px`** ở mọi viewport desktop (`1280×800`, `1440×900`, `1536×732`, `1920×1080`) với `0` tràn ngang/dọc.
+  - Phóng đồng bộ `× 1.10` toàn bộ chi tiết hai bên: header `55px`, monogram `123px`, 3 nút tròn `53×53 px`, 4 pill `35px` (`font-size: 13.2px`, `line-height: 1.35` bảo toàn dấu tiếng Việt), cột phải rộng `418px` (`h1` `28.6px`, ô tên `48.4px` chữ `16.5px`, checkbox `17.6px`, nút `Tham gia` `50.6px` chữ `17.6px`) và Studio Modal hiệu ứng `1012×704 px`; trên mobile `<= 480px` (`320×900`) giữ header 1 hàng `50px` không tràn ngang.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1073/1073`** trên `104` file, `security:bundle` `218` file, Storybook build, Go `40` package + `go vet`), `check-whiteboard-performance-bundle.mjs` PASS (`issues: []`), `p4-03` + `p4-04` PASS `19/19` trực tiếp trên bundle production cổng `5173`, và trọn bộ Chromium Playwright E2E `p4-03..07` (**`38/38`** bài gồm 4 mốc desktop `vi`/`en`, `320px` `forced-colors` và Axe `0` vi phạm) **`PASS` (`60.0s`)**.
 
 ### Checkpoint `PREJOIN-SCALE-05` Phóng to Khung Video `16:9` Pre-Join theo Ngân sách Chiều cao `dvh`, Thu gọn Khoảng trắng Bốn phía & Căn tâm Quang học Cột Form (`DONE`) — 2026-11-23
 

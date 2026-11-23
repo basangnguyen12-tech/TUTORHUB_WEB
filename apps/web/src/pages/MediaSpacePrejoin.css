@@ -6,23 +6,23 @@
  * class/workspace, language) whose bottom border is the upper rule, then a
  * centred two-column stage — the charcoal 16:9 camera frame with three round
  * buttons and four slim device pills on the left, a flat "Enter Meeting" form
- * on the right — and one lower rule with nothing under it. 320px reflows to
- * one column. Everything is scoped under `.media-p403-studio` so the in-room
+ * on the right — and one lower rule with nothing under it. 1280×800,
+ * 1440×900, 1536×732 and 1920×1080 never scroll; 320px reflows to one column.
+ * Everything is scoped under `.media-p403-studio` so the in-room
  * `.media-p403-*` surfaces and the legacy global rules in `styles.css` stay
  * untouched.
  *
- * PREJOIN-SCALE-05: the stage grows with both the viewport width and the
- * height left for a 16:9 frame (`100dvh`), so the frame reaches ~1020px wide
- * at 1536×750 and ~1120px at 1920×1080 while 1280×800 through 1920×1080
- * still never scroll. Outer white space is trimmed on all four sides.
+ * PREJOIN-SCALE-06: the f13c383 layout rendered at 110%, matching
+ * `.tmp/prejoin-refs/09-target-110pct-exact.png` (Chrome zoom 110% at
+ * 1536×732). Every desktop length is the f13c383 value × 1.10 (the frame is
+ * 677.6 × 381.15 inside a fixed 1144px stage); percentages and viewport units
+ * (`91%`, `8dvh`, `22%`) are zoom-invariant and stay as they were. Phones keep
+ * the compact one-row header.
  */
 
 .media-p403-page.media-p403-studio {
   --prejoin-rule: #d1d5db;
-  --prejoin-rule-width: min(95%, 1640px);
-  --prejoin-gap: clamp(28px, 2.8vw, 48px);
-  --prejoin-pill-height: 36px;
-  --prejoin-pill-offset: 12px;
+  --prejoin-rule-width: min(91%, calc(100% - 35px));
   --prejoin-text: #111827;
   --prejoin-blue: #0e71eb;
   --prejoin-blue-hover: #0b5ed7;
@@ -46,7 +46,7 @@
 .media-p403-page.media-p403-studio::after {
   width: var(--prejoin-rule-width);
   flex: none;
-  margin: 0 auto clamp(10px, 1.8dvh, 20px);
+  margin: 0 auto clamp(18px, 8dvh, 96px);
   border-top: 1px solid var(--prejoin-rule);
   content: "";
 }
@@ -66,12 +66,12 @@
 .media-p403-studio__bar {
   display: flex;
   width: var(--prejoin-rule-width);
-  min-height: 50px;
+  min-height: 55px;
   flex: none;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 6px 0;
+  gap: 13px;
+  padding: 7px 0;
   margin: 0 auto;
   border-bottom: 1px solid var(--prejoin-rule);
   background: #fff;
@@ -82,19 +82,19 @@
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 12px;
+  gap: 13px;
 }
 
 .media-p403-studio__back {
   display: inline-flex;
-  min-height: 32px;
+  min-height: 35px;
   flex-shrink: 0;
   align-items: center;
-  padding: 0 8px;
-  margin-left: -8px;
-  border-radius: 6px;
+  padding: 0 9px;
+  margin-left: -9px;
+  border-radius: 7px;
   color: #1f2937;
-  font-size: 14px;
+  font-size: 15.4px;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -110,7 +110,7 @@
   align-items: center;
   margin: 0;
   color: #4b5563;
-  font-size: 13px;
+  font-size: 14.3px;
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -128,7 +128,7 @@
 }
 
 .media-p403-studio__class + .media-p403-studio__workspace::before {
-  padding: 0 8px;
+  padding: 0 9px;
   color: #9ca3af;
   content: "·";
 }
@@ -138,11 +138,11 @@
 }
 
 .media-p403-studio__bar .language-select select {
-  min-height: 32px;
-  padding: 0 28px 0 10px;
+  min-height: 35px;
+  padding: 0 31px 0 11px;
   border-color: var(--prejoin-rule);
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 7px;
+  font-size: 14.3px;
   cursor: pointer;
 }
 
@@ -156,30 +156,25 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
-  /*
-   * Slim insets; the horizontal 2.5vw matches the 95% rule width so the stage
-   * lines up with the rules. A slightly deeper bottom inset lifts the stage a
-   * touch above the true centre.
-   */
-  padding: clamp(12px, 1.8dvh, 22px) clamp(16px, 2.5vw, 36px)
-    clamp(14px, 2dvh, 24px);
+  gap: 26px;
+  /* A deeper bottom inset lifts the stage slightly above the true centre. */
+  padding: 26px 26px 44px;
   margin: 0;
 }
 
 .media-p403-studio__status {
-  margin: 24px 0;
+  margin: 26px 0;
   color: #4b5563;
   text-align: center;
 }
 
 /* Loading / unavailable / recovery states share one calm, flat block. */
 .media-p403-studio__main > .media-p403-alert {
-  width: min(100%, 520px);
-  padding: 24px;
+  width: min(100%, 572px);
+  padding: 26px;
   margin: 0 auto;
   border-color: #e5e7eb;
-  border-radius: 12px;
+  border-radius: 13.2px;
 }
 
 .media-p403-studio .th-button {
@@ -190,41 +185,23 @@
 }
 
 /*
- * The stage is as wide as the viewport allows, but never wider than the
- * height budget lets a 16:9 frame be: 100dvh minus 176px (the 50px header,
- * main insets, the 48px pill row, the lower rule and ~30px of breathing
- * room), converted to a width, plus the gap and the 392px form column. Short
- * laptops (1536×750, 1280×800) get the largest frame that does not scroll.
+ * A fixed 1144px stage (f13c383's 1040px × 1.10): with the 418px form column
+ * and the 48.4px gap the frame is exactly 677.6 × 381.15 on every desktop.
  */
 .media-p403-clone {
   display: grid;
   width: 100%;
-  max-width: min(1560px, max(980px, calc((100vh - 176px) * 16 / 9 + 440px)));
-  max-width: min(
-    1560px,
-    max(
-      980px,
-      calc((100dvh - 176px) * 16 / 9 + clamp(28px, 2.8vw, 48px) + 392px)
-    )
-  );
+  max-width: 1144px;
   min-width: 0;
-  grid-template-columns: minmax(0, 1.9fr) minmax(320px, 392px);
+  grid-template-columns: minmax(0, 1.45fr) minmax(352px, 418px);
+  /* Top-aligned: the reference puts "Enter Meeting" on the frame's top edge. */
   align-items: start;
-  gap: var(--prejoin-gap);
+  gap: 48.4px;
 }
 
 .media-p403-stage,
 .media-p403-side {
   min-width: 0;
-}
-
-/*
- * The form sits on the optical centre of the 16:9 frame: the bottom inset
- * offsets the pill row (12px + pill height) that hangs under the frame.
- */
-.media-p403-studio .media-p403-side {
-  align-self: center;
-  padding-bottom: calc(var(--prejoin-pill-offset) + var(--prejoin-pill-height));
 }
 
 /* Left — the charcoal 16:9 frame ----------------------------------------- */
@@ -234,10 +211,10 @@
   display: block;
   width: 100%;
   height: auto;
-  min-height: 248px;
+  min-height: 273px;
   overflow: hidden;
   border: 0;
-  border-radius: 16px;
+  border-radius: 13.2px;
   aspect-ratio: 16 / 9;
   background: #202124;
   color: #fff;
@@ -284,15 +261,15 @@
 .media-p403-preview__name {
   position: absolute;
   z-index: 2;
-  top: 16px;
-  right: 60px;
-  left: 20px;
+  top: 15.4px;
+  right: 62px;
+  left: 17.6px;
   overflow: hidden;
   margin: 0;
   color: #fff;
-  font-size: 15px;
+  font-size: 15.4px;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -300,11 +277,11 @@
 .media-p403-preview__more {
   position: absolute;
   z-index: 3;
-  top: 8px;
-  right: 8px;
+  top: 6.6px;
+  right: 6.6px;
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -319,8 +296,8 @@
 }
 
 .media-p403-preview__more svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .media-p403-preview__invite {
@@ -331,8 +308,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding: 48px 24px 88px;
+  gap: 17.6px;
+  padding: 48px 22px 84px;
   text-align: center;
 }
 
@@ -340,7 +317,7 @@
   max-width: 100%;
   margin: 0;
   color: #fff;
-  font-size: clamp(18px, 1.4vw, 22px);
+  font-size: 19.8px;
   font-weight: 400;
   line-height: 1.35;
   text-wrap: balance;
@@ -348,12 +325,12 @@
 
 .media-p403-preview__allow {
   min-height: 40px;
-  padding: 0 22px;
+  padding: 0 20px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 6.6px;
   background: #1a73e8;
   color: #fff;
-  font-size: 14.5px;
+  font-size: 15.4px;
   font-weight: 500;
   line-height: 1.2;
 }
@@ -373,12 +350,12 @@
   top: 50%;
   left: 50%;
   display: grid;
-  width: clamp(64px, 22%, 132px);
+  width: clamp(70px, 22%, 123px);
   aspect-ratio: 1;
   border-radius: 50%;
   background: #5f6368;
   color: #fff;
-  font-size: clamp(22px, 4.6vw, 44px);
+  font-size: clamp(24px, 4.6vw, 39.6px);
   font-weight: 500;
   place-items: center;
   transform: translate(-50%, -60%);
@@ -390,23 +367,23 @@
   outline-offset: 2px;
 }
 
-/* Three separate 52px circles along the bottom edge — no tray. */
+/* Three separate 53px circles along the bottom edge — no tray. */
 .media-p403-preview__controls {
   position: absolute;
   z-index: 3;
-  bottom: 18px;
+  bottom: 15.4px;
   left: 50%;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 15.4px;
   transform: translateX(-50%);
 }
 
 .media-p403-round {
   position: relative;
   display: grid;
-  width: 52px;
-  height: 52px;
+  width: 53px;
+  height: 53px;
   flex: none;
   padding: 0;
   border: 1px solid transparent;
@@ -435,7 +412,7 @@
   border-color: rgb(255 255 255 / 78%);
   background: rgb(60 64 67 / 55%);
   /* The ring grows with the live microphone level. */
-  box-shadow: 0 0 0 calc(var(--media-p403-level, 0) * 6px)
+  box-shadow: 0 0 0 calc(var(--media-p403-level, 0) * 6.6px)
     rgb(138 180 248 / 70%);
   color: #fff;
 }
@@ -477,10 +454,10 @@
 
 .media-p403-round__dot {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 10px;
-  height: 10px;
+  top: 2.2px;
+  right: 2.2px;
+  width: 11px;
+  height: 11px;
   border: 2px solid #202124;
   border-radius: 50%;
   background: #1a73e8;
@@ -492,15 +469,15 @@
 
 .media-p403-round__badge {
   position: absolute;
-  top: -3px;
-  right: -3px;
+  top: -3.3px;
+  right: -3.3px;
   display: grid;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #fbbc04;
   color: #202124;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1;
   place-items: center;
@@ -510,16 +487,16 @@
 
 .media-p403-pills {
   display: grid;
-  margin-top: var(--prejoin-pill-offset, 12px);
+  margin-top: 13.2px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8.8px;
 }
 
 .media-p403-pill {
   position: relative;
   display: flex;
   min-width: 0;
-  height: var(--prejoin-pill-height, 36px);
+  height: 35px;
   align-items: center;
   border: 1px solid #dadce0;
   border-radius: 999px;
@@ -539,7 +516,7 @@
 .media-p403-pill__icon {
   position: absolute;
   top: 50%;
-  left: 12px;
+  left: 11px;
   display: grid;
   color: #5f6368;
   pointer-events: none;
@@ -547,8 +524,8 @@
 }
 
 .media-p403-pill__icon svg {
-  width: 16px;
-  height: 16px;
+  width: 16.5px;
+  height: 16.5px;
 }
 
 .media-p403-studio .media-p403-pill select {
@@ -556,15 +533,16 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 0 26px 0 35px;
+  padding: 0 26px 0 34px;
   overflow: hidden;
   border: 0;
   border-radius: inherit;
   appearance: none;
   background: transparent;
   color: inherit;
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 13.2px;
+  /* Room for Vietnamese descenders and stacked diacritics ("g", "ọ"). */
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -580,9 +558,9 @@
   right: 12px;
   width: 0;
   height: 0;
-  border-top: 5px solid currentcolor;
-  border-right: 4px solid transparent;
-  border-left: 4px solid transparent;
+  border-top: 5.5px solid currentcolor;
+  border-right: 4.4px solid transparent;
+  border-left: 4.4px solid transparent;
   color: #5f6368;
   pointer-events: none;
   transform: translateY(-40%);
@@ -613,9 +591,9 @@
 }
 
 .media-p403-studio .media-p403-side h1 {
-  margin: 0 0 24px;
+  margin: 0 0 24.2px;
   color: var(--prejoin-text);
-  font-size: clamp(26px, 2vw, 30px);
+  font-size: 28.6px;
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.2;
@@ -623,22 +601,22 @@
 }
 
 .media-p403-form__label {
-  margin-bottom: 6px;
+  margin-bottom: 6.6px;
   color: var(--prejoin-text);
-  font-size: 14px;
+  font-size: 15.4px;
   font-weight: 600;
   line-height: 1.4;
 }
 
 .media-p403-studio .media-p403-form__name {
   width: 100%;
-  height: 48px;
-  padding: 0 14px;
+  height: 48.4px;
+  padding: 0 15.4px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 8.8px;
   background: #fff;
   color: var(--prejoin-text);
-  font-size: 15.5px;
+  font-size: 16.5px;
 }
 
 .media-p403-studio .media-p403-form__name:hover:not(:read-only) {
@@ -656,34 +634,34 @@
   width: fit-content;
   max-width: 100%;
   align-items: center;
-  gap: 10px;
-  margin: 14px 0 20px;
+  gap: 11px;
+  margin: 13.2px 0 19.8px;
   color: #1f2937;
-  font-size: 14px;
+  font-size: 14.85px;
   line-height: 1.4;
   cursor: pointer;
 }
 
 .media-p403-form__remember input {
-  width: 16px;
-  height: 16px;
+  width: 17.6px;
+  height: 17.6px;
   flex: none;
   margin: 0;
-  border-radius: 3px;
+  border-radius: 3.3px;
   accent-color: var(--prejoin-blue);
   cursor: pointer;
 }
 
 .media-p403-form__join {
   width: 100%;
-  min-height: 50px;
-  padding: 0 16px;
+  min-height: 50.6px;
+  padding: 0 17.6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 8.8px;
   background: var(--prejoin-blue);
-  box-shadow: 0 2px 6px rgb(14 113 235 / 22%);
+  box-shadow: 0 2.2px 6.6px rgb(14 113 235 / 22%);
   color: #fff;
-  font-size: 16.5px;
+  font-size: 17.6px;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -698,9 +676,9 @@
 }
 
 .media-p403-form__terms {
-  margin: 16px 0 0;
+  margin: 17.6px 0 0;
   color: #374151;
-  font-size: 13px;
+  font-size: 14.3px;
   line-height: 1.5;
 }
 
@@ -723,27 +701,27 @@
 .media-p403-inline-alert {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  margin: 12px 0 0;
+  gap: 8.8px;
+  padding: 11px 13.2px;
+  margin: 13.2px 0 0;
   border: 1px solid #fecaca;
-  border-radius: 8px;
+  border-radius: 8.8px;
   background: #fef2f2;
   color: #7f1d1d;
-  font-size: 13px;
+  font-size: 14.3px;
   line-height: 1.45;
 }
 
 .media-p403-inline-alert svg {
-  width: 16px;
-  height: 16px;
-  margin-top: 1px;
+  width: 17.6px;
+  height: 17.6px;
+  margin-top: 1.1px;
   color: #b91c1c;
 }
 
 .media-p403-studio .media-p403-inline-alert h2 {
-  margin: 0 0 2px;
-  font-size: 13px;
+  margin: 0 0 2.2px;
+  font-size: 14.3px;
   font-weight: 700;
 }
 
@@ -756,43 +734,43 @@
 .media-p403-terminal {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 13.2px;
 }
 
 .media-p403-studio .media-p403-waitroom h1,
 .media-p403-studio .media-p403-terminal h1 {
-  margin: 0 0 4px;
+  margin: 0 0 4.4px;
 }
 
 .media-p403-waitroom p,
 .media-p403-terminal p {
   margin: 0;
   color: #374151;
-  font-size: 14px;
+  font-size: 15.4px;
   line-height: 1.55;
   text-align: center;
 }
 
 .media-p403-waitroom .media-p403-waitroom__expiry {
   color: #6b7280;
-  font-size: 13px;
+  font-size: 14.3px;
 }
 
 .media-p403-side__actions {
   display: grid;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 8.8px;
+  margin-top: 6.6px;
 }
 
 .media-p403-side__actions .th-button {
   width: 100%;
-  min-height: 44px;
+  min-height: 48.4px;
 }
 
 .media-p403-waitroom .media-p404-error {
   margin: 0;
   color: #b91c1c;
-  font-size: 13px;
+  font-size: 14.3px;
   text-align: center;
 }
 
@@ -803,27 +781,20 @@
 /* Invite panel (StudyMeeting hosts only) sits below the stage, as wide. */
 .media-p403-studio .media-p404-invites {
   width: 100%;
-  max-width: min(1560px, max(980px, calc((100vh - 176px) * 16 / 9 + 440px)));
-  max-width: min(
-    1560px,
-    max(
-      980px,
-      calc((100dvh - 176px) * 16 / 9 + clamp(28px, 2.8vw, 48px) + 392px)
-    )
-  );
+  max-width: 1144px;
   margin: 0 auto;
   border-color: #e5e7eb;
-  border-radius: 12px;
+  border-radius: 13.2px;
 }
 
 /* ⋮ menu (portalled outside the page). */
 .th-menu-content.media-p403-menu {
-  min-width: 208px;
+  min-width: 229px;
 }
 
 .media-p403-menu .th-menu-item svg {
-  width: 16px;
-  height: 16px;
+  width: 17.6px;
+  height: 17.6px;
 }
 
 /* Motion ------------------------------------------------------------------ */
@@ -838,37 +809,33 @@
 
 /* Reflow ------------------------------------------------------------------ */
 
-@media (max-width: 880px) {
+/* One column below 968px (f13c383's 880px × 1.10). */
+@media (max-width: 968px) {
   .media-p403-studio__main {
     justify-content: flex-start;
-    padding: 20px 16px 28px;
+    padding: 22px 16px 31px;
   }
 
   .media-p403-clone {
-    max-width: 640px;
+    max-width: 704px;
     grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
+    gap: 31px;
   }
 
-  /* One column: the form simply follows the pills. */
-  .media-p403-studio .media-p403-side {
-    align-self: auto;
-    padding-bottom: 0;
+  .media-p403-studio .media-p403-preview {
+    min-height: 248px;
+    border-radius: 12px;
   }
 }
 
-/* Narrow screens keep a safe 16px gutter on each side of the rules. */
+/* Narrow screens keep a 16px gutter on each side of the rules. */
 @media (max-width: 639px) {
   .media-p403-page.media-p403-studio {
-    --prejoin-rule-width: min(95%, calc(100% - 32px));
+    --prejoin-rule-width: min(91%, calc(100% - 32px));
   }
 }
 
 @media (max-width: 560px) {
-  .media-p403-studio .media-p403-preview {
-    border-radius: 12px;
-  }
-
   .media-p403-pills {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -883,26 +850,38 @@
   }
 }
 
-/* Phones: one header row (back link · language), 320px included. */
+/* Phones: one compact header row (back link · language), 320px included. */
 @media (max-width: 480px) {
   .media-p403-studio__bar {
+    min-height: 50px;
     gap: 8px;
+    padding: 6px 0;
   }
 
   .media-p403-studio__context {
     display: none;
   }
 
+  .media-p403-studio__back {
+    min-height: 32px;
+    padding: 0 8px;
+    margin-left: -8px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+
   .media-p403-studio__bar .language-select select {
+    min-height: 32px;
     padding: 0 22px 0 8px;
+    border-radius: 6px;
+    font-size: 13px;
   }
 }
 
 /* Touch screens: >= 44px targets without changing the desktop layout. */
 @media (pointer: coarse) {
-  /* The pills (and the form's optical-centre offset) follow this height. */
-  .media-p403-page.media-p403-studio {
-    --prejoin-pill-height: 44px;
+  .media-p403-pill {
+    height: 44px;
   }
 
   .media-p403-form__remember {
@@ -978,14 +957,15 @@
 
 /* ADR-0041 effects studio (portaled dialog, Google Meet-style 2 columns) -- */
 
+/* PREJOIN-SCALE-06: f13c383's 920 × 640 studio × 1.10; the 24px radius stays. */
 .th-dialog-content.media-p403-fx-dialog {
   display: flex;
-  width: min(1080px, calc(100vw - 32px));
-  height: min(700px, calc(100dvh - 32px));
+  width: min(1012px, calc(100vw - 32px));
+  height: min(704px, calc(100dvh - 32px));
   max-height: none;
   flex-direction: column;
-  gap: 16px;
-  padding: 22px 24px 24px;
+  gap: 17.6px;
+  padding: 24.2px 26.4px 26.4px;
   overflow: hidden;
   border: 0;
   border-radius: 24px;
@@ -994,10 +974,10 @@
 }
 
 .media-p403-fx-dialog .th-dialog-close {
-  top: 16px;
-  right: 16px;
-  width: 40px;
-  height: 40px;
+  top: 17.6px;
+  right: 17.6px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   color: #3c4043;
 }
@@ -1009,16 +989,16 @@
 
 .media-p403-fx-dialog__title.th-dialog-title {
   color: #202124;
-  font-size: 22px;
+  font-size: 24.2px;
   font-weight: 400;
-  line-height: 28px;
+  line-height: 30.8px;
 }
 
 .media-p403-fx-dialog__body {
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
-  gap: 24px;
+  gap: 26.4px;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   grid-template-rows: minmax(0, 1fr);
 }
@@ -1027,14 +1007,14 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 11px;
 }
 
 .media-p403-fx-preview {
   position: relative;
   width: 100%;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 17.6px;
   aspect-ratio: 16 / 9;
   background: #202124;
   color: #fff;
@@ -1061,31 +1041,31 @@
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 18px;
-  padding: 24px 40px;
+  gap: 19.8px;
+  padding: 26.4px 44px;
   text-align: center;
 }
 
 .media-p403-fx-preview__off p {
-  max-width: 440px;
+  max-width: 484px;
   margin: 0;
   color: #e8eaed;
-  font-size: 17px;
+  font-size: 18.7px;
   line-height: 1.5;
 }
 
 .media-p403-fx-preview__camera {
   display: inline-flex;
-  min-height: 40px;
+  min-height: 44px;
   align-items: center;
-  gap: 8px;
-  padding: 0 20px;
+  gap: 8.8px;
+  padding: 0 22px;
   border: 0;
   border-radius: 999px;
   background: #8ab4f8;
   color: #202124;
   font: inherit;
-  font-size: 14px;
+  font-size: 15.4px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -1100,21 +1080,21 @@
 }
 
 .media-p403-fx-preview__camera svg {
-  width: 18px;
-  height: 18px;
+  width: 19.8px;
+  height: 19.8px;
 }
 
 .media-p403-fx-preview__reset {
   position: absolute;
   z-index: 2;
-  right: 14px;
-  bottom: 14px;
+  right: 15.4px;
+  bottom: 15.4px;
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: 53px;
+  height: 53px;
   padding: 0;
   border: 0;
-  border-radius: 14px;
+  border-radius: 15.4px;
   background: rgb(138 180 248 / 92%);
   color: #202124;
   cursor: pointer;
@@ -1126,21 +1106,21 @@
 }
 
 .media-p403-fx-preview__reset svg {
-  width: 22px;
-  height: 22px;
+  width: 24.2px;
+  height: 24.2px;
 }
 
 .media-p403-fx-preview__badge {
   position: absolute;
   z-index: 2;
-  bottom: 14px;
-  left: 14px;
+  bottom: 15.4px;
+  left: 15.4px;
   margin: 0;
-  padding: 6px 12px;
+  padding: 6.6px 13.2px;
   border-radius: 999px;
   background: rgb(32 33 36 / 78%);
   color: #fff;
-  font-size: 13px;
+  font-size: 14.3px;
 }
 
 .media-p403-fx-preview :is(button):focus-visible {
@@ -1149,17 +1129,17 @@
 }
 
 .media-p403-fx-status {
-  min-height: 20px;
+  min-height: 22px;
   margin: 0;
   color: #5f6368;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 14.3px;
+  line-height: 22px;
 }
 
 .media-p403-fx-hint {
   margin: 0;
   color: #5f6368;
-  font-size: 12px;
+  font-size: 13.2px;
   line-height: 1.5;
 }
 
@@ -1170,7 +1150,7 @@
 .media-p403-fx-side {
   min-width: 0;
   min-height: 0;
-  padding: 0 6px 4px 2px;
+  padding: 0 6.6px 4.4px 2.2px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -1179,10 +1159,11 @@
 .media-p403-fx-notice {
   margin: 0;
   color: #5f6368;
-  font-size: 13px;
+  font-size: 14.3px;
   line-height: 1.45;
 }
 
+/* Phones keep f13c383's compact studio insets. */
 @media (max-width: 760px) {
   .th-dialog-content.media-p403-fx-dialog {
     height: auto;

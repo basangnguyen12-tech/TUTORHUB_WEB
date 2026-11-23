@@ -626,45 +626,98 @@ async function readPageOverflow(page: Page) {
   }));
 }
 
-// PREJOIN-SCALE-05: the frame grows with the viewport width and the height
-// left for a 16:9 frame, and the page never scrolls at these sizes.
-for (const { minPreviewWidth, ...viewport } of [
-  { width: 1280, height: 800, minPreviewWidth: 760 },
-  { width: 1440, height: 900, minPreviewWidth: 890 },
-  { width: 1536, height: 750, minPreviewWidth: 950 },
-  { width: 1920, height: 1080, minPreviewWidth: 1060 },
+/**
+ * PREJOIN-SCALE-06: the f13c383 studio at 110% (`09-target-110pct-exact.png`)
+ * — a 50–60px header, a 677.6 × 381.15 16:9 frame, three 53px circles, four
+ * equal 35px pills spanning the frame, a form column pinned to the frame's
+ * top edge, and no scrolling.
+ */
+async function expectScaledStudioGeometry(page: Page, heading: string) {
+  const headerBox = await page.getByRole("banner").boundingBox();
+  expect(headerBox!.height).toBeGreaterThanOrEqual(50);
+  expect(headerBox!.height).toBeLessThanOrEqual(60);
+
+  const preview = await page.locator(".media-p403-preview").boundingBox();
+  expect(preview).not.toBeNull();
+  expect(Math.abs(preview!.width / preview!.height - 16 / 9)).toBeLessThan(
+    0.02,
+  );
+  expect(Math.abs(preview!.width - 677.6)).toBeLessThanOrEqual(2);
+
+  // Three separate 53px circles inside the frame's bottom edge.
+  const circles = page.locator(".media-p403-preview .media-p403-round");
+  await expect(circles).toHaveCount(3);
+  for (const circle of await circles.all()) {
+    const box = await circle.boundingBox();
+    expect(Math.round(box!.width)).toBe(53);
+    expect(Math.round(box!.height)).toBe(53);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(
+      preview!.y + preview!.height,
+    );
+  }
+
+  // Four equal 35px pills directly under the frame, spanning its width.
+  const pills = page.locator(".media-p403-pill");
+  await expect(pills).toHaveCount(4);
+  const pillBoxes = await Promise.all(
+    (await pills.all()).map((pill) => pill.boundingBox()),
+  );
+  for (const box of pillBoxes) {
+    expect(Math.round(box!.height)).toBe(35);
+    expect(Math.abs(box!.width - pillBoxes[0]!.width)).toBeLessThanOrEqual(1);
+    expect(box!.y).toBeGreaterThan(preview!.y + preview!.height);
+  }
+  expect(Math.abs(pillBoxes[0]!.x - preview!.x)).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(
+      pillBoxes[3]!.x + pillBoxes[3]!.width - (preview!.x + preview!.width),
+    ),
+  ).toBeLessThanOrEqual(1);
+
+  // The form column starts on the frame's top edge, right of the frame, and
+  // ends within the frame's height.
+  const title = await page
+    .getByRole("heading", { level: 1, name: heading })
+    .boundingBox();
+  expect(Math.abs(title!.y - preview!.y)).toBeLessThanOrEqual(8);
+  expect(title!.x).toBeGreaterThan(preview!.x + preview!.width);
+  const terms = await page.locator(".media-p403-form__terms").boundingBox();
+  expect(terms!.y + terms!.height).toBeLessThanOrEqual(
+    preview!.y + preview!.height,
+  );
+
+  const overflow = await readPageOverflow(page);
+  expect(overflow.horizontal).toBeLessThanOrEqual(1);
+  expect(overflow.vertical).toBeLessThanOrEqual(1);
+}
+
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
+  { width: 1536, height: 732 },
+  { width: 1920, height: 1080 },
 ]) {
-  test(`PREJOIN-SCALE-05 keeps a large 16:9 frame, three round buttons, four pills and the centred Enter Meeting form in one viewport at ${viewport.width}x${viewport.height}`, async ({
+  test(`PREJOIN-SCALE-06 renders the 110% studio (677.6px 16:9 frame, 53px circles, 35px pills, top-aligned form) in one viewport at ${viewport.width}x${viewport.height}`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
     const observed = await installApiMocks(page, "admitted");
     await page.goto(prejoinPath);
 
-    // Vietnamese first: the longer copy must not overflow either.
+    // Vietnamese first: the longer copy keeps the same geometry.
     const language = page.locator(".language-select select");
     await expect(language).toBeVisible();
     await language.selectOption("vi");
     await expect(
       page.getByRole("heading", { level: 1, name: "Vào phòng học" }),
     ).toBeVisible();
-    const vietnameseOverflow = await readPageOverflow(page);
-    expect(vietnameseOverflow.horizontal).toBeLessThanOrEqual(1);
-    expect(vietnameseOverflow.vertical).toBeLessThanOrEqual(1);
-    const vietnameseFrame = await page
-      .locator(".media-p403-preview")
-      .boundingBox();
-    const vietnameseTerms = await page
-      .locator(".media-p403-form__terms")
-      .boundingBox();
-    expect(vietnameseTerms!.y + vietnameseTerms!.height).toBeLessThanOrEqual(
-      vietnameseFrame!.y + vietnameseFrame!.height,
-    );
+    await expectScaledStudioGeometry(page, "Vào phòng học");
 
     await language.selectOption("en");
     await expect(
       page.getByRole("heading", { level: 1, name: "Enter Meeting" }),
     ).toBeVisible();
+    await expectScaledStudioGeometry(page, "Enter Meeting");
 
     // Focused studio: thin header, no AppShell sidebar navigation, no footer.
     await expect(page.locator(".app-sidebar")).toHaveCount(0);
@@ -675,66 +728,11 @@ for (const { minPreviewWidth, ...viewport } of [
       banner.getByRole("link", { name: "← Back to Home" }),
     ).toBeVisible();
     await expect(banner.locator(".language-select select")).toBeVisible();
-    const headerBox = await banner.boundingBox();
-    expect(headerBox?.height ?? 0).toBeGreaterThanOrEqual(48);
-    expect(headerBox?.height ?? 0).toBeLessThanOrEqual(56);
 
-    const preview = await page.locator(".media-p403-preview").boundingBox();
-    expect(preview).not.toBeNull();
-    expect(Math.abs(preview!.width / preview!.height - 16 / 9)).toBeLessThan(
-      0.02,
-    );
-    expect(preview!.width).toBeGreaterThanOrEqual(minPreviewWidth);
-
-    // Three separate 52px circles inside the frame's bottom edge.
-    const circles = page.locator(".media-p403-preview .media-p403-round");
-    await expect(circles).toHaveCount(3);
-    for (const circle of await circles.all()) {
-      const box = await circle.boundingBox();
-      expect(Math.round(box!.width)).toBe(52);
-      expect(Math.round(box!.height)).toBe(52);
-      expect(box!.y + box!.height).toBeLessThanOrEqual(
-        preview!.y + preview!.height,
-      );
-    }
-
-    // Four equal 36px pills directly under the frame, spanning its width.
-    const pills = page.locator(".media-p403-pill");
-    await expect(pills).toHaveCount(4);
-    const pillBoxes = await Promise.all(
-      (await pills.all()).map((pill) => pill.boundingBox()),
-    );
-    for (const box of pillBoxes) {
-      expect(Math.round(box!.height)).toBe(36);
-      expect(Math.abs(box!.width - pillBoxes[0]!.width)).toBeLessThanOrEqual(1);
-      expect(box!.y).toBeGreaterThan(preview!.y + preview!.height);
-    }
-    expect(Math.abs(pillBoxes[0]!.x - preview!.x)).toBeLessThanOrEqual(1);
-    expect(
-      Math.abs(
-        pillBoxes[3]!.x + pillBoxes[3]!.width - (preview!.x + preview!.width),
-      ),
-    ).toBeLessThanOrEqual(1);
     for (const pill of await page.locator(".media-p403-pill select").all()) {
       await expect(pill).toBeDisabled();
       await expect(pill).toHaveText("Permission needed");
     }
-
-    // The form column sits right of the frame, within its height, on the
-    // frame's optical centre (no empty block under a top-pinned form).
-    const title = await page
-      .getByRole("heading", { level: 1, name: "Enter Meeting" })
-      .boundingBox();
-    const terms = await page.locator(".media-p403-form__terms").boundingBox();
-    const form = await page.locator(".media-p403-form").boundingBox();
-    expect(title!.x).toBeGreaterThan(preview!.x + preview!.width);
-    expect(title!.y).toBeGreaterThanOrEqual(preview!.y);
-    expect(terms!.y + terms!.height).toBeLessThanOrEqual(
-      preview!.y + preview!.height,
-    );
-    expect(
-      Math.abs(form!.y + form!.height / 2 - (preview!.y + preview!.height / 2)),
-    ).toBeLessThanOrEqual(2);
 
     for (const control of [
       page.getByRole("button", { name: "More options" }),
@@ -765,9 +763,6 @@ for (const { minPreviewWidth, ...viewport } of [
     ]) {
       await expect(page.getByText(removed)).toHaveCount(0);
     }
-    const overflow = await readPageOverflow(page);
-    expect(overflow.horizontal).toBeLessThanOrEqual(1);
-    expect(overflow.vertical).toBeLessThanOrEqual(1);
     expect(await readMediaProbe(page)).toEqual({
       enumerateDevicesCalls: 0,
       getUserMediaCalls: 0,
@@ -864,7 +859,7 @@ test("VIDEO-FX-01 opens the effects studio, records a background without capturi
 
   // Two columns: the 16:9 preview on the left, the picker on the right.
   const studioBox = await studio.boundingBox();
-  expect(studioBox!.width).toBeLessThanOrEqual(1080);
+  expect(studioBox!.width).toBeLessThanOrEqual(1012);
   expect(
     await studio.evaluate((element) => getComputedStyle(element).borderRadius),
   ).toBe("24px");
