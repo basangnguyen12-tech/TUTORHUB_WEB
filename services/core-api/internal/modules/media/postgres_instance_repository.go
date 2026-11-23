@@ -24,6 +24,17 @@ const (
 	providerReceiptRetention   = 30 * 24 * time.Hour
 	providerWebhookMaxAge      = 24 * time.Hour
 	providerWebhookFutureSkew  = 5 * time.Minute
+	// livekit-client recovers a brief ICE/transport drop by rejoining with the
+	// same still-valid credential. LiveKit then emits participant_left followed
+	// by participant_joined for the same opaque provider identity. A left
+	// session may resume only inside this bounded window and only after its
+	// current authority is re-proven inside the webhook transaction.
+	transientParticipantReconnectGrace = 2 * time.Minute
+	// An admitted/joining session that never reached the provider (reload or
+	// transport failure before LiveKit connect) never receives a provider
+	// participant_left webhook. A same-user re-join may retire it once it is
+	// this old or once the client reported a terminal disconnect/leave.
+	abandonedPreconnectParticipantTTL = 90 * time.Second
 )
 
 type PostgresInstanceRepository struct {
@@ -653,6 +664,14 @@ func (repository *PostgresInstanceRepository) CreateOrReuseJoinAttempt(
 		}, nil
 	}
 
+	if err := retireAbandonedPreconnectParticipants(
+		queryContext, transaction, scope.TenantID, space.ID, room.ID,
+		scope.ActorID, input.JoinAttemptID, now,
+	); err != nil {
+		return CreateJoinAttemptResult{}, repository.lifecycle.unavailable(
+			"retire abandoned media participant attempts", err,
+		)
+	}
 	if occupied, err := hasActiveParticipant(
 		queryContext, transaction, scope.TenantID, room.ID, scope.ActorID,
 	); err != nil {
@@ -803,6 +822,212 @@ WHERE tenant_id = $1 AND capacity_reserved = true
 	)
 }
 
+// retireAbandonedPreconnectParticipants releases the caller's own earlier
+// admitted/joining sessions in this exact room instance that can no longer
+// reach the provider: they never connected and are either older than
+// abandonedPreconnectParticipantTTL or the client already reported a terminal
+// disconnect/leave diagnostic for them. Fresh pre-connect attempts and every
+// waiting/connected/reconnecting session keep blocking a second attempt. The
+// caller rolls the whole transaction back on any later denial, so a retire only
+// persists together with the replacement attempt.
+func retireAbandonedPreconnectParticipants(
+	ctx context.Context,
+	transaction pgx.Tx,
+	tenantID uuid.UUID,
+	spaceID uuid.UUID,
+	roomInstanceID uuid.UUID,
+	userID uuid.UUID,
+	joinAttemptID uuid.UUID,
+	now time.Time,
+) error {
+	now = now.UTC()
+	rows, err := transaction.Query(
+		ctx,
+		`UPDATE tutorhub.media_participant_sessions
+SET status = 'left', capacity_reserved = false, version = version + 1,
+    terminal_at = GREATEST($6::timestamptz, updated_at), reconnecting_at = NULL,
+    updated_at = GREATEST($6::timestamptz, updated_at)
+WHERE tenant_id = $1 AND space_id = $2 AND room_instance_id = $3
+  AND user_id = $4 AND join_attempt_id <> $5
+  AND status IN ('admitted', 'joining') AND connected_at IS NULL
+  AND (
+      updated_at <= $7::timestamptz
+      OR EXISTS (
+          SELECT 1 FROM tutorhub.media_join_diagnostics AS diag
+          WHERE diag.tenant_id = $1 AND diag.space_id = $2
+            AND diag.room_instance_id = $3
+            AND diag.participant_session_id = tutorhub.media_participant_sessions.id
+            AND diag.stage IN ('disconnected', 'leave')
+      )
+  )
+RETURNING id`,
+		tenantID, spaceID, roomInstanceID, userID, joinAttemptID, now,
+		now.Add(-abandonedPreconnectParticipantTTL),
+	)
+	if err != nil {
+		return err
+	}
+	retired := make([]uuid.UUID, 0, 1)
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		retired = append(retired, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(retired) == 0 {
+		return nil
+	}
+	// A joining session may already have raised a hand; mirror the provider
+	// participant_left exit so retired rows never leave signal state behind.
+	if _, err := transaction.Exec(
+		ctx,
+		`UPDATE tutorhub.media_participant_hand_states
+SET is_raised = false
+WHERE tenant_id = $1 AND room_instance_id = $2
+  AND participant_session_id = ANY($3::uuid[]) AND is_raised`,
+		tenantID, roomInstanceID, retired,
+	); err != nil {
+		return err
+	}
+	return advanceMediaRosterProjection(ctx, transaction, tenantID, spaceID, roomInstanceID)
+}
+
+// canResumeLeftWebhookParticipant decides whether a provider participant_joined
+// for a session that a recent participant_left released may restore it. It
+// re-proves, inside the webhook transaction that already holds the tenant
+// control lock, every authority a fresh join attempt would need: the bounded
+// reconnect window, an open space, no unrestored removal, no other active
+// session for the user, active tenant membership, current source authority
+// with an unchanged instance role, the feature gate and participant capacity.
+// A room lock does not block resuming an already-issued credential, matching
+// signal and moderation semantics for participants inside a locked room.
+// Authorization denials return false; only infrastructure failures error.
+func (repository *PostgresInstanceRepository) canResumeLeftWebhookParticipant(
+	ctx context.Context,
+	transaction pgx.Tx,
+	binding providerRoomBinding,
+	participant participantRow,
+	event WebhookEvent,
+	receivedAt time.Time,
+) (bool, error) {
+	if binding.Status != RoomInstanceActive || participant.Status != "left" ||
+		participant.UserID == uuid.Nil || !participant.AdmittedAt.Valid ||
+		!participant.JoiningAt.Valid || !participant.TerminalAt.Valid {
+		return false, nil
+	}
+	receivedAt = receivedAt.UTC()
+	terminalAt := participant.TerminalAt.Time.UTC()
+	if receivedAt.Before(terminalAt) ||
+		receivedAt.Sub(terminalAt) > transientParticipantReconnectGrace ||
+		providerEventBefore(event.OccurredAt, terminalAt) {
+		return false, nil
+	}
+	space, err := loadSpace(ctx, transaction, binding.TenantID, binding.SpaceID, false)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if space.Status != SpaceStatusOpen {
+		return false, nil
+	}
+	if blocked, err := hasUnrestoredRemovalBarrier(
+		ctx, transaction, binding.TenantID, binding.SpaceID, binding.RoomInstanceID,
+		participant.UserID,
+	); err != nil || blocked {
+		return false, err
+	}
+	if occupied, err := hasActiveParticipant(
+		ctx, transaction, binding.TenantID, binding.RoomInstanceID, participant.UserID,
+	); err != nil || occupied {
+		return false, err
+	}
+	if allowed, err := repository.hasWebhookResumeAuthority(
+		ctx, transaction, binding, space, participant,
+	); err != nil || !allowed {
+		return false, err
+	}
+	if err := acquireLifecycleTransactionLock(
+		ctx, transaction, "media-participant-capacity:"+binding.TenantID.String(),
+	); err != nil {
+		return false, err
+	}
+	if err := repository.requireParticipantCapacity(
+		ctx, transaction, binding.TenantID, binding.SpaceID,
+	); err != nil {
+		if webhookResumeDenied(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// hasWebhookResumeAuthority reuses the reviewed join authorization path for the
+// participant's own user: active membership in an active tenant, the media
+// feature gate, current source authority (class enrollment or study-meeting
+// ownership/membership) for session.join on a joinable source, and the same
+// effective instance role the issued credential carries.
+func (repository *PostgresInstanceRepository) hasWebhookResumeAuthority(
+	ctx context.Context,
+	transaction pgx.Tx,
+	binding providerRoomBinding,
+	space spaceRow,
+	participant participantRow,
+) (bool, error) {
+	access, scope, err := repository.lifecycle.requireActiveScope(
+		ctx, transaction, AccessContext{TenantID: binding.TenantID, ActorID: participant.UserID},
+	)
+	if err != nil {
+		if webhookResumeDenied(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := repository.lifecycle.controls.RequireFeature(
+		ctx, transaction, binding.TenantID, featurecontrol.FeatureClassroomMediaRooms,
+	); err != nil {
+		if webhookResumeDenied(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	source, err := repository.lifecycle.authorizeSource(
+		ctx, transaction, access, scope, space, policy.ActionSessionJoin, false, false,
+	)
+	if err != nil {
+		if webhookResumeDenied(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !sourceAvailableForJoin(source) {
+		return false, nil
+	}
+	source, err = resolveEffectiveCredentialSource(
+		ctx, transaction, binding.TenantID, binding.RoomInstanceID, participant.UserID, source,
+	)
+	if err != nil {
+		return false, err
+	}
+	return source.InstanceRole == participant.InstanceRole, nil
+}
+
+func webhookResumeDenied(err error) bool {
+	return errors.Is(err, ErrSpaceAccessDenied) ||
+		errors.Is(err, ErrSpaceNotFound) ||
+		errors.Is(err, ErrSourceUnavailable) ||
+		errors.Is(err, featurecontrol.ErrFeatureDisabled) ||
+		errors.Is(err, featurecontrol.ErrQuotaExceeded)
+}
+
 func (repository *PostgresInstanceRepository) AllowLegacyMedia(
 	ctx context.Context,
 	tenantID uuid.UUID,
@@ -887,7 +1112,21 @@ func (repository *PostgresInstanceRepository) RecordProviderWebhook(
 			participant = &loaded
 		}
 	}
-	disposition, mutation := classifyProviderWebhook(binding, participant, event, receivedAt)
+	allowLeftResume := false
+	if binding.Status == RoomInstanceActive && event.EventType == "participant_joined" &&
+		participant != nil && participant.Status == "left" {
+		allowLeftResume, err = repository.canResumeLeftWebhookParticipant(
+			queryContext, transaction, binding, *participant, event, receivedAt,
+		)
+		if err != nil {
+			return WebhookResult{}, true, repository.lifecycle.unavailable(
+				"evaluate provider webhook participant resume", err,
+			)
+		}
+	}
+	disposition, mutation := classifyProviderWebhook(
+		binding, participant, event, receivedAt, allowLeftResume,
+	)
 	inserted, err := insertProviderWebhookReceipt(
 		queryContext, transaction, binding, participant, event, disposition, receivedAt,
 	)
@@ -924,6 +1163,7 @@ func (repository *PostgresInstanceRepository) RecordProviderWebhook(
 
 type participantRow struct {
 	ID                 uuid.UUID
+	UserID             uuid.UUID
 	ParticipantKey     uuid.UUID
 	RosterSequence     int64
 	AdmissionRequestID uuid.NullUUID
@@ -1343,11 +1583,15 @@ FOR UPDATE`,
 
 type webhookMutation func(context.Context, pgx.Tx) error
 
+// classifyProviderWebhook maps one signed provider event onto the bound room
+// lifecycle. allowLeftResume is true only when canResumeLeftWebhookParticipant
+// re-proved, in the same transaction, that a recently left session may resume.
 func classifyProviderWebhook(
 	binding providerRoomBinding,
 	participant *participantRow,
 	event WebhookEvent,
 	receivedAt time.Time,
+	allowLeftResume bool,
 ) (string, webhookMutation) {
 	roomSID := strings.TrimSpace(event.RoomSID)
 	roomName := strings.TrimSpace(event.RoomName)
@@ -1486,17 +1730,31 @@ WHERE tenant_id = $1 AND space_id = $2 AND id = $3 AND status = 'provisioning'`,
 			return "ignored_terminal", nil
 		}
 	case "participant_joined", "participant_left":
-		return classifyParticipantWebhook(binding, participant, event, eventAt)
+		return classifyResumableParticipantWebhook(
+			binding, participant, event, eventAt, allowLeftResume,
+		)
 	default:
 		return "ignored_unsupported_event", nil
 	}
 }
 
+// classifyParticipantWebhook classifies a participant event without resume
+// authority: a left session stays terminal.
 func classifyParticipantWebhook(
 	binding providerRoomBinding,
 	participant *participantRow,
 	event WebhookEvent,
 	transitionAt time.Time,
+) (string, webhookMutation) {
+	return classifyResumableParticipantWebhook(binding, participant, event, transitionAt, false)
+}
+
+func classifyResumableParticipantWebhook(
+	binding providerRoomBinding,
+	participant *participantRow,
+	event WebhookEvent,
+	transitionAt time.Time,
+	allowLeftResume bool,
 ) (string, webhookMutation) {
 	if binding.Status != RoomInstanceActive {
 		return "ignored_terminal", nil
@@ -1515,18 +1773,57 @@ func classifyParticipantWebhook(
 		case "joining", "reconnecting":
 		case "connected":
 			return "ignored_stale", nil
-		case "left", "removed", "failed":
+		case "left":
+			if !allowLeftResume {
+				return "ignored_terminal", nil
+			}
+			// Transient same-identity reconnect inside the grace window. Every
+			// lifecycle_consistent 'connected' predicate holds: admitted_at and
+			// joining_at are retained from the pre-exit state, connected_at is
+			// never earlier than joining_at, updated_at is never earlier than
+			// connected_at, and terminal/reconnecting markers are cleared.
+			return "applied", func(ctx context.Context, transaction pgx.Tx) error {
+				tag, err := transaction.Exec(
+					ctx,
+					`UPDATE tutorhub.media_participant_sessions
+SET status = 'connected', capacity_reserved = true, version = version + 1,
+    connected_at = COALESCE(connected_at, GREATEST($5::timestamptz, joining_at)),
+    reconnecting_at = NULL, terminal_at = NULL,
+    updated_at = GREATEST(
+        $5::timestamptz, COALESCE(connected_at, $5::timestamptz), joining_at, updated_at
+    )
+WHERE tenant_id = $1 AND space_id = $2 AND room_instance_id = $3
+  AND id = $4 AND status = 'left'
+  AND admitted_at IS NOT NULL AND joining_at IS NOT NULL`,
+					binding.TenantID, binding.SpaceID, binding.RoomInstanceID,
+					participant.ID, transitionAt,
+				)
+				if err != nil {
+					return err
+				}
+				if tag.RowsAffected() != 1 {
+					return ErrSpaceTransition
+				}
+				return advanceMediaRosterProjection(
+					ctx, transaction, binding.TenantID, binding.SpaceID, binding.RoomInstanceID,
+				)
+			}
+		case "removed", "failed":
 			return "ignored_terminal", nil
 		default:
 			return "ignored_stale", nil
 		}
 		return "applied", func(ctx context.Context, transaction pgx.Tx) error {
+			// LiveKit created_at has Unix-second precision while joining_at keeps
+			// the credential's sub-second time; never record connected_at before
+			// joining_at (lifecycle_consistent 'connected' predicate).
 			tag, err := transaction.Exec(
 				ctx,
 				`UPDATE tutorhub.media_participant_sessions
 SET status = 'connected', version = version + 1,
-    connected_at = COALESCE(connected_at, $5), reconnecting_at = NULL,
-    updated_at = $5
+    connected_at = COALESCE(connected_at, GREATEST($5::timestamptz, joining_at)),
+    reconnecting_at = NULL,
+    updated_at = GREATEST($5::timestamptz, joining_at)
 WHERE tenant_id = $1 AND space_id = $2 AND room_instance_id = $3
   AND id = $4 AND status IN ('joining', 'reconnecting')`,
 				binding.TenantID, binding.SpaceID, binding.RoomInstanceID,
@@ -1618,16 +1915,18 @@ func loadWebhookParticipant(
 	var participant participantRow
 	err := transaction.QueryRow(
 		ctx,
-		`SELECT id, join_attempt_id, provider_participant_identity,
-       instance_role, status, created_at, connected_at, reconnecting_at, terminal_at
+		`SELECT id, user_id, join_attempt_id, provider_participant_identity,
+       instance_role, status, created_at, admitted_at, joining_at,
+       connected_at, reconnecting_at, terminal_at
 FROM tutorhub.media_participant_sessions
 WHERE tenant_id = $1 AND space_id = $2 AND room_instance_id = $3
   AND provider_participant_identity = $4
 FOR UPDATE`,
 		binding.TenantID, binding.SpaceID, binding.RoomInstanceID, identity,
 	).Scan(
-		&participant.ID, &participant.JoinAttemptID, &participant.ProviderIdentity,
-		&participant.InstanceRole, &participant.Status, &participant.CreatedAt,
+		&participant.ID, &participant.UserID, &participant.JoinAttemptID,
+		&participant.ProviderIdentity, &participant.InstanceRole, &participant.Status,
+		&participant.CreatedAt, &participant.AdmittedAt, &participant.JoiningAt,
 		&participant.ConnectedAt, &participant.ReconnectingAt, &participant.TerminalAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

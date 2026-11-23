@@ -9,6 +9,7 @@ import * as Y from "yjs";
 import type { RuntimeConfig } from "./config.js";
 import type {
   CheckpointStore,
+  CollaborationCapability,
   CollaborationScope,
   ControlPlane,
   PortableSnapshotStore,
@@ -19,12 +20,15 @@ import type {
 import type { ProviderAuthorityGuard } from "./providerAuthorityGuard.js";
 import {
   createCollaborationRuntime,
+  isNonMutatingSyncStep2,
   type CollaborationRuntime,
 } from "./runtimeServer.js";
 
 const ORIGIN = "http://127.0.0.1:4180";
 const DOCUMENT_NAME = "wb_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const METRICS_TOKEN = "metrics-token-that-is-long-enough";
+const PRESENTER_GRANT = "p512-teacher-grant-that-is-long-enough";
+const STUDENT_GRANT = "p512-student-grant-that-is-long-enough";
 
 const scope: CollaborationScope = {
   authorityLease: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -416,6 +420,172 @@ describe("OCI collaboration runtime", () => {
     expect(checkpoints.storeCount).toBe(0);
   }, 10_000);
 
+  it("ROOM-SYNC-FIX-01 keeps a view-only student attached through the SyncStep2 handshake and live updates", async () => {
+    const checkpoints = new MemoryCheckpointStore();
+    const candidate = createRuntime(
+      checkpoints,
+      new TwoActorControlPlane("view"),
+    );
+    runtimes.push(candidate.runtime);
+    await candidate.runtime.start();
+
+    const presenter = createClient(
+      candidate.runtime,
+      undefined,
+      PRESENTER_GRANT,
+    );
+    clients.push(presenter);
+    await presenter.synced;
+    presenter.document.getMap("scene").set("existing-shape", "rectangle");
+    await waitFor(
+      () => checkpointScene(checkpoints)["existing-shape"] === "rectangle",
+      12_000,
+    );
+
+    const student = createClient(candidate.runtime, undefined, STUDENT_GRANT);
+    clients.push(student);
+    await student.synced;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // Hocuspocus closes a rejected document channel with an in-band CLOSE
+    // frame while the shared WebSocket stays open, so both signals matter.
+    expect(student.isConnected()).toBe(true);
+    expect(student.closeReasons).toEqual([]);
+    expect(student.document.getMap("scene").get("existing-shape")).toBe(
+      "rectangle",
+    );
+
+    presenter.document.getMap("scene").set("live-shape", "circle");
+    await waitFor(
+      () => student.document.getMap("scene").get("live-shape") === "circle",
+      2_000,
+    );
+    expect(student.isConnected()).toBe(true);
+    expect(student.closeReasons).toEqual([]);
+    await waitForMetrics(
+      httpUrl(candidate.runtime),
+      [
+        'collab_connections_current{capability="edit"} 1',
+        'collab_connections_current{capability="view"} 1',
+      ],
+      2_000,
+    );
+  }, 25_000);
+
+  it("ROOM-SYNC-FIX-01 rejects a view-only student's local mutation without persisting or broadcasting it", async () => {
+    const checkpoints = new MemoryCheckpointStore();
+    const candidate = createRuntime(
+      checkpoints,
+      new TwoActorControlPlane("view"),
+    );
+    runtimes.push(candidate.runtime);
+    await candidate.runtime.start();
+
+    const presenter = createClient(
+      candidate.runtime,
+      undefined,
+      PRESENTER_GRANT,
+    );
+    clients.push(presenter);
+    await presenter.synced;
+    presenter.document.getMap("scene").set("existing-shape", "rectangle");
+    await waitFor(
+      () => checkpointScene(checkpoints)["existing-shape"] === "rectangle",
+      12_000,
+    );
+    const student = createClient(candidate.runtime, undefined, STUDENT_GRANT);
+    clients.push(student);
+    await student.synced;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(student.closeReasons).toEqual([]);
+
+    student.document.getMap("scene").set("forged-shape", "must-not-persist");
+    await student.closed;
+    expect(student.closeReasons).toContain("write_disabled");
+
+    presenter.document.getMap("scene").set("after-reject", "triangle");
+    await waitFor(
+      () => checkpointScene(checkpoints)["after-reject"] === "triangle",
+      12_000,
+    );
+    expect(checkpointScene(checkpoints)).not.toHaveProperty("forged-shape");
+    expect(
+      presenter.document.getMap("scene").get("forged-shape"),
+    ).toBeUndefined();
+    expect(presenter.closeReasons).toEqual([]);
+  }, 35_000);
+
+  it("ROOM-SYNC-FIX-01 keeps a reader attached through SyncStep2 while authority is read_only", async () => {
+    const seed = new Y.Doc();
+    seed.getMap("scene").set("existing-shape", "hexagon");
+    const checkpoints = new MemoryCheckpointStore();
+    checkpoints.checkpoint = {
+      checksum: "0".repeat(64),
+      state: Y.encodeStateAsUpdate(seed),
+      watermark: 1,
+    };
+    seed.destroy();
+    const authority = new FakeControlPlane();
+    authority.mode = "read_only";
+    const candidate = createRuntime(checkpoints, authority);
+    runtimes.push(candidate.runtime);
+    await candidate.runtime.start();
+    expect(candidate.runtime.readiness()).toEqual({
+      ready: true,
+      reason: "ready",
+    });
+
+    const reader = createClient(candidate.runtime);
+    clients.push(reader);
+    await reader.synced;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(reader.isConnected()).toBe(true);
+    expect(reader.closeReasons).toEqual([]);
+    expect(reader.document.getMap("scene").get("existing-shape")).toBe(
+      "hexagon",
+    );
+    await waitForMetrics(
+      httpUrl(candidate.runtime),
+      ['collab_connections_current{capability="view"} 1'],
+      2_000,
+    );
+    // The authority refresh loop closes writers in read_only mode; a reader
+    // downgraded to view must survive several refresh ticks.
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    expect(reader.closeReasons).toEqual([]);
+  }, 15_000);
+
+  it("ROOM-SYNC-FIX-01 classifies only contained SyncStep2 payloads as read-only", () => {
+    const authoritative = new Y.Doc();
+    authoritative.getMap("scene").set("shape", "square");
+    const subset = Y.encodeStateAsUpdate(authoritative);
+    const replica = new Y.Doc();
+    Y.applyUpdate(replica, subset);
+    const replicaDiff = Y.encodeStateAsUpdate(
+      replica,
+      Y.encodeStateVector(authoritative),
+    );
+    const divergent = new Y.Doc();
+    divergent.getMap("scene").set("forged", "circle");
+    const forged = Y.encodeStateAsUpdate(divergent);
+
+    expect(
+      isNonMutatingSyncStep2(authoritative, new Uint8Array([0, 0]), 1_024),
+    ).toBe(true);
+    expect(isNonMutatingSyncStep2(authoritative, subset, 1_024)).toBe(true);
+    expect(isNonMutatingSyncStep2(authoritative, replicaDiff, 1_024)).toBe(
+      true,
+    );
+    expect(isNonMutatingSyncStep2(authoritative, forged, 1_024)).toBe(false);
+    expect(isNonMutatingSyncStep2(authoritative, subset, 1)).toBe(false);
+    expect(
+      isNonMutatingSyncStep2(authoritative, new Uint8Array([0xff, 0xff]), 64),
+    ).toBe(false);
+
+    for (const doc of [authoritative, replica, divergent]) doc.destroy();
+  });
+
   it("does not commit a session whose document load finishes after authority is disabled", async () => {
     const checkpoints = new DeferredLoadCheckpointStore();
     const authority = new FakeControlPlane();
@@ -582,21 +752,23 @@ class FakeControlPlane implements ControlPlane {
 }
 
 class TwoActorControlPlane extends FakeControlPlane {
-  private readonly actorScopes = new Map<string, CollaborationScope>([
-    ["p512-teacher-grant-that-is-long-enough", { ...scope }],
-    [
-      "p512-student-grant-that-is-long-enough",
-      {
-        ...scope,
-        actorId: "student-b",
-        authorityLease: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        sessionId: "session-b",
-      },
-    ],
-  ]);
+  private readonly actorScopes: Map<string, CollaborationScope>;
 
-  constructor() {
+  constructor(studentCapability: CollaborationCapability = "edit") {
     super();
+    this.actorScopes = new Map<string, CollaborationScope>([
+      ["p512-teacher-grant-that-is-long-enough", { ...scope }],
+      [
+        "p512-student-grant-that-is-long-enough",
+        {
+          ...scope,
+          actorId: "student-b",
+          authorityLease: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          capability: studentCapability,
+          sessionId: "session-b",
+        },
+      ],
+    ]);
     this.validLeases.add("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
   }
 
@@ -732,6 +904,7 @@ class FakeAuthorityGuard implements ProviderAuthorityGuard {
 interface TestClient {
   awarenessStates(): Record<string, unknown>[];
   authenticationFailures: string[];
+  closeReasons: string[];
   closed: Promise<void>;
   connected: Promise<void>;
   disconnect(): void;
@@ -751,6 +924,7 @@ function createClient(
   const document = new Y.Doc();
   if (clientId !== undefined) document.clientID = clientId;
   const authenticationFailures: string[] = [];
+  const closeReasons: string[] = [];
   let resolveClosed!: () => void;
   let resolveConnected!: () => void;
   let resolveSynced!: () => void;
@@ -779,7 +953,10 @@ function createClient(
     document,
     name: DOCUMENT_NAME,
     onAuthenticationFailed: ({ reason }) => authenticationFailures.push(reason),
-    onClose: () => resolveClosed(),
+    onClose: ({ event }) => {
+      closeReasons.push(event.reason);
+      resolveClosed();
+    },
     onStatus: ({ status }) => {
       if (status === WebSocketStatus.Connected) resolveConnected();
     },
@@ -796,6 +973,7 @@ function createClient(
         unknown
       >[],
     authenticationFailures,
+    closeReasons,
     closed,
     connected,
     disconnect: () => socket.disconnect(),
@@ -820,6 +998,19 @@ function httpUrl(runtime: CollaborationRuntime): string {
 
 function wsUrl(runtime: CollaborationRuntime): string {
   return `ws://127.0.0.1:${runtime.address().port}`;
+}
+
+function checkpointScene(
+  checkpoints: MemoryCheckpointStore,
+): Record<string, unknown> {
+  if (!checkpoints.checkpoint) return {};
+  const decoded = new Y.Doc();
+  try {
+    Y.applyUpdate(decoded, checkpoints.checkpoint.state);
+    return decoded.getMap("scene").toJSON();
+  } finally {
+    decoded.destroy();
+  }
 }
 
 function awarenessDisplayName(state: Record<string, unknown>): unknown {

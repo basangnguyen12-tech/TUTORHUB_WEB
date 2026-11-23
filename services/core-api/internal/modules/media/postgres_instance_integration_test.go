@@ -897,6 +897,215 @@ WHERE tenant_id = $1 AND class_id = $2 AND user_id = $3`,
 	}
 	assertP402ParticipantCount(t, ctx, migrationPool, opened.ID, fixture.studentID, 1)
 
+	// ROOM-SYNC-FIX-01: a same-identity participant_joined inside the
+	// transient reconnect grace must stay terminal once the user's source
+	// authority was revoked after participant_left.
+	revokedRejoin := WebhookEvent{
+		ID:                  p402EventID("participant-rejoin-revoked"),
+		EventType:           "participant_joined",
+		RoomName:            providerRoomName,
+		RoomSID:             provider.sid,
+		ParticipantIdentity: studentGrant.ProviderParticipantIdentity,
+		ParticipantSID:      "PA_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		OccurredAt:          now,
+	}
+	webhookReceivedAt = now.Add(time.Second)
+	projectionBeforeRevokedRejoin := p402RoomProjectionVersion(t, ctx, migrationPool, roomInstanceID)
+	result, err = webhooks.RecordWebhook(ctx, revokedRejoin)
+	if err != nil || !result.Recorded || !result.Ignored || result.Duplicate {
+		t.Fatalf("record revoked same-identity rejoin: result=%+v error=%v", result, err)
+	}
+	assertP402Receipt(t, ctx, migrationPool, revokedRejoin.ID, "ignored_terminal", 1)
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		studentGrant.ParticipantSessionID,
+		"left",
+		false,
+	)
+	if got := p402RoomProjectionVersion(t, ctx, migrationPool, roomInstanceID); got != projectionBeforeRevokedRejoin {
+		t.Fatalf("revoked rejoin projection version = %d, want unchanged %d", got, projectionBeforeRevokedRejoin)
+	}
+
+	// ROOM-SYNC-FIX-01: an ICE/transport blip makes LiveKit emit
+	// participant_left then participant_joined for the same still-authorized
+	// identity. The session must return to connected with reserved capacity
+	// and an advanced roster projection instead of staying left forever.
+	now = now.Add(2 * time.Second)
+	teacherTransientLeft := WebhookEvent{
+		ID:                  p402EventID("teacher-transient-left"),
+		EventType:           "participant_left",
+		RoomName:            providerRoomName,
+		RoomSID:             provider.sid,
+		ParticipantIdentity: teacherGrant.ProviderParticipantIdentity,
+		ParticipantSID:      teacherUnixSecondEvent.ParticipantSID,
+		OccurredAt:          now,
+	}
+	webhookReceivedAt = now.Add(time.Second)
+	result, err = webhooks.RecordWebhook(ctx, teacherTransientLeft)
+	if err != nil || !result.Recorded || result.Ignored || result.Duplicate {
+		t.Fatalf("record transient teacher left: result=%+v error=%v", result, err)
+	}
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		teacherGrant.ParticipantSessionID,
+		"left",
+		false,
+	)
+	teacherTransientRejoin := WebhookEvent{
+		ID:                  p402EventID("teacher-transient-rejoin"),
+		EventType:           "participant_joined",
+		RoomName:            providerRoomName,
+		RoomSID:             provider.sid,
+		ParticipantIdentity: teacherGrant.ProviderParticipantIdentity,
+		ParticipantSID:      "PA_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		OccurredAt:          now.Add(time.Second),
+	}
+	webhookReceivedAt = now.Add(2 * time.Second)
+	projectionBeforeResume := p402RoomProjectionVersion(t, ctx, migrationPool, roomInstanceID)
+	result, err = webhooks.RecordWebhook(ctx, teacherTransientRejoin)
+	if err != nil || !result.Recorded || result.Ignored || result.Duplicate {
+		t.Fatalf("record transient teacher rejoin: result=%+v error=%v", result, err)
+	}
+	assertP402Receipt(t, ctx, migrationPool, teacherTransientRejoin.ID, "applied", 1)
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		teacherGrant.ParticipantSessionID,
+		"connected",
+		true,
+	)
+	assertP402ResumedParticipantTimeline(t, ctx, migrationPool, teacherGrant.ParticipantSessionID)
+	if got := p402RoomProjectionVersion(t, ctx, migrationPool, roomInstanceID); got != projectionBeforeResume+1 {
+		t.Fatalf("resume projection version = %d, want %d", got, projectionBeforeResume+1)
+	}
+	result, err = webhooks.RecordWebhook(ctx, teacherTransientRejoin)
+	if err != nil || !result.Duplicate {
+		t.Fatalf("replay transient teacher rejoin: result=%+v error=%v", result, err)
+	}
+
+	// ROOM-SYNC-FIX-01: an admitted pre-connect attempt that never reached
+	// LiveKit keeps blocking a second attempt while fresh, and is retired once
+	// the client reports a terminal transport diagnostic for it.
+	now = now.Add(3 * time.Second)
+	if _, err := instances.CreateOrReuseJoinAttempt(
+		ctx,
+		coTeacherAccess,
+		opened.ID,
+		CreateJoinAttemptInput{
+			JoinAttemptID:          uuid.New(),
+			ExpectedRoomInstanceID: roomInstanceID,
+			ExpectedSpaceVersion:   opened.Version,
+		},
+		now,
+	); !errors.Is(err, ErrParticipantConflict) {
+		t.Fatalf("fresh pre-connect second attempt error = %v, want participant conflict", err)
+	}
+	if _, err := migrationPool.Exec(
+		ctx,
+		`INSERT INTO tutorhub.media_join_diagnostics (
+    id, tenant_id, space_id, room_instance_id, participant_session_id,
+    join_attempt_id, stage, outcome, error_code, network_quality, media_path,
+    duration_ms, recorded_at, retention_until
+) VALUES ($1, $2, $3, $4, $5, $6, 'disconnected', 'failed',
+          'transport_disconnected', 'unknown', 'listen_only', 0, $7,
+          $7::timestamptz + interval '30 days')`,
+		uuid.New(),
+		fixture.tenantID,
+		opened.ID,
+		roomInstanceID,
+		coTeacherAttempt.Attempt.ParticipantSessionID,
+		coTeacherAttemptID,
+		now,
+	); err != nil {
+		t.Fatalf("record pre-connect transport diagnostic fixture: %v", err)
+	}
+	projectionBeforeRetire := p402RoomProjectionVersion(t, ctx, migrationPool, roomInstanceID)
+	coTeacherRetryID := uuid.New()
+	coTeacherRetry, err := instances.CreateOrReuseJoinAttempt(
+		ctx,
+		coTeacherAccess,
+		opened.ID,
+		CreateJoinAttemptInput{
+			JoinAttemptID:          coTeacherRetryID,
+			ExpectedRoomInstanceID: roomInstanceID,
+			ExpectedSpaceVersion:   opened.Version,
+		},
+		now,
+	)
+	if err != nil || !coTeacherRetry.Created ||
+		coTeacherRetry.Attempt.Status != JoinAttemptAdmitted ||
+		coTeacherRetry.Attempt.ParticipantSessionID == coTeacherAttempt.Attempt.ParticipantSessionID {
+		t.Fatalf("re-join after pre-connect transport failure: result=%+v error=%v", coTeacherRetry, err)
+	}
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		coTeacherAttempt.Attempt.ParticipantSessionID,
+		"left",
+		false,
+	)
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		coTeacherRetry.Attempt.ParticipantSessionID,
+		"admitted",
+		true,
+	)
+	if got := p402RoomProjectionVersion(t, ctx, migrationPool, roomInstanceID); got <= projectionBeforeRetire {
+		t.Fatalf("pre-connect retire projection version = %d, want > %d", got, projectionBeforeRetire)
+	}
+
+	// ROOM-SYNC-FIX-01: without any diagnostic, an admitted attempt older than
+	// the abandoned pre-connect TTL is retired by a same-user re-join.
+	now = now.Add(abandonedPreconnectParticipantTTL + time.Second)
+	coTeacherStaleRetry, err := instances.CreateOrReuseJoinAttempt(
+		ctx,
+		coTeacherAccess,
+		opened.ID,
+		CreateJoinAttemptInput{
+			JoinAttemptID:          uuid.New(),
+			ExpectedRoomInstanceID: roomInstanceID,
+			ExpectedSpaceVersion:   opened.Version,
+		},
+		now,
+	)
+	if err != nil || !coTeacherStaleRetry.Created ||
+		coTeacherStaleRetry.Attempt.Status != JoinAttemptAdmitted {
+		t.Fatalf("re-join after stale pre-connect attempt: result=%+v error=%v", coTeacherStaleRetry, err)
+	}
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		coTeacherRetry.Attempt.ParticipantSessionID,
+		"left",
+		false,
+	)
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		coTeacherStaleRetry.Attempt.ParticipantSessionID,
+		"admitted",
+		true,
+	)
+	assertP402ParticipantState(
+		t,
+		ctx,
+		migrationPool,
+		teacherGrant.ParticipantSessionID,
+		"connected",
+		true,
+	)
+	logStage("room_sync_fix")
+
 	unknownRoomEvent := WebhookEvent{
 		ID:         p402EventID("unknown-room-and-sid"),
 		EventType:  "room_started",
@@ -1669,6 +1878,53 @@ WHERE id = $1`,
 			updatedMatches,
 			connectedAfterProvider,
 		)
+	}
+}
+
+func p402RoomProjectionVersion(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	roomInstanceID uuid.UUID,
+) int64 {
+	t.Helper()
+	var version int64
+	if err := pool.QueryRow(
+		ctx,
+		`SELECT projection_version
+FROM tutorhub.media_room_instances
+WHERE id = $1`,
+		roomInstanceID,
+	).Scan(&version); err != nil {
+		t.Fatalf("read ROOM-SYNC-FIX-01 roster projection version: %v", err)
+	}
+	return version
+}
+
+func assertP402ResumedParticipantTimeline(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	participantSessionID uuid.UUID,
+) {
+	t.Helper()
+	var consistent bool
+	if err := pool.QueryRow(
+		ctx,
+		`SELECT admitted_at IS NOT NULL
+    AND joining_at >= admitted_at
+    AND connected_at >= joining_at
+    AND connected_at <= updated_at
+    AND reconnecting_at IS NULL
+    AND terminal_at IS NULL
+FROM tutorhub.media_participant_sessions
+WHERE id = $1`,
+		participantSessionID,
+	).Scan(&consistent); err != nil {
+		t.Fatalf("read ROOM-SYNC-FIX-01 resumed participant timeline: %v", err)
+	}
+	if !consistent {
+		t.Fatal("resumed participant timeline violates the connected lifecycle ordering")
 	}
 }
 

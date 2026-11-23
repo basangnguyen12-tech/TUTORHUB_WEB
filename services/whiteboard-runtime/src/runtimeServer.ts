@@ -344,9 +344,18 @@ export function createCollaborationRuntime(
         throw error;
       }
     },
-    async beforeSync({ context, documentName, payload, type }) {
-      requireAdmissionReady(type !== 0);
-      if (type === 0) return;
+    async beforeSync({ context, document, documentName, payload, type }) {
+      // y-protocols sync: 0 = SyncStep1 (state vector), 1 = SyncStep2 (diff),
+      // 2 = Update. Every client answers the server's SyncStep1 with a
+      // SyncStep2 that is usually empty or already contained in the document;
+      // that handshake frame carries no mutation and must not be treated as a
+      // write, otherwise view-only and read_only-mode readers are dropped.
+      const isReadOnlySync =
+        type === 0 ||
+        (type === 1 &&
+          isNonMutatingSyncStep2(document, payload, config.maxUpdateBytes));
+      requireAdmissionReady(!isReadOnlySync);
+      if (isReadOnlySync) return;
       if (context.capability === "view") {
         throw new RuntimeSocketError("write_disabled");
       }
@@ -634,6 +643,29 @@ export function createCollaborationRuntime(
 
 function connectionKey(socketId: string, documentName: string): string {
   return `${socketId}:${documentName}`;
+}
+
+/**
+ * A SyncStep2 payload is non-mutating when every struct and delete it carries
+ * is already present in the authoritative document. Oversized or malformed
+ * payloads are never classified as read-only so they stay on the write path
+ * (capability check, tenant operation quota and document budget).
+ */
+export function isNonMutatingSyncStep2(
+  document: Y.Doc,
+  payload: Uint8Array,
+  maxBytes: number,
+): boolean {
+  if (payload.byteLength > maxBytes) return false;
+  // Standard empty Yjs V1 update: zero struct clients, zero delete-set clients.
+  if (payload.byteLength === 2 && payload[0] === 0 && payload[1] === 0) {
+    return true;
+  }
+  try {
+    return Y.snapshotContainsUpdate(Y.snapshot(document), payload);
+  } catch {
+    return false;
+  }
 }
 
 function rollbackPendingDocument(

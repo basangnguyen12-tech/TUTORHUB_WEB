@@ -1320,15 +1320,30 @@ function deviceErrorKey(code: MediaPrejoinErrorCode): TranslationKey {
   return `media.p403.error.${code}` as TranslationKey;
 }
 
+// Core API puts the machine-readable reason in `problem.code`; `problem.type`
+// is the generic `urn:tutorhub:problem:http-<status>`. Accept both so an older
+// or proxied response that encodes the reason as a type suffix still maps.
+function joinProblemMatches(error: APIRequestError, code: string): boolean {
+  return (
+    error.problem?.code === code ||
+    (error.problem?.type ?? "").endsWith(`:${code}`)
+  );
+}
+
 function joinProblemKey(error: unknown): TranslationKey {
   if (error instanceof APIRequestError) {
-    const type = error.problem?.type ?? "";
-    if (type.endsWith(":room_not_open")) return "media.p403.roomNotOpen";
-    if (type.endsWith(":room_locked")) return "media.p403.roomLocked";
-    if (type.endsWith(":admission_required"))
+    if (joinProblemMatches(error, "room_not_open"))
+      return "media.p403.roomNotOpen";
+    if (joinProblemMatches(error, "room_locked"))
+      return "media.p403.roomLocked";
+    if (joinProblemMatches(error, "admission_required"))
       return "media.p403.waitingDescription";
-    if (type.endsWith(":feature_disabled")) return "media.p403.featureDisabled";
-    if (type.endsWith(":quota_exceeded")) return "media.p403.quotaExceeded";
+    if (joinProblemMatches(error, "feature_disabled"))
+      return "media.p403.featureDisabled";
+    if (joinProblemMatches(error, "quota_exceeded"))
+      return "media.p403.quotaExceeded";
+    if (joinProblemMatches(error, "participant_session_conflict"))
+      return "media.p403.participantConflict";
     if (error.status === 404) return "media.p403.spaceUnavailableDescription";
     if (error.status === 429) return "media.p403.rateLimited";
     if (error.status === 503) return "media.p403.providerUnavailable";

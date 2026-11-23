@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tutorhub-v2/core-api/internal/modules/featurecontrol"
 )
 
 func TestPostgresInstanceRepositoryCredentialLimiterUsesOpaqueBucket(t *testing.T) {
@@ -405,15 +407,84 @@ func TestProviderWebhookClassifierSupportsBoundLifecycleTransitions(t *testing.T
 	sameSecondConnected.ConnectedAt = sql.NullTime{
 		Time: transitionAt.Add(750 * time.Millisecond), Valid: true,
 	}
+	recentlyLeft := connected
+	recentlyLeft.Status = "left"
+	recentlyLeft.AdmittedAt = sql.NullTime{Time: joining.CreatedAt, Valid: true}
+	recentlyLeft.JoiningAt = sql.NullTime{Time: joining.CreatedAt, Valid: true}
+	recentlyLeft.TerminalAt = sql.NullTime{Time: transitionAt.Add(-10 * time.Second), Valid: true}
+	leftAfterJoin := recentlyLeft
+	leftAfterJoin.TerminalAt = sql.NullTime{Time: transitionAt.Add(time.Second), Valid: true}
+	removed := recentlyLeft
+	removed.Status = "removed"
 
 	tests := []struct {
 		name         string
 		binding      providerRoomBinding
 		participant  *participantRow
 		event        WebhookEvent
+		resume       bool
 		want         string
 		wantMutation bool
 	}{
+		{
+			name:        "transient same-identity rejoin resumes a re-authorized left participant",
+			binding:     active,
+			participant: &recentlyLeft,
+			event: WebhookEvent{
+				EventType: "participant_joined", RoomName: base.ProviderName,
+				RoomSID: active.ProviderSID.String, ParticipantIdentity: "p_opaque",
+				OccurredAt: transitionAt,
+			},
+			resume: true,
+			want:   "applied", wantMutation: true,
+		},
+		{
+			name:        "left participant stays terminal without re-proven resume authority",
+			binding:     active,
+			participant: &recentlyLeft,
+			event: WebhookEvent{
+				EventType: "participant_joined", RoomName: base.ProviderName,
+				RoomSID: active.ProviderSID.String, ParticipantIdentity: "p_opaque",
+				OccurredAt: transitionAt,
+			},
+			want: "ignored_terminal",
+		},
+		{
+			name:        "joined older than the recorded left stays stale even with resume authority",
+			binding:     active,
+			participant: &leftAfterJoin,
+			event: WebhookEvent{
+				EventType: "participant_joined", RoomName: base.ProviderName,
+				RoomSID: active.ProviderSID.String, ParticipantIdentity: "p_opaque",
+				OccurredAt: transitionAt,
+			},
+			resume: true,
+			want:   "ignored_stale",
+		},
+		{
+			name:        "removed participant never resumes",
+			binding:     active,
+			participant: &removed,
+			event: WebhookEvent{
+				EventType: "participant_joined", RoomName: base.ProviderName,
+				RoomSID: active.ProviderSID.String, ParticipantIdentity: "p_opaque",
+				OccurredAt: transitionAt,
+			},
+			resume: true,
+			want:   "ignored_terminal",
+		},
+		{
+			name:        "resume authority never reopens a non-active room",
+			binding:     provisioning,
+			participant: &recentlyLeft,
+			event: WebhookEvent{
+				EventType: "participant_joined", RoomName: base.ProviderName,
+				RoomSID: "RM_provider_sid", ParticipantIdentity: "p_opaque",
+				OccurredAt: transitionAt,
+			},
+			resume: true,
+			want:   "ignored_terminal",
+		},
 		{
 			name:    "room started activates provisioning instance",
 			binding: provisioning,
@@ -533,6 +604,7 @@ func TestProviderWebhookClassifierSupportsBoundLifecycleTransitions(t *testing.T
 				test.participant,
 				test.event,
 				receivedAt,
+				test.resume,
 			)
 			if disposition != test.want {
 				t.Fatalf("disposition = %q, want %q", disposition, test.want)
@@ -740,6 +812,265 @@ func TestRoomTerminationReleasesParticipantCapacity(t *testing.T) {
 		if !strings.Contains(termination, fragment) {
 			t.Fatalf("participant termination is missing %q", fragment)
 		}
+	}
+}
+
+func TestRoomSyncFixBoundsAreExact(t *testing.T) {
+	t.Parallel()
+
+	if transientParticipantReconnectGrace != 2*time.Minute {
+		t.Fatalf("transient reconnect grace = %s, want 2m", transientParticipantReconnectGrace)
+	}
+	if abandonedPreconnectParticipantTTL != 90*time.Second {
+		t.Fatalf("abandoned pre-connect TTL = %s, want 90s", abandonedPreconnectParticipantTTL)
+	}
+}
+
+// The window checks run before any database access, so a nil transaction
+// proves that out-of-window or incomplete rows never reach authority lookups.
+func TestWebhookResumeRejectsOutOfWindowLeftParticipantBeforeDatabaseAccess(t *testing.T) {
+	t.Parallel()
+
+	terminalAt := time.Date(2026, time.November, 23, 9, 0, 0, int(250*time.Millisecond), time.UTC)
+	binding := providerRoomBinding{
+		TenantID:       uuid.MustParse("b16dd520-65d5-4ea0-a7ca-62e43a35bbfb"),
+		SpaceID:        uuid.MustParse("f6808028-e785-41d3-8cb6-bf027018ba41"),
+		RoomInstanceID: uuid.MustParse("e97d4164-a66c-49dc-9bf3-28d694f565e7"),
+		Status:         RoomInstanceActive,
+	}
+	left := participantRow{
+		ID:         uuid.MustParse("cb94435d-e0c8-451a-bfe4-bb669525d836"),
+		UserID:     uuid.MustParse("1d7d65eb-904e-4a0d-bd24-a8ec1b453d64"),
+		Status:     "left",
+		AdmittedAt: sql.NullTime{Time: terminalAt.Add(-time.Minute), Valid: true},
+		JoiningAt:  sql.NullTime{Time: terminalAt.Add(-time.Minute), Valid: true},
+		TerminalAt: sql.NullTime{Time: terminalAt, Valid: true},
+	}
+	inactive := binding
+	inactive.Status = RoomInstanceFailed
+	neverJoined := left
+	neverJoined.JoiningAt = sql.NullTime{}
+	unknownUser := left
+	unknownUser.UserID = uuid.Nil
+	notLeft := left
+	notLeft.Status = "removed"
+
+	for _, test := range []struct {
+		name        string
+		binding     providerRoomBinding
+		participant participantRow
+		occurredAt  time.Time
+		receivedAt  time.Time
+	}{
+		{
+			name: "outside grace", binding: binding, participant: left,
+			occurredAt: terminalAt.Add(transientParticipantReconnectGrace),
+			receivedAt: terminalAt.Add(transientParticipantReconnectGrace + time.Second),
+		},
+		{
+			name: "received before terminal", binding: binding, participant: left,
+			occurredAt: terminalAt, receivedAt: terminalAt.Add(-time.Second),
+		},
+		{
+			name: "event before terminal second", binding: binding, participant: left,
+			occurredAt: terminalAt.Add(-2 * time.Second), receivedAt: terminalAt.Add(time.Second),
+		},
+		{
+			name: "room not active", binding: inactive, participant: left,
+			occurredAt: terminalAt, receivedAt: terminalAt.Add(time.Second),
+		},
+		{
+			name: "never reached joining", binding: binding, participant: neverJoined,
+			occurredAt: terminalAt, receivedAt: terminalAt.Add(time.Second),
+		},
+		{
+			name: "missing user binding", binding: binding, participant: unknownUser,
+			occurredAt: terminalAt, receivedAt: terminalAt.Add(time.Second),
+		},
+		{
+			name: "not a left session", binding: binding, participant: notLeft,
+			occurredAt: terminalAt, receivedAt: terminalAt.Add(time.Second),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			allowed, err := (&PostgresInstanceRepository{}).canResumeLeftWebhookParticipant(
+				context.Background(), nil, test.binding, test.participant,
+				WebhookEvent{EventType: "participant_joined", OccurredAt: test.occurredAt},
+				test.receivedAt,
+			)
+			if err != nil || allowed {
+				t.Fatalf("resume allowed = %t error = %v, want false/nil", allowed, err)
+			}
+		})
+	}
+}
+
+func TestWebhookResumeReprovesAuthorityBeforeRestoringLeftParticipant(t *testing.T) {
+	t.Parallel()
+
+	source := postgresInstanceRepositorySource(t)
+	record := postgresInstanceRepositorySection(
+		t,
+		source,
+		"func (repository *PostgresInstanceRepository) RecordProviderWebhook(",
+		"type participantRow struct",
+	)
+	requireOrderedRepositoryFragments(t, record, []string{
+		"loadWebhookParticipant(",
+		`event.EventType == "participant_joined"`,
+		`participant.Status == "left"`,
+		"repository.canResumeLeftWebhookParticipant(",
+		"classifyProviderWebhook(",
+		"binding, participant, event, receivedAt, allowLeftResume,",
+		"insertProviderWebhookReceipt(",
+	})
+
+	eligibility := postgresInstanceRepositorySection(
+		t,
+		source,
+		"func (repository *PostgresInstanceRepository) canResumeLeftWebhookParticipant(",
+		"func (repository *PostgresInstanceRepository) hasWebhookResumeAuthority(",
+	)
+	requireOrderedRepositoryFragments(t, eligibility, []string{
+		"binding.Status != RoomInstanceActive",
+		"!participant.JoiningAt.Valid || !participant.TerminalAt.Valid",
+		"receivedAt.Sub(terminalAt) > transientParticipantReconnectGrace",
+		"loadSpace(ctx, transaction, binding.TenantID, binding.SpaceID, false)",
+		"space.Status != SpaceStatusOpen",
+		"hasUnrestoredRemovalBarrier(",
+		"hasActiveParticipant(",
+		"repository.hasWebhookResumeAuthority(",
+		`"media-participant-capacity:"+binding.TenantID.String()`,
+		"repository.requireParticipantCapacity(",
+	})
+	if strings.Contains(eligibility, "space.Locked") {
+		t.Fatal("a room lock must not block resuming an already-issued credential")
+	}
+
+	authority := postgresInstanceRepositorySection(
+		t,
+		source,
+		"func (repository *PostgresInstanceRepository) hasWebhookResumeAuthority(",
+		"func webhookResumeDenied(",
+	)
+	requireOrderedRepositoryFragments(t, authority, []string{
+		"repository.lifecycle.requireActiveScope(",
+		"AccessContext{TenantID: binding.TenantID, ActorID: participant.UserID}",
+		"featurecontrol.FeatureClassroomMediaRooms",
+		"repository.lifecycle.authorizeSource(",
+		"policy.ActionSessionJoin, false, false",
+		"sourceAvailableForJoin(source)",
+		"resolveEffectiveCredentialSource(",
+		"source.InstanceRole == participant.InstanceRole",
+	})
+
+	classifier := postgresInstanceRepositorySection(
+		t,
+		source,
+		"func classifyParticipantWebhook(",
+		"func advanceMediaRosterProjection(",
+	)
+	requireOrderedRepositoryFragments(t, classifier, []string{
+		"providerEventBefore(transitionAt, lastTransitionAt)",
+		`case "left":`,
+		"if !allowLeftResume {",
+		`return "ignored_terminal", nil`,
+		"SET status = 'connected', capacity_reserved = true, version = version + 1",
+		"connected_at = COALESCE(connected_at, GREATEST($5::timestamptz, joining_at))",
+		"reconnecting_at = NULL, terminal_at = NULL",
+		"WHERE tenant_id = $1 AND space_id = $2 AND room_instance_id = $3",
+		"AND id = $4 AND status = 'left'",
+		"AND admitted_at IS NOT NULL AND joining_at IS NOT NULL",
+		"advanceMediaRosterProjection(",
+		`case "removed", "failed":`,
+	})
+	if !strings.Contains(
+		classifier,
+		"connected_at = COALESCE(connected_at, GREATEST($5::timestamptz, joining_at)),\n    reconnecting_at = NULL,\n    updated_at = GREATEST($5::timestamptz, joining_at)",
+	) {
+		t.Fatal("joining -> connected must never record connected_at before joining_at")
+	}
+
+	for _, err := range []error{
+		ErrSpaceAccessDenied, ErrSpaceNotFound, ErrSourceUnavailable,
+		&featurecontrol.FeatureDisabledError{Feature: featurecontrol.FeatureClassroomMediaRooms},
+		&featurecontrol.QuotaExceededError{Quota: featurecontrol.QuotaActiveMediaParticipants},
+	} {
+		if !webhookResumeDenied(err) {
+			t.Fatalf("authorization denial %v must keep the left session terminal", err)
+		}
+	}
+	for _, err := range []error{ErrLifecycleUnavailable, errors.New("driver failure")} {
+		if webhookResumeDenied(err) {
+			t.Fatalf("infrastructure failure %v must not be treated as a denial", err)
+		}
+	}
+}
+
+func TestJoinAttemptRetiresOnlyAbandonedOwnPreconnectSessions(t *testing.T) {
+	t.Parallel()
+
+	source := postgresInstanceRepositorySource(t)
+	attempt := postgresInstanceRepositorySection(
+		t,
+		source,
+		"func (repository *PostgresInstanceRepository) CreateOrReuseJoinAttempt(",
+		"func (repository *PostgresInstanceRepository) requireParticipantCapacity(",
+	)
+	requireOrderedRepositoryFragments(t, attempt, []string{
+		"loadParticipantByAttempt(",
+		"retireAbandonedPreconnectParticipants(",
+		"scope.TenantID, space.ID, room.ID,",
+		"scope.ActorID, input.JoinAttemptID, now,",
+		"hasActiveParticipant(",
+		"hasUnrestoredRemovalBarrier(",
+		"media-participant-capacity:",
+		"INSERT INTO tutorhub.media_admission_requests",
+		"INSERT INTO tutorhub.media_participant_sessions",
+	})
+
+	retire := postgresInstanceRepositorySection(
+		t,
+		source,
+		"func retireAbandonedPreconnectParticipants(",
+		"func (repository *PostgresInstanceRepository) canResumeLeftWebhookParticipant(",
+	)
+	requireOrderedRepositoryFragments(t, retire, []string{
+		"SET status = 'left', capacity_reserved = false, version = version + 1",
+		"terminal_at = GREATEST($6::timestamptz, updated_at), reconnecting_at = NULL",
+		"updated_at = GREATEST($6::timestamptz, updated_at)",
+		"WHERE tenant_id = $1 AND space_id = $2 AND room_instance_id = $3",
+		"AND user_id = $4 AND join_attempt_id <> $5",
+		"AND status IN ('admitted', 'joining') AND connected_at IS NULL",
+		"updated_at <= $7::timestamptz",
+		"FROM tutorhub.media_join_diagnostics AS diag",
+		"WHERE diag.tenant_id = $1 AND diag.space_id = $2",
+		"AND diag.room_instance_id = $3",
+		"AND diag.participant_session_id = tutorhub.media_participant_sessions.id",
+		"AND diag.stage IN ('disconnected', 'leave')",
+		"now.Add(-abandonedPreconnectParticipantTTL)",
+		"UPDATE tutorhub.media_participant_hand_states",
+		"SET is_raised = false",
+		"advanceMediaRosterProjection(",
+	})
+	for _, forbidden := range []string{
+		"'waiting'", "'connected'", "'reconnecting'", "DELETE FROM",
+	} {
+		if strings.Contains(retire, forbidden) {
+			t.Fatalf("pre-connect retire touches forbidden state %q", forbidden)
+		}
+	}
+}
+
+func requireOrderedRepositoryFragments(t *testing.T, section string, fragments []string) {
+	t.Helper()
+	offset := 0
+	for _, fragment := range fragments {
+		index := strings.Index(section[offset:], fragment)
+		if index < 0 {
+			t.Fatalf("repository section is missing ordered fragment %q", fragment)
+		}
+		offset += index + len(fragment)
 	}
 }
 

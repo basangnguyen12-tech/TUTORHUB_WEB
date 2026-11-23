@@ -123,6 +123,10 @@ function MediaSpaceRoomSession({
     handoff && credentialExpired(handoff.credential.expires_at),
   );
   const activeRoom = mediaSpace.data?.active_room_instance;
+  // ROOM-SYNC-FIX-01: a brief ICE/transport recovery ("reconnecting") must
+  // not tear down the roster and whiteboard projections; only a terminal
+  // disconnect stops them.
+  const roomLive = roomStatus === "connected" || roomStatus === "reconnecting";
   const viewerOperations = mediaP404ViewerOperations(
     mediaSpace.data?.viewer_operations,
   );
@@ -138,7 +142,7 @@ function MediaSpaceRoomSession({
     roomInstanceId ?? "",
     mediaSpace.data?.version ?? 0,
     activeRoom?.version ?? 0,
-    signalScopeReady && roomStatus === "connected",
+    signalScopeReady && roomLive,
   );
   // PREJOIN-UX-01: keep the server whiteboard projection fresh while the room
   // is connected so a viewer's stage follows the presenter. It shares the
@@ -146,7 +150,7 @@ function MediaSpaceRoomSession({
   const whiteboardTool = useWhiteboardTool(
     tenantId,
     spaceId ?? "",
-    whiteboardEnabled && signalScopeReady && roomStatus === "connected",
+    whiteboardEnabled && signalScopeReady && roomLive,
     { pollIntervalMs: whiteboardPollIntervalMs },
   );
   const whiteboardDocument =
@@ -213,13 +217,13 @@ function MediaSpaceRoomSession({
   }, [reportDiagnostic]);
 
   useEffect(() => {
-    if (!signalQuery.data || roomStatus !== "connected") return undefined;
+    if (!signalQuery.data || !roomLive) return undefined;
     const dataUpdatedAt = signalQuery.dataUpdatedAt;
     const timer = globalThis.setInterval(() => {
       setSignalClock({ dataUpdatedAt, now: Date.now() });
     }, 500);
     return () => globalThis.clearInterval(timer);
-  }, [roomStatus, signalQuery.data, signalQuery.dataUpdatedAt]);
+  }, [roomLive, signalQuery.data, signalQuery.dataUpdatedAt]);
 
   const runSignalMutation = useCallback(
     async (

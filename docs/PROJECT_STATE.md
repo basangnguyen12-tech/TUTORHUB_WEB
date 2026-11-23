@@ -4,18 +4,33 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                           |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-23                                                                                                                                           |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                |
-| Nhánh làm việc       | `main`                                                                                                                                               |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                          |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                            |
-| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                      |
-| Task `DONE` gần nhất | `PREJOIN-UX-01` Màn Pre-Join `16:9` Studio độc lập ngoài `AppShell` & tự động bung Sân khấu Bảng trắng phía Học sinh khi Giáo viên trình bày         |
-| Mốc repository mới   | `@tutorhub/web` `1002/1002` (`101` file), `security:bundle` `212` file, `P5_COLLAB_14_BUNDLE` `issues: []`, Chromium E2E `p4-03..07` `29/29` PASS    |
-| Task hiện tại        | Trải nghiệm & kiểm duyệt thực tế toàn luồng Lớp học → Pre-Join `16:9` → Sân khấu Phòng học + Bảng trắng; chờ GitHub Support mở khóa để push `main`   |
-| Task tiếp theo       | Đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB`, nối lại Render/Cloudflare Pages & cấu hình LiveKit Cloud + Whiteboard Runtime lên môi trường live |
+| Thuộc tính           | Trạng thái                                                                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-23                                                                                                                                                 |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                      |
+| Nhánh làm việc       | `main`                                                                                                                                                     |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                  |
+| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                            |
+| Task `DONE` gần nhất | `ROOM-SYNC-FIX-01` Sửa bắt tay Yjs `SyncStep2` chỉ đọc của Bảng trắng, tự khôi phục phiên LiveKit reconnect thoáng qua & thu hồi phiên pre-connect bị ngắt |
+| Mốc repository mới   | `@tutorhub/web` `1005/1005` (`101` file), `whiteboard-runtime` `156` PASS, PG 17.12 `P4-02`/`P4-04` integration PASS, `security:bundle` `212` file         |
+| Task hiện tại        | Trải nghiệm & kiểm duyệt thực tế toàn luồng Lớp học → Pre-Join `16:9` → Sân khấu Phòng học + Bảng trắng; chờ GitHub Support mở khóa để push `main`         |
+| Task tiếp theo       | Đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB`, nối lại Render/Cloudflare Pages & cấu hình LiveKit Cloud + Whiteboard Runtime lên môi trường live       |
+
+### Checkpoint `ROOM-SYNC-FIX-01` Sửa Bắt tay Yjs `SyncStep2` Chỉ đọc của Bảng trắng, Tự khôi phục Phiên LiveKit Reconnect Thoáng qua & Thu hồi Phiên Pre-Connect (`DONE`) — 2026-11-23
+
+Claude Code triển khai `ROOM-SYNC-FIX-01` khắc phục 3 lỗi thực tế phát hiện khi kiểm thử song song Giáo viên + Học sinh trên trình duyệt thật; Gatekeeper (Antigravity) review `RESEARCH.md` và toàn bộ diff/bảo mật, kiểm chứng độc lập `pnpm verify`, cổng giới hạn bundle `LazyWhiteboardEngine` và bộ Go integration test trên cụm PostgreSQL 17.12 thật với role tách biệt:
+
+- **Cho phép Bắt tay Yjs `SyncStep2` Không ghi Đối với Quyền `view` & Chế độ `read_only` (`services/whiteboard-runtime/src/runtimeServer.ts`, `runtimeServer.test.ts`)**:
+  - Bổ sung `isNonMutatingSyncStep2(document, payload, config.maxUpdateBytes)` trong `beforeSync`: kiểm tra giới hạn kích thước trước, nhận nhanh gói Yjs V1 rỗng `[0, 0]` và kiểm tra `Y.snapshotContainsUpdate(Y.snapshot(document), payload)` trong `try/catch` cho trường hợp học sinh reconnect khi đã có dữ liệu tài liệu.
+  - Phân loại `SyncStep1` (`type === 0`) và `SyncStep2` không tạo thay đổi (`type === 1` non-mutating) là frame chỉ đọc (`requireAdmissionReady(false)`, không trừ quota thao tác hay dung lượng tài liệu), giúp kết nối `capability === "view"` của học sinh và chế độ suy giảm `read_only` hoàn tất bắt tay và nhận cập nhật trực tiếp từ giáo viên; giữ nguyên chặn `write_disabled` với mọi gói `Update` (`type === 2`) hoặc `SyncStep2` mang thay đổi mới từ quyền `view`.
+- **Tự khôi phục Phiên LiveKit Reconnect Thoáng qua & Dọn Phiên Pre-Connect Bị bỏ dở (`services/core-api/internal/modules/media/postgres_instance_repository.go`)**:
+  - Bổ sung `canResumeLeftWebhookParticipant` + `classifyResumableParticipantWebhook`: khi kết nối WebRTC chập chờn ngắn hạn khiến LiveKit gửi `participant_left` rồi gửi tiếp `participant_joined` trên cùng `provider_participant_identity` trong cửa sổ `2` phút, hệ thống thẩm định lại đầy đủ quyền hiện hành trong transaction giữ khóa điều khiển tenant (space đang `open`, không có rào cản `removed`, không có phiên active khác của cùng user, membership + feature gate + `authorizeSource` còn hiệu lực với cùng `instance_role`, còn hạn mức sức chứa phòng) rồi khôi phục hàng từ `'left'` về `'connected'` và tăng `projection_version` để không rớt danh sách/ô video. Đồng thời kẹp `GREATEST($5::timestamptz, joining_at)` cho `joining -> connected` để tránh vi phạm `CHECK` khi timestamp giây chẵn của LiveKit rơi cùng giây với `joining_at` có micro-giây.
+  - Bổ sung `retireAbandonedPreconnectParticipants` chạy trước `hasActiveParticipant` trong `CreateOrReuseJoinAttempt`: tự đóng sang `'left'` (kèm hạ tay và tăng `projection_version`) các phiên `'admitted'`/`'joining'` chưa từng `connected` của chính người dùng đó khi đã quá `90` giây hoặc đã ghi nhận diagnostic `'disconnected'`/`'leave'`, chấm dứt kẹt `409 participant_session_conflict` khi bắt tay WebRTC đầu tiên bị ngắt hoặc người dùng tải lại trang Pre-Join.
+- **Giữ Đồng bộ Phòng học Qua Nhịp `reconnecting` & Hiển thị Rõ Mã `problem.code` trên Pre-Join (`MediaSpaceRoomPage.tsx`, `MediaSpacePages.tsx`, `i18n.tsx`)**:
+  - Giữ `useMediaSignalSnapshot`, `useWhiteboardTool` và nhịp đồng hồ `500ms` hoạt động xuyên suốt trạng thái `"connected" || "reconnecting"` để một nhịp khôi phục ICE ngắn không làm sập danh sách lớp hay Sân khấu Bảng trắng.
+  - Cập nhật `joinProblemKey` khớp cả `error.problem?.code` (chuẩn `writeCodedProblem` của Core API) lẫn hậu tố `problem.type`, bổ sung thông báo rõ nghĩa `media.p403.participantConflict` (`vi`/`en`).
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1005/1005`** trên `101` file, `@tutorhub/whiteboard-runtime` **`156` PASS / `0` FAIL**, `security:bundle` `212` file, Storybook build, Go `40` package + `go vet`), `node scripts/check-whiteboard-performance-bundle.mjs` PASS (`issues: []`), và trên cụm **PostgreSQL 17.12 loopback tạm lập tách role `migrator`/`runtime`**: `TestPostgresMediaRoomInstanceCredentialAndSignedWebhookBinding` (bao gồm `stage=room_sync_fix`) **`PASS` (`0.56s`)** + `TestPostgresMediaLobbyAdmissionInviteRaceAndRestoreBarrier` **`PASS` (`0.48s`)**.
 
 ### Checkpoint `PREJOIN-UX-01` Màn Pre-Join `16:9` Studio Độc lập Ngoài `AppShell` & Tự động Đồng bộ Sân khấu Bảng trắng Phía Học sinh (`DONE`) — 2026-11-23
 

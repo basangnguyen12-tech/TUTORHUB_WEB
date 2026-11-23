@@ -761,6 +761,49 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     expect(renderedWhiteboardAutoOpenKey()).toBeNull();
   });
 
+  it("keeps roster and whiteboard projections active while LiveKit is reconnecting", async () => {
+    const space = createDeferred<MediaSpace>();
+    apiMocks.getMediaSpace.mockReturnValue(space.promise);
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithWhiteboard(true),
+    );
+    apiMocks.resolveWhiteboard.mockResolvedValue(whiteboardProjection());
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    act(() => emitRoomEvent("connected"));
+    act(() => emitRoomEvent("reconnecting"));
+    expect(apiMocks.listParticipants).not.toHaveBeenCalled();
+    expect(apiMocks.resolveWhiteboard).not.toHaveBeenCalled();
+
+    // The room scope only becomes ready during the transient ICE recovery; the
+    // projections must start (not wait for "reconnected") and stay mounted.
+    await act(async () => {
+      space.resolve(mediaSpace);
+      await space.promise;
+    });
+
+    await waitFor(() => {
+      expect(apiMocks.listParticipants).toHaveBeenCalledWith(
+        tenantID,
+        spaceID,
+        roomInstanceID,
+        mediaSpace.version,
+        mediaSpace.active_room_instance?.version,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      expect(apiMocks.resolveWhiteboard).toHaveBeenCalledWith(
+        tenantID,
+        spaceID,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+    await waitFor(() =>
+      expect(renderedWhiteboardAutoOpenKey()).toBe(`${whiteboardDocumentID}:3`),
+    );
+  });
+
   it("renders the focused studio header outside the app shell", async () => {
     renderPrejoin(fakeMediaDevices(fakeStream().stream), {
       returnTo: "/app/classrooms/abc",
@@ -1489,6 +1532,47 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
       within(readiness).getByRole("button", { name: "Join listen-only" }),
     ).toBeEnabled();
   });
+
+  it.each([
+    {
+      code: "participant_session_conflict",
+      message:
+        "This account already has this classroom open in another tab or device. Close the other session or wait a few seconds and try again.",
+    },
+    {
+      code: "room_locked",
+      message: "The room is locked and is not accepting new join attempts.",
+    },
+  ])(
+    "maps the Core API problem.code $code to its specific join error",
+    async ({ code, message }) => {
+      const media = fakeMediaDevices(fakeStream().stream);
+      apiMocks.createJoinAttempt.mockRejectedValue(
+        new APIRequestError(409, {
+          type: "urn:tutorhub:problem:http-409",
+          code,
+          title: "Join attempt rejected",
+          status: 409,
+        }),
+      );
+      renderPrejoin(media);
+      await screen.findByRole("heading", { name: "Get ready for class" });
+
+      fireEvent.click(screen.getByRole("button", { name: "Join listen-only" }));
+
+      const readiness = screen.getByRole("complementary", {
+        name: "Join readiness status",
+      });
+      const alert = await within(readiness).findByRole("alert");
+      expect(alert).toHaveTextContent(message);
+      expect(alert).not.toHaveTextContent(
+        "A room credential could not be issued",
+      );
+      // One stale-version retry with a fresh attempt id, then the mapped error.
+      expect(apiMocks.createJoinAttempt).toHaveBeenCalledTimes(2);
+      expect(apiMocks.issueJoinCredential).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     { serverURL: "ws://127.0.0.1:7880", accepted: true },

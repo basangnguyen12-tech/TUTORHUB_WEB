@@ -2367,6 +2367,8 @@ const messages = {
     "media.p403.featureDisabled":
       "Tính năng phòng học trực tuyến chưa được bật cho workspace này.",
     "media.p403.quotaExceeded": "Phòng đã đạt giới hạn người tham gia.",
+    "media.p403.participantConflict":
+      "Tài khoản này đang mở phòng học ở một tab hoặc thiết bị khác. Hãy đóng phiên còn lại hoặc đợi vài giây rồi thử lại.",
     "media.p403.rateLimited":
       "Bạn đã thử tham gia quá nhiều lần. Hãy chờ rồi thử lại.",
     "media.p403.leave": "Rời phòng",
@@ -5418,6 +5420,8 @@ const messages = {
     "media.p403.featureDisabled":
       "Live classroom media is not enabled for this workspace.",
     "media.p403.quotaExceeded": "The room has reached its participant limit.",
+    "media.p403.participantConflict":
+      "This account already has this classroom open in another tab or device. Close the other session or wait a few seconds and try again.",
     "media.p403.rateLimited":
       "Too many join attempts. Wait before trying again.",
     "media.p403.leave": "Leave room",
