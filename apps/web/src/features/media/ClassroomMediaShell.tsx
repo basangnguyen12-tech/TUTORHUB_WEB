@@ -2173,10 +2173,7 @@ function DockGlyph({ caption, icon }: { caption: string; icon: ReactNode }) {
 
 function DockCaption({ children }: { children: string }) {
   return (
-    <span
-      aria-hidden="true"
-      className="media-p405-dock-caption visually-hidden"
-    >
+    <span aria-hidden="true" className="media-p405-dock-caption">
       {children}
     </span>
   );

@@ -713,7 +713,8 @@
   gap: 4px;
 }
 
-.media-p405-room .media-p405-dock-divider {
+.media-p405-room .media-p405-dock-divider,
+.media-p405-room .media-p405-dock-caption {
   display: none;
 }
 
@@ -921,13 +922,8 @@
  * 372px the captions wait for 1440px so the Dock never wraps.
  */
 @media (min-width: 1440px) {
-  .media-p405-room .media-p405-footer .media-p405-dock-caption.visually-hidden {
-    position: static;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    clip: auto;
-    clip-path: none;
+  .media-p405-room .media-p405-footer .media-p405-dock-caption {
+    display: block;
     color: inherit;
     font-size: 11px;
     font-weight: 500;
@@ -990,13 +986,8 @@
   .media-p405-room
     .media-p405-shell:not(.media-p405-shell--effects-open)
     .media-p405-footer
-    .media-p405-dock-caption.visually-hidden {
-    position: static;
-    width: auto;
-    height: auto;
-    overflow: visible;
-    clip: auto;
-    clip-path: none;
+    .media-p405-dock-caption {
+    display: block;
     color: inherit;
     font-size: 11px;
     font-weight: 500;

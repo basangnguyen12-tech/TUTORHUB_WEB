@@ -5443,6 +5443,10 @@ textarea:focus-visible {
   gap: 6px;
 }
 
+.media-p405-dock-caption {
+  display: none;
+}
+
 .media-p405-layout-controls {
   gap: 4px;
   padding-left: 8px;

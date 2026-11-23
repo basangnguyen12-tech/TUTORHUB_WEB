@@ -723,6 +723,12 @@ async function loadRoomStudioStyles(page: Page) {
       dynamicImport("/@id/@tutorhub/ui/styles.css"),
       dynamicImport("/src/pages/ClassroomRoomStage.css"),
     ]);
+    // Excalidraw's lazy bundle injects `.visually-hidden { position: absolute !important }`;
+    // mirror it so Dock captions are proven immune to that global rule.
+    const excalidrawRule = document.createElement("style");
+    excalidrawRule.textContent =
+      ".visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; }";
+    document.head.append(excalidrawRule);
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
@@ -804,10 +810,31 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under a captioned floating Dock
       toolbar.locator(".media-p405-dock-caption", { hasText: caption }),
     ).toBeVisible();
   }
+  // Captions sit cleanly underneath their icons (never pulled out of flow).
+  const micButton = toolbar.getByRole("button", {
+    name: "Tắt micro",
+    exact: true,
+  });
+  const micIconBox = await micButton
+    .locator(".media-p405-dock-icon")
+    .boundingBox();
+  const micCaptionBox = await micButton
+    .locator(".media-p405-dock-caption")
+    .boundingBox();
+  expect(micCaptionBox!.y).toBeGreaterThanOrEqual(
+    micIconBox!.y + micIconBox!.height - 1,
+  );
+  const layoutPillBox = await toolbar
+    .locator(".media-p405-layout-pill")
+    .boundingBox();
+  const layoutCaptionBox = await toolbar
+    .locator(".media-p405-layout-controls > .media-p405-dock-caption")
+    .boundingBox();
+  expect(layoutCaptionBox!.y).toBeGreaterThanOrEqual(
+    layoutPillBox!.y + layoutPillBox!.height - 1,
+  );
   // Captions are decorative: the full accessible names are unchanged.
-  await expect(
-    toolbar.getByRole("button", { name: "Tắt micro", exact: true }),
-  ).toBeVisible();
+  await expect(micButton).toBeVisible();
   await expect(
     toolbar.getByRole("button", { name: "Bật camera", exact: true }),
   ).toBeVisible();
@@ -1022,8 +1049,8 @@ test("ROOM-STUDIO-02 reflows the studio room at 320 CSS pixels with forced color
   expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
   // Icon-only pills below 1024px, each a 44px touch target.
   await expect(page.locator(".media-p405-dock-caption").first()).toHaveCSS(
-    "position",
-    "absolute",
+    "display",
+    "none",
   );
   const controlHeights = await page
     .locator(".media-p405-footer .media-p405-dock-button")
