@@ -14,6 +14,7 @@ function fakeTrack(kind: "audio" | "video", settings: MediaTrackSettings = {}) {
   return {
     kind,
     contentHint: "",
+    enabled: true,
     stop: vi.fn(),
     getSettings: vi.fn(() => settings),
   } as unknown as MediaStreamTrack;
@@ -162,7 +163,7 @@ describe("MediaPrejoinController", () => {
     await controller.dispose();
   });
 
-  it("restarts an active preview when the audio profile changes", async () => {
+  it("re-captures only the microphone when the audio profile changes", async () => {
     const firstAudio = fakeTrack("audio");
     const secondAudio = fakeTrack("audio");
     const mediaDevices = new FakeMediaDevices();
@@ -185,10 +186,14 @@ describe("MediaPrejoinController", () => {
         noiseSuppression: { ideal: false },
         autoGainControl: { ideal: false },
       },
-      video: {},
+      video: false,
     });
     expect(firstAudio.stop).toHaveBeenCalledTimes(1);
     expect(secondAudio.contentHint).toBe("music");
+    expect(controller.getSnapshot()).toMatchObject({
+      audioEnabled: true,
+      videoEnabled: true,
+    });
     await controller.dispose();
   });
 
@@ -314,6 +319,293 @@ describe("MediaPrejoinController", () => {
 
     mediaDevices.dispatchEvent(new Event("devicechange"));
     expect(mediaDevices.enumerateDevices).toHaveBeenCalledTimes(21);
+  });
+
+  it("starts with both devices off and enables both after the explicit preview", async () => {
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia.mockResolvedValue(fakeStream());
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+    const controller = controllerFor(mediaDevices);
+
+    expect(controller.getSnapshot()).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: false,
+    });
+    expect(controller.choices(false)).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: false,
+    });
+
+    await controller.startPreview();
+
+    expect(controller.getSnapshot()).toMatchObject({
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+    expect(controller.choices(false)).toMatchObject({
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+    expect(controller.choices(true)).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: false,
+    });
+    await controller.dispose();
+  });
+
+  it("mutes the microphone in place and restores it without a new capture", async () => {
+    const audio = fakeTrack("audio");
+    const video = fakeTrack("video");
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia.mockResolvedValue(fakeStream(audio, video));
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+    const controller = controllerFor(mediaDevices);
+    await controller.startPreview();
+
+    await controller.toggleMicrophone();
+
+    expect(audio.enabled).toBe(false);
+    expect(audio.stop).not.toHaveBeenCalled();
+    expect(controller.getSnapshot()).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: true,
+      micLevel: 0,
+    });
+    expect(controller.choices(false)).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: true,
+    });
+
+    await controller.toggleMicrophone();
+
+    expect(audio.enabled).toBe(true);
+    expect(controller.getSnapshot().audioEnabled).toBe(true);
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    await controller.dispose();
+    expect(audio.stop).toHaveBeenCalledTimes(1);
+    expect(video.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the camera track to turn the camera off and re-captures only the selected camera", async () => {
+    const audio = fakeTrack("audio");
+    const firstVideo = fakeTrack("video");
+    const secondVideo = fakeTrack("video");
+    const strayAudio = fakeTrack("audio");
+    const firstStream = fakeStream(audio, firstVideo);
+    const secondStream = fakeStream(strayAudio, secondVideo);
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia
+      .mockResolvedValueOnce(firstStream)
+      .mockResolvedValueOnce(secondStream);
+    mediaDevices.enumerateDevices.mockResolvedValue([
+      device("audioinput", "mic-a", "Desk microphone"),
+      device("videoinput", "cam-a", "Front camera"),
+    ]);
+    const controller = controllerFor(mediaDevices);
+    const preview = {
+      muted: false,
+      play: vi.fn().mockResolvedValue(undefined),
+      srcObject: null as MediaStream | null,
+    };
+    controller.attachPreview(preview as unknown as HTMLVideoElement);
+    await controller.startPreview();
+    expect(preview.srcObject).toBe(firstStream);
+
+    await controller.toggleCamera();
+
+    expect(firstVideo.stop).toHaveBeenCalledTimes(1);
+    expect(audio.stop).not.toHaveBeenCalled();
+    expect(preview.srcObject).toBeNull();
+    expect(controller.getSnapshot()).toMatchObject({
+      audioEnabled: true,
+      videoEnabled: false,
+    });
+    expect(controller.choices(false)).toMatchObject({
+      audioEnabled: true,
+      videoEnabled: false,
+    });
+
+    await controller.toggleCamera();
+
+    expect(mediaDevices.getUserMedia).toHaveBeenLastCalledWith({
+      audio: false,
+      video: { deviceId: { exact: "cam-a" } },
+    });
+    // The browser may hand back more than was asked for; it never survives.
+    expect(strayAudio.stop).toHaveBeenCalledTimes(1);
+    expect(preview.srcObject).toBe(secondStream);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "preview_ready",
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+
+    await controller.dispose();
+    expect(audio.stop).toHaveBeenCalledTimes(1);
+    expect(firstVideo.stop).toHaveBeenCalledTimes(1);
+    expect(secondVideo.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures only the pressed device when no permission has been granted yet", async () => {
+    const audio = fakeTrack("audio");
+    const unrequestedVideo = fakeTrack("video");
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia.mockResolvedValue(
+      fakeStream(audio, unrequestedVideo),
+    );
+    mediaDevices.enumerateDevices.mockResolvedValue([
+      device("audioinput", "mic-a", "Desk microphone"),
+    ]);
+    const controller = controllerFor(mediaDevices);
+    controller.connect();
+
+    await controller.toggleMicrophone();
+
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(mediaDevices.enumerateDevices).toHaveBeenCalledTimes(1);
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: {
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true },
+      },
+      video: false,
+    });
+    expect(unrequestedVideo.stop).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "preview_ready",
+      permissionGranted: true,
+      audioEnabled: true,
+      videoEnabled: false,
+      selectedMicrophoneId: "mic-a",
+    });
+    await controller.dispose();
+    expect(audio.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a device choice without opening hardware while that device is off", async () => {
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia.mockResolvedValue(fakeStream());
+    mediaDevices.enumerateDevices.mockResolvedValue([
+      device("videoinput", "cam-a", "Front camera"),
+      device("videoinput", "cam-b", "Backup camera"),
+    ]);
+    const controller = controllerFor(mediaDevices);
+    await controller.startPreview();
+    await controller.toggleCamera();
+
+    await controller.switchDevice("videoinput", "cam-b");
+
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot()).toMatchObject({
+      selectedCameraId: "cam-b",
+      videoEnabled: false,
+    });
+    await controller.dispose();
+  });
+
+  it("keeps a muted microphone muted when switching to another microphone", async () => {
+    const firstAudio = fakeTrack("audio");
+    const secondAudio = fakeTrack("audio");
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia
+      .mockResolvedValueOnce(fakeStream(firstAudio))
+      .mockResolvedValueOnce(fakeStream(secondAudio));
+    mediaDevices.enumerateDevices.mockResolvedValue([
+      device("audioinput", "mic-a", "Desk microphone"),
+      device("audioinput", "mic-b", "Backup microphone"),
+    ]);
+    const controller = controllerFor(mediaDevices);
+    await controller.startPreview();
+    await controller.toggleMicrophone();
+
+    await controller.switchDevice("audioinput", "mic-b");
+
+    expect(firstAudio.stop).toHaveBeenCalledTimes(1);
+    expect(secondAudio.enabled).toBe(false);
+    expect(controller.getSnapshot()).toMatchObject({
+      selectedMicrophoneId: "mic-b",
+      audioEnabled: false,
+      videoEnabled: true,
+    });
+    await controller.dispose();
+  });
+
+  it("keeps the working microphone when turning the camera back on fails", async () => {
+    const audio = fakeTrack("audio");
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia
+      .mockResolvedValueOnce(fakeStream(audio))
+      .mockRejectedValueOnce(
+        new DOMException("raw browser detail", "NotReadableError"),
+      );
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+    const controller = controllerFor(mediaDevices);
+    await controller.startPreview();
+    await controller.toggleCamera();
+
+    await controller.toggleCamera();
+
+    expect(audio.stop).not.toHaveBeenCalled();
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "preview_ready",
+      audioEnabled: true,
+      videoEnabled: false,
+      errorCode: "media_device_busy_or_unreadable",
+    });
+    await controller.dispose();
+    expect(audio.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores device toggles while a capture is still pending", async () => {
+    let resolveStream: ((stream: MediaStream) => void) | undefined;
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia.mockReturnValue(
+      new Promise<MediaStream>((resolve) => {
+        resolveStream = resolve;
+      }),
+    );
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+    const controller = controllerFor(mediaDevices);
+
+    const pending = controller.startPreview();
+    await controller.toggleCamera();
+    await controller.toggleMicrophone();
+    resolveStream?.(fakeStream());
+    await pending;
+
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(controller.getSnapshot()).toMatchObject({
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+    await controller.dispose();
+  });
+
+  it("clears both device flags when the preview stops", async () => {
+    const audio = fakeTrack("audio");
+    const video = fakeTrack("video");
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia.mockResolvedValue(fakeStream(audio, video));
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+    const controller = controllerFor(mediaDevices);
+    await controller.startPreview();
+
+    await controller.stopPreview();
+
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "idle",
+      permissionGranted: true,
+      audioEnabled: false,
+      videoEnabled: false,
+    });
+    expect(controller.choices(false)).toMatchObject({
+      audioEnabled: false,
+      videoEnabled: false,
+    });
+    expect(audio.stop).toHaveBeenCalledTimes(1);
+    expect(video.stop).toHaveBeenCalledTimes(1);
+    await controller.dispose();
   });
 
   it("owns an in-flight speaker probe synchronously and cancels late playback", async () => {

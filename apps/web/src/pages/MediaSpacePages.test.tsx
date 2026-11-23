@@ -389,7 +389,11 @@ function RoomScopeNavigation() {
   );
 }
 
-function renderPrejoin(mediaDevices: MediaDevices, routeState?: unknown) {
+function renderPrejoin(
+  mediaDevices: MediaDevices,
+  routeState?: unknown,
+  user: CurrentUser = currentUser,
+) {
   vi.stubGlobal("navigator", {
     mediaDevices,
     onLine: true,
@@ -413,7 +417,7 @@ function renderPrejoin(mediaDevices: MediaDevices, routeState?: unknown) {
   return render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider initialLanguage="en">
-        <SessionProvider mode={{ kind: "static", currentUser }}>
+        <SessionProvider mode={{ kind: "static", currentUser: user }}>
           <MemoryRouter
             initialEntries={[
               {
@@ -825,18 +829,58 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
       screen.queryByRole("navigation", { name: "Main navigation" }),
     ).not.toBeInTheDocument();
 
+    // Identity chip: display name and monogram only, never the email.
+    expect(within(banner).getByText("Student One")).toBeInTheDocument();
+    expect(
+      banner.querySelector(".media-p403-studio__monogram")?.textContent,
+    ).toBe("SO");
+    expect(document.body).not.toHaveTextContent("student@example.test");
+    expect(document.querySelector(".media-p403-heading")).toBeNull();
+
     const readiness = screen.getByRole("complementary", {
       name: "Join readiness status",
     });
     expect(
-      within(readiness).getByRole("heading", { name: "Ready to join?" }),
+      within(readiness).getByRole("heading", {
+        level: 1,
+        name: "Get ready for class",
+      }),
     ).toBeInTheDocument();
-    expect(within(readiness).getByText("Connection status")).toBeVisible();
+    expect(within(readiness).getByText("Live session open")).toBeVisible();
+    expect(within(readiness).getByText("Learner")).toBeVisible();
+    expect(
+      within(readiness).getByRole("heading", { name: "You'll join with" }),
+    ).toBeInTheDocument();
+    expect(
+      within(readiness).getByText("Microphone").closest("li"),
+    ).toHaveTextContent("MicrophoneOff");
+    expect(
+      within(readiness).getByText("Camera").closest("li"),
+    ).toHaveTextContent("CameraOff");
     expect(
       within(readiness).getByText(
+        "You'll join listen-only and can turn on your microphone or camera anytime.",
+      ),
+    ).toBeVisible();
+
+    // The 16:9 stage carries the HUD: display name and live network status.
+    const stage = document.querySelector(".media-p403-preview");
+    expect(stage).not.toBeNull();
+    expect(within(stage as HTMLElement).getByText("Student One")).toBeVisible();
+    const network = stage?.querySelector(".media-p403-hud__network");
+    expect(network).toHaveAttribute("aria-live", "polite");
+    expect(network).toHaveTextContent(/^Connection status:/);
+    await waitFor(() => expect(network).toHaveTextContent(/Ready/));
+
+    const footer = screen.getByRole("contentinfo");
+    expect(
+      within(footer).getByText(
         "Your camera and microphone stay off until you test them and can be toggled anytime in class.",
       ),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Connection diagnostics (24h)" }),
+    ).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(
       /Core API|credential|SDP|health endpoint/,
     );
@@ -861,7 +905,10 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     expect(
       await screen.findByRole("heading", { name: "Sẵn sàng vào phòng học" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Chất lượng kết nối")).toBeVisible();
+    expect(network).toHaveTextContent(/^Chất lượng kết nối:/);
+    expect(
+      screen.getByRole("button", { name: "Tham gia chỉ nghe" }),
+    ).toBeInTheDocument();
   });
 
   it("drops a non-text class title and shortens an oversized one", async () => {
@@ -924,7 +971,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     const retry = await screen.findByRole("button", {
       name: "Test devices again",
     });
-    expect(retry.closest(".media-p403-preview")).toBeNull();
+    expect(retry.closest(".media-p403-dock")).not.toBeNull();
     await waitFor(() => expect(retry).toHaveFocus());
 
     const stop = screen.getByRole("button", { name: "Stop preview" });
@@ -940,6 +987,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
       name: "Test devices again",
     });
     expect(placeholderAction.closest(".media-p403-preview")).not.toBeNull();
+    expect(placeholderAction.closest(".media-p403-dock")).toBeNull();
     await waitFor(() => expect(placeholderAction).toHaveFocus());
     expect(media.getUserMedia).toHaveBeenCalledTimes(1);
   });
@@ -957,6 +1005,185 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     expect(apiMocks.createJoinAttempt).not.toHaveBeenCalled();
     expect(apiMocks.issueJoinCredential).not.toHaveBeenCalled();
     expect(liveKitMocks.roomConnect).not.toHaveBeenCalled();
+  });
+
+  it("gives the dock toggles unique names and a permission hint before any capture", async () => {
+    const media = fakeMediaDevices(fakeStream().stream);
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Get ready for class" });
+
+    const dock = screen.getByRole("group", {
+      name: "Microphone and camera controls",
+    });
+    for (const name of ["Turn on microphone", "Turn on camera"]) {
+      const toggle = within(dock).getByRole("button", { name });
+      expect(toggle).toHaveAccessibleDescription(
+        "Your browser will ask for permission when you turn this on.",
+      );
+      expect(toggle).toHaveClass("media-p403-toggle--needs-permission");
+    }
+    // Playwright matches names by substring; the CTA must stay unique.
+    expect(
+      screen.getAllByRole("button", { name: /test camera and microphone/i }),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: /join listen-only/i }),
+    ).toHaveLength(1);
+    expect(media.getUserMedia).not.toHaveBeenCalled();
+    expect(media.enumerateDevices).not.toHaveBeenCalled();
+  });
+
+  it("toggles the camera and microphone independently and joins with that choice", async () => {
+    const cameraCapture = fakeStream();
+    const microphoneCapture = fakeStream();
+    const media = fakeMediaDevices(cameraCapture.stream);
+    media.getUserMedia
+      .mockReset()
+      .mockResolvedValueOnce(cameraCapture.stream)
+      .mockResolvedValueOnce(microphoneCapture.stream);
+    apiMocks.createJoinAttempt.mockResolvedValue({
+      admission_request_id: null,
+      join_attempt_id: joinAttemptID,
+      participant_session_id: participantSessionID,
+      room_instance_id: roomInstanceID,
+      status: "admitted",
+      version: 1,
+    });
+    apiMocks.issueJoinCredential.mockResolvedValue({
+      access_token: "independent-toggle-token",
+      server_url: "wss://media.example.test",
+      participant_session_id: participantSessionID,
+      room_instance_id: roomInstanceID,
+      join_attempt_id: joinAttemptID,
+      instance_role: "attendee",
+      can_publish_camera_microphone: true,
+      can_share_screen: false,
+      can_subscribe: true,
+      expires_at: "2030-08-03T00:05:00Z",
+    });
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Get ready for class" });
+    const dock = screen.getByRole("group", {
+      name: "Microphone and camera controls",
+    });
+    const readiness = screen.getByRole("complementary", {
+      name: "Join readiness status",
+    });
+
+    // Camera first: only the camera is requested; the microphone stays off.
+    fireEvent.click(
+      within(dock).getByRole("button", { name: "Turn on camera" }),
+    );
+    await within(dock).findByRole("button", { name: "Turn off camera" });
+    expect(media.getUserMedia).toHaveBeenCalledTimes(1);
+    expect(media.getUserMedia).toHaveBeenCalledWith({
+      audio: false,
+      video: {},
+    });
+    expect(media.enumerateDevices).toHaveBeenCalledTimes(1);
+    expect(cameraCapture.audio.stop).toHaveBeenCalledTimes(1);
+    expect(
+      within(dock).getByRole("button", { name: "Turn on microphone" }),
+    ).toHaveClass("media-p403-toggle--off");
+    expect(
+      within(readiness).getByText("Camera").closest("li"),
+    ).toHaveTextContent("CameraOn");
+    expect(
+      within(readiness).getByText("Microphone").closest("li"),
+    ).toHaveTextContent("MicrophoneOff");
+
+    // Microphone next: an audio-only capture of the selected microphone.
+    fireEvent.click(
+      within(dock).getByRole("button", { name: "Turn on microphone" }),
+    );
+    await within(dock).findByRole("button", { name: "Turn off microphone" });
+    expect(media.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(media.getUserMedia).toHaveBeenLastCalledWith({
+      audio: {
+        autoGainControl: { ideal: true },
+        deviceId: { exact: "microphone-1" },
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+      },
+      video: false,
+    });
+    expect(microphoneCapture.video.stop).toHaveBeenCalledTimes(1);
+
+    // Turning the camera off releases its track; the microphone keeps going.
+    fireEvent.click(
+      within(dock).getByRole("button", { name: "Turn off camera" }),
+    );
+    await within(dock).findByRole("button", { name: "Turn on camera" });
+    expect(cameraCapture.video.stop).toHaveBeenCalledTimes(1);
+    expect(microphoneCapture.audio.stop).not.toHaveBeenCalled();
+    const stage = document.querySelector(".media-p403-preview") as HTMLElement;
+    expect(within(stage).getByText("Camera is off")).toBeVisible();
+    expect(
+      stage.querySelector(".media-p403-avatar__monogram")?.textContent,
+    ).toBe("SO");
+    expect(
+      within(readiness).getByText("Camera").closest("li"),
+    ).toHaveTextContent("CameraOff");
+    expect(media.getUserMedia).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(
+      within(readiness).getByRole("button", {
+        name: "Join with enabled devices",
+      }),
+    );
+    await screen.findByText("Canonical room destination");
+    expect(
+      takeMediaRoomEscrow({
+        tenantId: tenantID,
+        userId: userID,
+        spaceId: spaceID,
+        roomInstanceId: roomInstanceID,
+      }),
+    ).toMatchObject({
+      choices: {
+        audioEnabled: true,
+        videoEnabled: false,
+        audioDeviceId: "microphone-1",
+      },
+    });
+  });
+
+  it("opens connection diagnostics from the footer dialog only for org admins", async () => {
+    const admin: CurrentUser = {
+      ...currentUser,
+      active_tenant: currentUser.active_tenant
+        ? { ...currentUser.active_tenant, role: "org_admin" }
+        : null,
+    };
+    renderPrejoin(fakeMediaDevices(fakeStream().stream), undefined, admin);
+    await screen.findByRole("heading", { name: "Get ready for class" });
+
+    expect(
+      within(
+        screen.getByRole("complementary", { name: "Join readiness status" }),
+      ).getByText("Organization admin"),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Connection diagnostics" }),
+    ).not.toBeInTheDocument();
+    const footer = screen.getByRole("contentinfo");
+    fireEvent.click(
+      within(footer).getByRole("button", {
+        name: "Connection diagnostics (24h)",
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Connection diagnostics",
+    });
+    expect(
+      within(dialog).getAllByRole("heading", {
+        name: "Connection diagnostics",
+      }),
+    ).toHaveLength(1);
+    expect(
+      within(dialog).getByRole("button", { name: "Load 24-hour metrics" }),
+    ).toBeInTheDocument();
   });
 
   it("recovers only the exact failed room projection with fresh CSRF", async () => {
@@ -1062,6 +1289,20 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     expect(
       await screen.findByRole("heading", { name: "Waiting to be admitted" }),
     ).toBeInTheDocument();
+    const readiness = screen.getByRole("complementary", {
+      name: "Join readiness status",
+    });
+    expect(
+      within(readiness).getByRole("heading", {
+        name: "Waiting to be admitted",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(readiness).getByRole("button", { name: "Leave waiting room" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Join listen-only" }),
+    ).not.toBeInTheDocument();
     expect(media.getUserMedia).not.toHaveBeenCalled();
     expect(apiMocks.createJoinAttempt).toHaveBeenCalledTimes(1);
     expect(apiMocks.issueJoinCredential).not.toHaveBeenCalled();
@@ -1305,6 +1546,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     });
     expect(cancelledHeading).toBeVisible();
     expect(cancelledHeading).toHaveFocus();
+    expect(cancelledHeading.closest(".media-p403-readiness")).not.toBeNull();
     expect(apiMocks.cancelJoinAttempt).toHaveBeenCalledWith(
       tenantID,
       spaceID,

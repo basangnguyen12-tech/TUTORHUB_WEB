@@ -51,6 +51,28 @@ describe("MediaDiagnosticsPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("omits its own heading in the embedded dialog variant but keeps the actions", async () => {
+    render(
+      <I18nProvider initialLanguage="en">
+        <MediaDiagnosticsPanel tenantID="tenant" variant="embedded" />
+      </I18nProvider>,
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Connection diagnostics" }),
+    ).not.toBeInTheDocument();
+    expect(loadDiagnostics).not.toHaveBeenCalled();
+    const load = screen.getByRole("button", { name: "Load 24-hour metrics" });
+    expect(load).toHaveClass("th-button--primary");
+    fireEvent.click(load);
+    expect(await screen.findByText("90%")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Load 24-hour metrics" }),
+    ).toHaveClass("th-button--secondary");
+    expect(
+      screen.getByRole("button", { name: "Download redacted JSON" }),
+    ).toBeInTheDocument();
+  });
+
   it("exposes a retryable alert without leaking the failure", async () => {
     loadDiagnostics.mockRejectedValueOnce(new Error("private provider detail"));
     render(

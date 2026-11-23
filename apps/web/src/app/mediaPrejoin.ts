@@ -33,6 +33,10 @@ export interface MediaDeviceChoice {
 export interface MediaPrejoinSnapshot {
   status: MediaPrejoinStatus;
   permissionGranted: boolean;
+  /** The microphone track is live and capturing (not muted by the user). */
+  audioEnabled: boolean;
+  /** A live camera track is attached to the preview. */
+  videoEnabled: boolean;
   microphones: readonly MediaDeviceChoice[];
   cameras: readonly MediaDeviceChoice[];
   speakers: readonly MediaDeviceChoice[];
@@ -175,6 +179,13 @@ interface MediaPrejoinEnvironment {
 
 type SnapshotListener = () => void;
 
+type CaptureKind = "audio" | "video";
+
+interface CaptureRequest {
+  audio: boolean;
+  video: boolean;
+}
+
 const emptyAudioProcessing = {
   echoCancellation: null,
   noiseSuppression: null,
@@ -187,6 +198,8 @@ export class MediaPrejoinController {
   private currentSnapshot: MediaPrejoinSnapshot = {
     status: "idle",
     permissionGranted: false,
+    audioEnabled: false,
+    videoEnabled: false,
     microphones: [],
     cameras: [],
     speakers: [],
@@ -200,7 +213,20 @@ export class MediaPrejoinController {
     announcement: "",
     speakerTestStatus: "idle",
   };
-  private stream: MediaStream | null = null;
+  // Each device kind owns its own track so the camera can be released (and
+  // its hardware light turned off) while the microphone keeps running.
+  // `ownedTracks` holds every live track this controller must stop exactly
+  // once; tracks the browser returns but we did not ask for are stopped at
+  // once and never enter it.
+  private audioTrack: MediaStreamTrack | null = null;
+  private videoTrack: MediaStreamTrack | null = null;
+  private audioStream: MediaStream | null = null;
+  private videoStream: MediaStream | null = null;
+  private readonly ownedTracks = new Set<MediaStreamTrack>();
+  private readonly kindGenerations: Record<CaptureKind, number> = {
+    audio: 0,
+    video: 0,
+  };
   private previewElement: HTMLVideoElement | null = null;
   private meterContext: AudioContext | null = null;
   private meterSource: MediaStreamAudioSourceNode | null = null;
@@ -273,13 +299,7 @@ export class MediaPrejoinController {
       this.previewElement.srcObject = null;
     }
     this.previewElement = element;
-    if (element) {
-      element.muted = true;
-      element.srcObject = this.stream;
-      if (this.stream) {
-        void element.play().catch(() => undefined);
-      }
-    }
+    this.syncPreview();
   }
 
   setAudioMode(mode: MediaAudioMode): void {
@@ -287,8 +307,10 @@ export class MediaPrejoinController {
       return;
     }
     this.update({ audioMode: mode });
-    if (this.stream) {
-      void this.startPreview();
+    // Only the microphone depends on the audio profile; the camera keeps
+    // running while the new constraints are applied.
+    if (this.audioTrack) {
+      void this.acquireKind("audio", this.currentSnapshot.audioEnabled);
     }
   }
 
@@ -299,68 +321,87 @@ export class MediaPrejoinController {
     this.update({ selectedSpeakerId: deviceId });
   }
 
+  /**
+   * Explicit "test camera and microphone" action: one capture for both
+   * devices followed by one device enumeration. Both devices end up enabled.
+   */
   async startPreview(): Promise<void> {
     if (this.disposed) {
       return;
     }
     const generation = ++this.generation;
-    const status = this.stream ? "switching_device" : "requesting_permission";
+    const status = this.hasLiveTracks()
+      ? "switching_device"
+      : "requesting_permission";
     this.update({ status, errorCode: null, announcement: "" });
     await this.releasePreviewResources();
 
+    const request = { audio: true, video: true };
     let stream: MediaStream;
     try {
-      stream = await this.environment.mediaDevices.getUserMedia(
-        this.mediaConstraints(),
-      );
+      stream = await this.capture(request);
     } catch (error) {
-      if (isOverconstrainedError(error)) {
-        try {
-          stream = await this.environment.mediaDevices.getUserMedia({
-            audio: true,
-            video: true,
-          });
-        } catch (fallbackError) {
-          this.handleProbeFailure(generation, fallbackError);
-          return;
-        }
-      } else {
-        this.handleProbeFailure(generation, error);
-        return;
-      }
+      this.handleProbeFailure(generation, error);
+      return;
     }
 
     if (this.disposed || generation !== this.generation) {
       stopStream(stream);
       return;
     }
-    this.stream = stream;
-    const audioTrack = stream.getAudioTracks()[0];
-    if (audioTrack && this.currentSnapshot.audioMode === "original_sound") {
-      try {
-        audioTrack.contentHint = "music";
-      } catch {
-        // contentHint is progressive enhancement only.
-      }
-    }
-    this.attachPreview(this.previewElement);
+    this.adoptStream(stream, request);
     await this.refreshDevices(false);
     if (this.disposed || generation !== this.generation) {
       await this.releasePreviewResources();
       return;
     }
-    this.startMeter(stream);
-    const settings = audioTrack?.getSettings();
+    if (this.audioStream) {
+      this.startMeter(this.audioStream);
+    }
     this.update({
       status: "preview_ready",
       permissionGranted: true,
+      audioEnabled: Boolean(this.audioTrack),
+      videoEnabled: Boolean(this.videoTrack),
       errorCode: null,
-      actualAudioProcessing: {
-        echoCancellation: booleanSetting(settings?.echoCancellation),
-        noiseSuppression: booleanSetting(settings?.noiseSuppression),
-        autoGainControl: booleanSetting(settings?.autoGainControl),
-      },
+      actualAudioProcessing: audioProcessing(this.audioTrack),
     });
+  }
+
+  /**
+   * Mutes or unmutes the microphone. Without a live microphone track (no
+   * permission yet, or the preview was stopped) this user action captures the
+   * microphone only, so pressing the microphone never opens the camera.
+   */
+  async toggleMicrophone(): Promise<void> {
+    if (this.disposed || this.isBusy()) {
+      return;
+    }
+    if (this.audioTrack) {
+      const enabled = !this.currentSnapshot.audioEnabled;
+      this.audioTrack.enabled = enabled;
+      this.update({ audioEnabled: enabled, micLevel: 0 });
+      return;
+    }
+    await this.acquireKind("audio", true);
+  }
+
+  /**
+   * Turning the camera off stops its track so the hardware indicator goes
+   * dark; turning it on captures the selected camera again. Without
+   * permission this user action captures the camera only.
+   */
+  async toggleCamera(): Promise<void> {
+    if (this.disposed || this.isBusy()) {
+      return;
+    }
+    if (this.videoTrack) {
+      ++this.kindGenerations.video;
+      this.releaseKind("video");
+      this.update({ videoEnabled: false });
+      return;
+    }
+    await this.acquireKind("video", true);
   }
 
   async switchDevice(
@@ -375,7 +416,12 @@ export class MediaPrejoinController {
         ? { selectedMicrophoneId: deviceId }
         : { selectedCameraId: deviceId },
     );
-    await this.startPreview();
+    // A device that is off only records the choice; it opens on next enable.
+    if (kind === "audioinput" && this.audioTrack) {
+      await this.acquireKind("audio", this.currentSnapshot.audioEnabled);
+    } else if (kind === "videoinput" && this.videoTrack) {
+      await this.acquireKind("video", true);
+    }
   }
 
   async stopPreview(): Promise<void> {
@@ -387,6 +433,8 @@ export class MediaPrejoinController {
     await this.releasePreviewResources();
     this.update({
       status: "idle",
+      audioEnabled: false,
+      videoEnabled: false,
       micLevel: 0,
       actualAudioProcessing: emptyAudioProcessing,
       errorCode: null,
@@ -495,9 +543,13 @@ export class MediaPrejoinController {
   choices(listenOnly = false): MediaJoinChoices {
     return {
       audioEnabled:
-        !listenOnly && Boolean(this.stream?.getAudioTracks().length),
+        !listenOnly &&
+        this.currentSnapshot.audioEnabled &&
+        Boolean(this.audioTrack),
       videoEnabled:
-        !listenOnly && Boolean(this.stream?.getVideoTracks().length),
+        !listenOnly &&
+        this.currentSnapshot.videoEnabled &&
+        Boolean(this.videoTrack),
       audioDeviceId: listenOnly
         ? ""
         : this.currentSnapshot.selectedMicrophoneId,
@@ -590,7 +642,184 @@ export class MediaPrejoinController {
     });
   }
 
-  private mediaConstraints(): MediaStreamConstraints {
+  /**
+   * Captures (or replaces) a single device kind without touching the other
+   * one. Used by the per-device toggles, device switching and audio-profile
+   * changes. The previous track of that kind is stopped first so devices that
+   * cannot be opened twice still switch cleanly.
+   */
+  private async acquireKind(
+    kind: CaptureKind,
+    enabled: boolean,
+  ): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    const generation = this.generation;
+    const kindGeneration = ++this.kindGenerations[kind];
+    const isCurrent = () =>
+      !this.disposed &&
+      generation === this.generation &&
+      kindGeneration === this.kindGenerations[kind];
+    const hadTracks = this.hasLiveTracks();
+    this.releaseKind(kind);
+    this.update({
+      status: hadTracks ? "switching_device" : "requesting_permission",
+      errorCode: null,
+      announcement: "",
+    });
+
+    const request = { audio: kind === "audio", video: kind === "video" };
+    let stream: MediaStream;
+    try {
+      stream = await this.capture(request);
+    } catch (error) {
+      if (isCurrent()) {
+        this.handleKindFailure(kind, error);
+      }
+      return;
+    }
+    if (!isCurrent()) {
+      stopStream(stream);
+      return;
+    }
+    this.adoptStream(stream, request);
+    await this.refreshDevices(false);
+    // A newer stop, restart or same-kind capture has already released what
+    // this call adopted.
+    if (!isCurrent()) {
+      return;
+    }
+    if (kind === "audio") {
+      if (this.audioTrack) {
+        this.audioTrack.enabled = enabled;
+      }
+      if (this.audioStream) {
+        this.startMeter(this.audioStream);
+      }
+    }
+    this.update({
+      status: "preview_ready",
+      permissionGranted: true,
+      errorCode: null,
+      ...(kind === "audio"
+        ? {
+            audioEnabled: Boolean(this.audioTrack) && enabled,
+            micLevel: 0,
+            actualAudioProcessing: audioProcessing(this.audioTrack),
+          }
+        : { videoEnabled: Boolean(this.videoTrack) }),
+    });
+  }
+
+  private async capture(request: CaptureRequest): Promise<MediaStream> {
+    try {
+      return await this.environment.mediaDevices.getUserMedia(
+        this.mediaConstraints(request),
+      );
+    } catch (error) {
+      if (!isOverconstrainedError(error)) {
+        throw error;
+      }
+      return this.environment.mediaDevices.getUserMedia({
+        audio: request.audio,
+        video: request.video,
+      });
+    }
+  }
+
+  private adoptStream(stream: MediaStream, request: CaptureRequest): void {
+    const audio = request.audio ? (stream.getAudioTracks()[0] ?? null) : null;
+    const video = request.video ? (stream.getVideoTracks()[0] ?? null) : null;
+    for (const track of stream.getTracks()) {
+      if (track !== audio && track !== video) {
+        track.stop();
+      }
+    }
+    if (audio) {
+      if (this.currentSnapshot.audioMode === "original_sound") {
+        try {
+          audio.contentHint = "music";
+        } catch {
+          // contentHint is progressive enhancement only.
+        }
+      }
+      this.audioTrack = audio;
+      this.audioStream = stream;
+      this.ownedTracks.add(audio);
+    }
+    if (video) {
+      this.videoTrack = video;
+      this.videoStream = stream;
+      this.ownedTracks.add(video);
+      this.syncPreview();
+    }
+  }
+
+  private releaseKind(kind: CaptureKind): void {
+    if (kind === "audio") {
+      void this.stopMeter();
+      const track = this.audioTrack;
+      this.audioTrack = null;
+      this.audioStream = null;
+      if (track && this.ownedTracks.delete(track)) {
+        track.stop();
+      }
+      return;
+    }
+    const track = this.videoTrack;
+    this.videoTrack = null;
+    this.videoStream = null;
+    if (track && this.ownedTracks.delete(track)) {
+      track.stop();
+    }
+    this.syncPreview();
+  }
+
+  private handleKindFailure(kind: CaptureKind, error: unknown): void {
+    this.update({
+      status: this.hasLiveTracks() ? "preview_ready" : "degraded",
+      errorCode: mediaPrejoinErrorCode(error),
+      ...(kind === "audio"
+        ? {
+            audioEnabled: false,
+            micLevel: 0,
+            actualAudioProcessing: emptyAudioProcessing,
+          }
+        : { videoEnabled: false }),
+    });
+  }
+
+  private hasLiveTracks(): boolean {
+    return Boolean(this.audioTrack || this.videoTrack);
+  }
+
+  private isBusy(): boolean {
+    const { status } = this.currentSnapshot;
+    return (
+      status === "requesting_permission" ||
+      status === "switching_device" ||
+      status === "cleaning_up"
+    );
+  }
+
+  /** Points the preview at the live camera stream only when it changed. */
+  private syncPreview(): void {
+    const element = this.previewElement;
+    if (!element) {
+      return;
+    }
+    element.muted = true;
+    if (element.srcObject === this.videoStream) {
+      return;
+    }
+    element.srcObject = this.videoStream;
+    if (this.videoStream) {
+      void element.play().catch(() => undefined);
+    }
+  }
+
+  private mediaConstraints(request: CaptureRequest): MediaStreamConstraints {
     const supported = this.environment.mediaDevices.getSupportedConstraints();
     const original = this.currentSnapshot.audioMode === "original_sound";
     const audio: MediaTrackConstraints = {};
@@ -610,7 +839,10 @@ export class MediaPrejoinController {
     if (this.currentSnapshot.selectedCameraId) {
       video.deviceId = { exact: this.currentSnapshot.selectedCameraId };
     }
-    return { audio, video };
+    return {
+      audio: request.audio ? audio : false,
+      video: request.video ? video : false,
+    };
   }
 
   private handleProbeFailure(generation: number, error: unknown): void {
@@ -619,6 +851,8 @@ export class MediaPrejoinController {
     }
     this.update({
       status: "degraded",
+      audioEnabled: false,
+      videoEnabled: false,
       errorCode: mediaPrejoinErrorCode(error),
       micLevel: 0,
       actualAudioProcessing: emptyAudioProcessing,
@@ -646,12 +880,19 @@ export class MediaPrejoinController {
         if (this.disposed || this.meterAnalyser !== analyser) {
           return;
         }
-        analyser.getByteTimeDomainData(samples);
-        let peak = 0;
-        for (const value of samples) {
-          peak = Math.max(peak, Math.abs(value - 128));
+        let level = 0;
+        if (this.currentSnapshot.audioEnabled) {
+          analyser.getByteTimeDomainData(samples);
+          let peak = 0;
+          for (const value of samples) {
+            peak = Math.max(peak, Math.abs(value - 128));
+          }
+          // 5% steps keep the meter smooth without re-rendering every frame.
+          level = Math.round(Math.min(1, peak / 64) * 20) / 20;
         }
-        this.update({ micLevel: Math.min(1, peak / 64) });
+        if (level !== this.currentSnapshot.micLevel) {
+          this.update({ micLevel: level });
+        }
         this.meterFrame = this.environment.requestFrame(sample);
       };
       void context.resume().catch(() => undefined);
@@ -661,7 +902,7 @@ export class MediaPrejoinController {
     }
   }
 
-  private async releasePreviewResources(): Promise<void> {
+  private async stopMeter(): Promise<void> {
     if (this.meterFrame !== null) {
       this.environment.cancelFrame(this.meterFrame);
       this.meterFrame = null;
@@ -675,13 +916,20 @@ export class MediaPrejoinController {
     if (meterContext) {
       await meterContext.close().catch(() => undefined);
     }
-    if (this.stream) {
-      stopStream(this.stream);
-      this.stream = null;
+  }
+
+  private async releasePreviewResources(): Promise<void> {
+    const meterStopped = this.stopMeter();
+    for (const track of this.ownedTracks) {
+      track.stop();
     }
-    if (this.previewElement) {
-      this.previewElement.srcObject = null;
-    }
+    this.ownedTracks.clear();
+    this.audioTrack = null;
+    this.videoTrack = null;
+    this.audioStream = null;
+    this.videoStream = null;
+    this.syncPreview();
+    await meterStopped;
   }
 
   private async releaseSpeakerResources(): Promise<void> {
@@ -858,6 +1106,20 @@ function stopStream(stream: MediaStream): void {
 
 function booleanSetting(value: boolean | undefined): boolean | null {
   return typeof value === "boolean" ? value : null;
+}
+
+function audioProcessing(
+  track: MediaStreamTrack | null,
+): MediaPrejoinSnapshot["actualAudioProcessing"] {
+  if (!track) {
+    return emptyAudioProcessing;
+  }
+  const settings = track.getSettings();
+  return {
+    echoCancellation: booleanSetting(settings.echoCancellation),
+    noiseSuppression: booleanSetting(settings.noiseSuppression),
+    autoGainControl: booleanSetting(settings.autoGainControl),
+  };
 }
 
 function isOverconstrainedError(error: unknown): boolean {

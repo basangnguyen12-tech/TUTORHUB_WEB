@@ -12,10 +12,25 @@
 | Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                |
 | Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                  |
 | Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                            |
-| Task `DONE` gần nhất | `ROOM-SYNC-FIX-01` Sửa bắt tay Yjs `SyncStep2` chỉ đọc của Bảng trắng, tự khôi phục phiên LiveKit reconnect thoáng qua & thu hồi phiên pre-connect bị ngắt |
-| Mốc repository mới   | `@tutorhub/web` `1005/1005` (`101` file), `whiteboard-runtime` `156` PASS, PG 17.12 `P4-02`/`P4-04` integration PASS, `security:bundle` `212` file         |
-| Task hiện tại        | Trải nghiệm & kiểm duyệt thực tế toàn luồng Lớp học → Pre-Join `16:9` → Sân khấu Phòng học + Bảng trắng; chờ GitHub Support mở khóa để push `main`         |
-| Task tiếp theo       | Đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB`, nối lại Render/Cloudflare Pages & cấu hình LiveKit Cloud + Whiteboard Runtime lên môi trường live       |
+| Task `DONE` gần nhất | `PREJOIN-STUDIO-02` Thiết kế lại màn Chuẩn bị vào lớp (Pre-Join Studio) chuẩn Public Beta kết hợp Google Meet, Zoom & Microsoft Teams                      |
+| Mốc repository mới   | `@tutorhub/web` `1018/1018` (`101` file), Chromium E2E `p4-03..07` `29/29` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `212` file             |
+| Task hiện tại        | Trải nghiệm màn Pre-Join Studio mới & chuẩn bị nâng cấp tiếp giao diện bên trong Phòng học trực tuyến chuẩn Public Beta; chờ GitHub mở khóa để push `main` |
+| Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages  |
+
+### Checkpoint `PREJOIN-STUDIO-02` Thiết kế lại Màn Chuẩn bị Vào lớp (Pre-Join Studio) Chuẩn Public Beta Kết hợp Google Meet, Zoom & Microsoft Teams (`DONE`) — 2026-11-23
+
+Claude Code (kích hoạt bộ 3 plugin `frontend-design`, `design`, `ui-design-review`) nghiên cứu đối chiếu trực quan Zoom, Microsoft Teams và Google Meet rồi triển khai `PREJOIN-STUDIO-02`; Gatekeeper (Antigravity) review `RESEARCH.md` và toàn bộ diff/bảo mật, tinh chỉnh 1 comment CSS vướng bộ lọc từ khóa telemetry, chạy độc lập `pnpm verify`, cổng giới hạn bundle `LazyWhiteboardEngine` và trọn bộ 29 bài Chromium Playwright E2E `p4-03..07`:
+
+- **Bật/Tắt Độc lập Micro & Camera Tôn trọng Quyền riêng tư Phần cứng (`apps/web/src/app/mediaPrejoin.ts`, `mediaPrejoin.test.ts`)**:
+  - Mở rộng `MediaPrejoinSnapshot` với `audioEnabled`/`videoEnabled` cùng `toggleMicrophone()` và `toggleCamera()` quản lý track theo từng loại (`ownedTracks` đảm bảo mỗi track `stop()` đúng `1` lần).
+  - Khi chưa cấp quyền, bấm nút Micro chỉ xin quyền âm thanh (`{ audio: true, video: false }`) — tuyệt đối không tự mở webcam của học viên — và bấm nút Camera chỉ xin quyền hình ảnh; nút trung tâm `Kiểm tra camera và micro` giữ nguyên `startPreview()` (`1` `getUserMedia` + `1` `enumerateDevices`).
+  - Tắt Camera dừng hẳn `MediaStreamTrack` video để đèn cứng webcam tắt thật như Zoom/Meet/Teams trong khi vẫn giữ micro và đo mức âm; đổi chế độ âm thanh chỉ xin lại micro không làm nháy camera; đổi thiết bị đang tắt chỉ ghi nhận lựa chọn không mở phần cứng; lượng tử hóa `micLevel` theo bước `5%` và cố định callback `ref` cho `<video>` để loại bỏ re-render mỗi khung hình.
+- **Sân khấu Broadcast Studio `16:9` Không Cuộn & Cột Sẵn sàng Vào lớp (`MediaSpacePages.tsx`, `MediaSpacePrejoin.css`, `MediaDiagnosticsPanel.tsx`, `i18n.tsx`)**:
+  - Header mảnh `56px` bổ sung chip danh tính kiểu MS Teams (monogram chữ cái đầu + `display_name`, tuyệt đối không render `user.email`); bỏ khối tiêu đề thừa phía trên lưới và căn tâm dọc 2 cột (`max-width: 1140px`) để ở `1280×800` và `1440×900` hiển thị trọn vẹn không cuộn dọc kể cả khi ở Phòng chờ.
+  - Cột trái gỡ thẻ trắng bọc ngoài, giữ khung tối `#0f172a` bo `20px` kiểu Google Meet/Zoom với lớp HUD trên (tên + sóng âm 3 vạch, trạng thái mạng trực tiếp), self-view lật gương, vòng tròn monogram `76px` khi tắt camera, thanh dock kính mờ cạnh dưới (nút tròn `48px` kèm huy hiệu `!` hổ phách khi chưa cấp quyền và nền đỏ `#dc2626` khi tắt) và hàng pill chọn nhanh `[Micro ▾] [Loa ▾] [Camera ▾]` kèm segmented chế độ âm thanh, nút `Thử loa` và disclosure xử lý âm thanh.
+  - Cột phải đưa `<h1>` (`media.p403.title`), huy hiệu phòng/vai trò, thẻ tóm tắt `Bạn sẽ vào lớp với` (khóa theo `joinState.choices` đã gửi khi sang trạng thái chờ) và tích hợp trực tiếp khối Phòng chờ / Kết thúc yêu cầu ngay trong cột phải thay vì đẩy rơi xuống dưới lưới.
+  - Đưa `MediaDiagnosticsPanel` (chỉ `org_admin`) vào hộp thoại `<Dialog>` mở từ link mảnh `Chẩn đoán kết nối (24h)` ở chân trang (thêm biến thể `embedded` dùng `Button` của `@tutorhub/ui`), loại bỏ khối thẻ lớn làm vỡ bố cục single-viewport.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1018/1018`** trên `101` file — tăng `13` bài test mới, `security:bundle` `212` file, Storybook build, Go `40` package + `go vet`), `node scripts/check-whiteboard-performance-bundle.mjs apps/web/dist` PASS (`issues: []`), `git diff --check` sạch, và trọn bộ Chromium Playwright E2E `p4-03..07` (`29/29` bài chạy thực tế gồm viewport `1280×800` / `1440×900`, reflow `320px`, `forced-colors`, `reduced-motion` và Axe `0` vi phạm) **`PASS` (`33.4s`)**.
 
 ### Checkpoint `ROOM-SYNC-FIX-01` Sửa Bắt tay Yjs `SyncStep2` Chỉ đọc của Bảng trắng, Tự khôi phục Phiên LiveKit Reconnect Thoáng qua & Thu hồi Phiên Pre-Connect (`DONE`) — 2026-11-23
 
