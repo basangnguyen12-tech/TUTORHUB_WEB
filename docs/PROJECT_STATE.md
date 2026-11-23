@@ -12,10 +12,23 @@
 | Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                               |
 | Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                 |
 | Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                           |
-| Task `DONE` gần nhất | `VIDEO-FX-01` Triển khai Nền & Hiệu ứng Hình ảnh 2 bề mặt thích ứng (Google Meet Modal ở Pre-Join + MS Teams Drawer trong Phòng học) theo ADR-0041        |
-| Mốc repository mới   | `@tutorhub/web` `1073/1073` (`104` file), Chromium E2E `p4-03..07` `36/36` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file            |
-| Task hiện tại        | Trải nghiệm thực tế Nền & Hiệu ứng Hình ảnh trên Pre-Join và Phòng học; chuẩn bị nâng cấp tiếp giao diện bên trong Phòng học; chờ GitHub mở khóa          |
+| Task `DONE` gần nhất | `PREJOIN-SCALE-05` Phóng to Khung Video `16:9` Pre-Join theo `dvh`, Thu gọn Khoảng trắng Bốn phía & Căn tâm Quang học Cột Form                            |
+| Mốc repository mới   | `@tutorhub/web` `1073/1073` (`104` file), Chromium E2E `p4-03..07` `38/38` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file            |
+| Task hiện tại        | Trải nghiệm thực tế Pre-Join khung lớn + Nền & Hiệu ứng trên trình duyệt; chuẩn bị nâng cấp giao diện trong Phòng học; chờ GitHub mở khóa                 |
 | Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages |
+
+### Checkpoint `PREJOIN-SCALE-05` Phóng to Khung Video `16:9` Pre-Join theo Ngân sách Chiều cao `dvh`, Thu gọn Khoảng trắng Bốn phía & Căn tâm Quang học Cột Form (`DONE`) — 2026-11-23
+
+Claude Code triển khai `PREJOIN-SCALE-05` khắc phục khung video Pre-Join bị nhỏ (`616×346.5 px`) và dư thừa khoảng trắng trên màn hình laptop/desktop; Gatekeeper (Antigravity) review `RESEARCH.md` và ảnh chụp đối chiếu, tinh chỉnh thêm `line-height: 1.4` cho `select` trong `.media-p403-pill` để không cắt chân chữ có dấu tiếng Việt (`g`, `ọ`), kiểm chứng độc lập `pnpm verify`, ngân sách bundle và trọn bộ 38 bài Chromium Playwright E2E `p4-03..07`:
+
+- **Co giãn Khung Video `16:9` theo Cả Chiều rộng lẫn Chiều cao `100dvh` (`apps/web/src/pages/MediaSpacePrejoin.css`)**:
+  - Gỡ trần cứng `max-width: 1040px` trên `.media-p403-clone` và `.media-p404-invites`; áp dụng công thức `min(1560px, max(980px, calc((100dvh - 176px) * 16 / 9 + clamp(28px, 2.8vw, 48px) + 392px)))` (kèm fallback `100vh`) và tăng tỷ trọng cột trái `minmax(0, 1.9fr) minmax(320px, 392px)`.
+  - Kích thước thực tế của `.media-p403-preview` tăng vọt mà vẫn giữ `0` thanh cuộn ngang/dọc: `788×443 px` ở `1280×800`, `936×526 px` ở `1440×900`, **`1020×574 px` (diện tích gấp `2.74×`)** ở `1536×750` (laptop Full HD Windows scale 125%), và **`1120×630 px` (diện tích gấp `3.0×`)** ở `1920×1080`.
+  - Mở rộng `--prejoin-rule-width` lên `min(95%, 1640px)`, thu gọn lề dưới đường kẻ đáy từ `88px` xuống `clamp(10px, 1.8dvh, 20px)` và thu gọn padding của `.media-p403-studio__main` khớp thẳng hàng với hai đường kẻ trên/dưới.
+- **Đồng bộ Tỷ lệ Chi tiết & Căn tâm Quang học Cột Phải (`MediaSpacePrejoin.css`, `e2e/p4-03-prejoin.spec.ts`)**:
+  - Căn giữa cột form `.media-p403-side` đúng tâm dọc của khung video `16:9` (`align-self: center` + bù chiều cao hàng pill qua `--prejoin-pill-height`, sai số tâm `<= 0.1px` trên desktop, tự bỏ bù trừ khi về 1 cột `<= 880px`).
+  - Nâng 3 nút tròn `.media-p403-round` lên `52×52 px` (`svg` `22px`), hàng 4 pill `.media-p403-pill` lên cao `36px` (`font-size: 13px`, `line-height: 1.4` — rộng `247px`/pill ở `1536×750` hiển thị trọn tên thiết bị dài), tinh chỉnh cỡ chữ/chiều cao ô nhập tên (`48px`) & nút `Tham gia` (`50px`), và mở rộng Studio Modal Nền & Hiệu ứng lên `1080×700 px`.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1073/1073`** trên `104` file, `security:bundle` `218` file, Storybook build, Go `40` package + `go vet`), `check-whiteboard-performance-bundle.mjs` PASS (`entryRawBytes = 720,529` B, `issues: []`), `p4-03` + `p4-04` PASS `19/19` trên bundle `apps/web/dist` cổng `5173`, và trọn bộ Chromium Playwright E2E `p4-03..07` (**`38/38`** bài gồm 4 mốc desktop `1280×800`, `1440×900`, `1536×750`, `1920×1080` cho cả `vi` và `en`, `320px` `forced-colors` và Axe `0` vi phạm) **`PASS` (`57.5s`)**.
 
 ### Checkpoint `VIDEO-FX-01` Hệ thống Nền & Hiệu ứng Hình ảnh Phòng học Public Beta — Một Lõi Xử lý, Hai Bề mặt Thích ứng (`ADR-0041`, `DONE`) — 2026-11-23
 

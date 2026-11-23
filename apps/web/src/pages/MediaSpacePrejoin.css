@@ -6,15 +6,23 @@
  * class/workspace, language) whose bottom border is the upper rule, then a
  * centred two-column stage — the charcoal 16:9 camera frame with three round
  * buttons and four slim device pills on the left, a flat "Enter Meeting" form
- * on the right — and one lower rule with nothing under it. 1280×800 and
- * 1440×900 never scroll; 320px reflows to one column. Everything is scoped
- * under `.media-p403-studio` so the in-room `.media-p403-*` surfaces and the
- * legacy global rules in `styles.css` stay untouched.
+ * on the right — and one lower rule with nothing under it. 320px reflows to
+ * one column. Everything is scoped under `.media-p403-studio` so the in-room
+ * `.media-p403-*` surfaces and the legacy global rules in `styles.css` stay
+ * untouched.
+ *
+ * PREJOIN-SCALE-05: the stage grows with both the viewport width and the
+ * height left for a 16:9 frame (`100dvh`), so the frame reaches ~1020px wide
+ * at 1536×750 and ~1120px at 1920×1080 while 1280×800 through 1920×1080
+ * still never scroll. Outer white space is trimmed on all four sides.
  */
 
 .media-p403-page.media-p403-studio {
   --prejoin-rule: #d1d5db;
-  --prejoin-rule-width: min(91%, calc(100% - 32px));
+  --prejoin-rule-width: min(95%, 1640px);
+  --prejoin-gap: clamp(28px, 2.8vw, 48px);
+  --prejoin-pill-height: 36px;
+  --prejoin-pill-offset: 12px;
   --prejoin-text: #111827;
   --prejoin-blue: #0e71eb;
   --prejoin-blue-hover: #0b5ed7;
@@ -38,7 +46,7 @@
 .media-p403-page.media-p403-studio::after {
   width: var(--prejoin-rule-width);
   flex: none;
-  margin: 0 auto clamp(16px, 8dvh, 88px);
+  margin: 0 auto clamp(10px, 1.8dvh, 20px);
   border-top: 1px solid var(--prejoin-rule);
   content: "";
 }
@@ -149,8 +157,13 @@
   align-items: center;
   justify-content: center;
   gap: 24px;
-  /* A deeper bottom inset lifts the stage slightly above the true centre. */
-  padding: 24px 24px 40px;
+  /*
+   * Slim insets; the horizontal 2.5vw matches the 95% rule width so the stage
+   * lines up with the rules. A slightly deeper bottom inset lifts the stage a
+   * touch above the true centre.
+   */
+  padding: clamp(12px, 1.8dvh, 22px) clamp(16px, 2.5vw, 36px)
+    clamp(14px, 2dvh, 24px);
   margin: 0;
 }
 
@@ -176,20 +189,42 @@
   white-space: normal;
 }
 
+/*
+ * The stage is as wide as the viewport allows, but never wider than the
+ * height budget lets a 16:9 frame be: 100dvh minus 176px (the 50px header,
+ * main insets, the 48px pill row, the lower rule and ~30px of breathing
+ * room), converted to a width, plus the gap and the 392px form column. Short
+ * laptops (1536×750, 1280×800) get the largest frame that does not scroll.
+ */
 .media-p403-clone {
   display: grid;
   width: 100%;
-  max-width: 1040px;
+  max-width: min(1560px, max(980px, calc((100vh - 176px) * 16 / 9 + 440px)));
+  max-width: min(
+    1560px,
+    max(
+      980px,
+      calc((100dvh - 176px) * 16 / 9 + clamp(28px, 2.8vw, 48px) + 392px)
+    )
+  );
   min-width: 0;
-  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 380px);
-  /* Top-aligned: the reference puts "Enter Meeting" on the frame's top edge. */
+  grid-template-columns: minmax(0, 1.9fr) minmax(320px, 392px);
   align-items: start;
-  gap: 44px;
+  gap: var(--prejoin-gap);
 }
 
 .media-p403-stage,
 .media-p403-side {
   min-width: 0;
+}
+
+/*
+ * The form sits on the optical centre of the 16:9 frame: the bottom inset
+ * offsets the pill row (12px + pill height) that hangs under the frame.
+ */
+.media-p403-studio .media-p403-side {
+  align-self: center;
+  padding-bottom: calc(var(--prejoin-pill-offset) + var(--prejoin-pill-height));
 }
 
 /* Left — the charcoal 16:9 frame ----------------------------------------- */
@@ -202,7 +237,7 @@
   min-height: 248px;
   overflow: hidden;
   border: 0;
-  border-radius: 12px;
+  border-radius: 16px;
   aspect-ratio: 16 / 9;
   background: #202124;
   color: #fff;
@@ -249,13 +284,13 @@
 .media-p403-preview__name {
   position: absolute;
   z-index: 2;
-  top: 14px;
-  right: 56px;
-  left: 16px;
+  top: 16px;
+  right: 60px;
+  left: 20px;
   overflow: hidden;
   margin: 0;
   color: #fff;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 20px;
   text-overflow: ellipsis;
@@ -265,8 +300,8 @@
 .media-p403-preview__more {
   position: absolute;
   z-index: 3;
-  top: 6px;
-  right: 6px;
+  top: 8px;
+  right: 8px;
   display: grid;
   width: 36px;
   height: 36px;
@@ -296,8 +331,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 44px 20px 76px;
+  gap: 18px;
+  padding: 48px 24px 88px;
   text-align: center;
 }
 
@@ -305,20 +340,20 @@
   max-width: 100%;
   margin: 0;
   color: #fff;
-  font-size: 18px;
+  font-size: clamp(18px, 1.4vw, 22px);
   font-weight: 400;
   line-height: 1.35;
   text-wrap: balance;
 }
 
 .media-p403-preview__allow {
-  min-height: 36px;
-  padding: 0 18px;
+  min-height: 40px;
+  padding: 0 22px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #1a73e8;
   color: #fff;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 500;
   line-height: 1.2;
 }
@@ -338,12 +373,12 @@
   top: 50%;
   left: 50%;
   display: grid;
-  width: clamp(64px, 22%, 112px);
+  width: clamp(64px, 22%, 132px);
   aspect-ratio: 1;
   border-radius: 50%;
   background: #5f6368;
   color: #fff;
-  font-size: clamp(22px, 4.6vw, 36px);
+  font-size: clamp(22px, 4.6vw, 44px);
   font-weight: 500;
   place-items: center;
   transform: translate(-50%, -60%);
@@ -355,23 +390,23 @@
   outline-offset: 2px;
 }
 
-/* Three separate 48px circles along the bottom edge — no tray. */
+/* Three separate 52px circles along the bottom edge — no tray. */
 .media-p403-preview__controls {
   position: absolute;
   z-index: 3;
-  bottom: 14px;
+  bottom: 18px;
   left: 50%;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   transform: translateX(-50%);
 }
 
 .media-p403-round {
   position: relative;
   display: grid;
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   flex: none;
   padding: 0;
   border: 1px solid transparent;
@@ -383,8 +418,8 @@
 }
 
 .media-p403-round svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .media-p403-round--needs-permission {
@@ -475,16 +510,16 @@
 
 .media-p403-pills {
   display: grid;
-  margin-top: 12px;
+  margin-top: var(--prejoin-pill-offset, 12px);
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .media-p403-pill {
   position: relative;
   display: flex;
   min-width: 0;
-  height: 32px;
+  height: var(--prejoin-pill-height, 36px);
   align-items: center;
   border: 1px solid #dadce0;
   border-radius: 999px;
@@ -504,7 +539,7 @@
 .media-p403-pill__icon {
   position: absolute;
   top: 50%;
-  left: 10px;
+  left: 12px;
   display: grid;
   color: #5f6368;
   pointer-events: none;
@@ -512,8 +547,8 @@
 }
 
 .media-p403-pill__icon svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .media-p403-studio .media-p403-pill select {
@@ -521,15 +556,15 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 0 24px 0 31px;
+  padding: 0 26px 0 35px;
   overflow: hidden;
   border: 0;
   border-radius: inherit;
   appearance: none;
   background: transparent;
   color: inherit;
-  font-size: 12px;
-  line-height: 1;
+  font-size: 13px;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -542,7 +577,7 @@
 .media-p403-pill__caret {
   position: absolute;
   top: 50%;
-  right: 11px;
+  right: 12px;
   width: 0;
   height: 0;
   border-top: 5px solid currentcolor;
@@ -578,9 +613,9 @@
 }
 
 .media-p403-studio .media-p403-side h1 {
-  margin: 0 0 22px;
+  margin: 0 0 24px;
   color: var(--prejoin-text);
-  font-size: 26px;
+  font-size: clamp(26px, 2vw, 30px);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 1.2;
@@ -597,13 +632,13 @@
 
 .media-p403-studio .media-p403-form__name {
   width: 100%;
-  height: 44px;
+  height: 48px;
   padding: 0 14px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   background: #fff;
   color: var(--prejoin-text);
-  font-size: 15px;
+  font-size: 15.5px;
 }
 
 .media-p403-studio .media-p403-form__name:hover:not(:read-only) {
@@ -622,9 +657,9 @@
   max-width: 100%;
   align-items: center;
   gap: 10px;
-  margin: 12px 0 18px;
+  margin: 14px 0 20px;
   color: #1f2937;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.4;
   cursor: pointer;
 }
@@ -641,14 +676,14 @@
 
 .media-p403-form__join {
   width: 100%;
-  min-height: 46px;
+  min-height: 50px;
   padding: 0 16px;
   border: 0;
   border-radius: 8px;
   background: var(--prejoin-blue);
   box-shadow: 0 2px 6px rgb(14 113 235 / 22%);
   color: #fff;
-  font-size: 16px;
+  font-size: 16.5px;
   font-weight: 700;
   line-height: 1.2;
 }
@@ -765,10 +800,17 @@
   color: #b91c1c;
 }
 
-/* Invite panel (StudyMeeting hosts only) sits below the stage. */
+/* Invite panel (StudyMeeting hosts only) sits below the stage, as wide. */
 .media-p403-studio .media-p404-invites {
   width: 100%;
-  max-width: 1040px;
+  max-width: min(1560px, max(980px, calc((100vh - 176px) * 16 / 9 + 440px)));
+  max-width: min(
+    1560px,
+    max(
+      980px,
+      calc((100dvh - 176px) * 16 / 9 + clamp(28px, 2.8vw, 48px) + 392px)
+    )
+  );
   margin: 0 auto;
   border-color: #e5e7eb;
   border-radius: 12px;
@@ -807,9 +849,26 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 28px;
   }
+
+  /* One column: the form simply follows the pills. */
+  .media-p403-studio .media-p403-side {
+    align-self: auto;
+    padding-bottom: 0;
+  }
+}
+
+/* Narrow screens keep a safe 16px gutter on each side of the rules. */
+@media (max-width: 639px) {
+  .media-p403-page.media-p403-studio {
+    --prejoin-rule-width: min(95%, calc(100% - 32px));
+  }
 }
 
 @media (max-width: 560px) {
+  .media-p403-studio .media-p403-preview {
+    border-radius: 12px;
+  }
+
   .media-p403-pills {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -841,8 +900,9 @@
 
 /* Touch screens: >= 44px targets without changing the desktop layout. */
 @media (pointer: coarse) {
-  .media-p403-pill {
-    height: 44px;
+  /* The pills (and the form's optical-centre offset) follow this height. */
+  .media-p403-page.media-p403-studio {
+    --prejoin-pill-height: 44px;
   }
 
   .media-p403-form__remember {
@@ -920,8 +980,8 @@
 
 .th-dialog-content.media-p403-fx-dialog {
   display: flex;
-  width: min(920px, calc(100vw - 32px));
-  height: min(640px, calc(100dvh - 32px));
+  width: min(1080px, calc(100vw - 32px));
+  height: min(700px, calc(100dvh - 32px));
   max-height: none;
   flex-direction: column;
   gap: 16px;
