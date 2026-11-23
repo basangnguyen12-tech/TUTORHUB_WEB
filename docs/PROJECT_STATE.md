@@ -4,18 +4,32 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                                    |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-23                                                                                                                                                    |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                         |
-| Nhánh làm việc       | `main`                                                                                                                                                        |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                   |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                     |
-| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                               |
-| Task `DONE` gần nhất | `PREJOIN-CLONE-04` Dựng chuẩn 1:1 màn Pre-Join theo mẫu tinh gọn (khung `16:9` `#202124` + 3 nút tròn + 4 pill mảnh & form `Enter Meeting` / `Vào phòng học`) |
-| Mốc repository mới   | `@tutorhub/web` `1025/1025` (`101` file), Chromium E2E `p4-03..07` `33/33` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `212` file                |
-| Task hiện tại        | Trải nghiệm màn Pre-Join 1:1 mới & chuẩn bị nâng cấp tiếp giao diện bên trong Phòng học trực tuyến; chờ GitHub mở khóa để push `main`                         |
-| Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages     |
+| Thuộc tính           | Trạng thái                                                                                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-23                                                                                                                                                |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                     |
+| Nhánh làm việc       | `main`                                                                                                                                                    |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                               |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                 |
+| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                           |
+| Task `DONE` gần nhất | `VIDEO-FX-01` Triển khai Nền & Hiệu ứng Hình ảnh 2 bề mặt thích ứng (Google Meet Modal ở Pre-Join + MS Teams Drawer trong Phòng học) theo ADR-0041        |
+| Mốc repository mới   | `@tutorhub/web` `1073/1073` (`104` file), Chromium E2E `p4-03..07` `36/36` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file            |
+| Task hiện tại        | Trải nghiệm thực tế Nền & Hiệu ứng Hình ảnh trên Pre-Join và Phòng học; chuẩn bị nâng cấp tiếp giao diện bên trong Phòng học; chờ GitHub mở khóa          |
+| Task tiếp theo       | Thiết kế lại giao diện trong Phòng học trực tuyến (`ROOM-STUDIO-02`), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages |
+
+### Checkpoint `VIDEO-FX-01` Hệ thống Nền & Hiệu ứng Hình ảnh Phòng học Public Beta — Một Lõi Xử lý, Hai Bề mặt Thích ứng (`ADR-0041`, `DONE`) — 2026-11-23
+
+Gatekeeper lập và chấp nhận `ADR-0041`; Claude Code triển khai `VIDEO-FX-01` trong `Allowed Scope`; Gatekeeper bổ sung `.gitattributes` bảo toàn nhị phân/`-text` cho `apps/web/public/vendor/**`, kiểm định độc lập `SHA-256` bộ MediaPipe, `pnpm verify`, cổng bundle và trọn bộ 36 bài Chromium Playwright E2E `p4-03..07`:
+
+- **Một Đường ống Xử lý Video Duy nhất Nạp Động & Tự Phục vụ Cùng Origin (`visualEffectsProcessor.ts`, `vite.config.ts`, `apps/web/public/vendor/mediapipe/**`)**:
+  - Tách chunk động `media-effects` (`priority: 110` cho `@livekit/track-processors@0.8.3` và `@mediapipe/tasks-vision@0.10.14`) chỉ nạp qua `import()` khi có hiệu ứng bật trên camera đang sống (`entryRawBytes = 720,529` B `< 768` KiB; giữ nguyên cô lập `MediaSpacePages-*.js` không import tĩnh `livekit-*.js`).
+  - Tự phục vụ 100% WASM và `selfie_segmenter.tflite` (`249,537` bytes, `SHA-256: 191ac952...38226658b`, kèm `NOTICE.txt` và `SHA256SUMS.txt`) tại `/vendor/mediapipe/*` — probe Chromium xác nhận `0` request tới CDN ngoài, khởi tạo `215–252ms` và canh khung `cover` không méo với track `4:3`.
+  - Hai chế độ trên cùng một vòng đời `ProcessorWrapper`: chế độ **Ánh sáng** dùng `LightingTransformer` 2D canvas filter siêu nhẹ không nạp MediaPipe; chế độ **Phông nền** mở rộng `BackgroundTransformer` (bọc `controller.enqueue` để nối bước tăng sáng trên cùng 1 segmenter, đóng sạch `VideoFrame` trong `finally` và đóng `ImageBitmap` cũ khi đổi nền/hủy) kèm bộ bảo vệ quá tải `ADR-0031` §11 (`3` cửa sổ `5s` liên tiếp `< 12` FPS hoặc `p95 > 50ms` tự quay về camera gốc).
+- **7 Phông nền Giáo dục Tự dựng, Ảnh Cá nhân Tẩy EXIF Lưu IndexedDB & Hai Bề mặt Giao diện (`visualEffects.ts`, `VisualEffectsPicker.tsx`, `MediaSpacePages.tsx`, `ClassroomMediaShell.tsx`, `ClassroomLiveKitRoom.tsx`)**:
+  - Dựng 7 cảnh SVG `1600×900` có chiều sâu trường ảnh sạch bản quyền (`Thư viện`, `Phòng học`, `Góc Bắc Âu`, `Giảng đường`, `Phòng làm việc`, `Phòng đọc sách`, `Không gian xanh`); ảnh cá nhân tải lên được kiểm tra MIME/`<= 8 MiB`, crop `cover` tối đa `1920×1080` và mã hóa lại JPEG `0.88` tẩy sạch EXIF/GPS, lưu tối đa `4` ảnh trong IndexedDB theo `(tenantId, userId)` và xóa sạch cùng tùy chọn khi đăng xuất (`clearPrivateSessionCache`).
+  - **Trên Pre-Join**: nút tròn thứ 3 (`Sparkles`) mở **Studio Modal 2 cột kiểu Google Meet (`max-width: 920px`)** (khung preview `16:9` `#202124`, nút tắt nhanh mọi hiệu ứng, không tự mở webcam khi chọn nền lúc camera tắt — `0` lần gọi `getUserMedia`/`enumerateDevices`); lựa chọn đi thẳng vào phòng qua `MediaJoinChoices.visualEffects` trong memory escrow.
+  - **Trong Phòng học**: nút `effects` đặt sau `devices` và trước `hand` (bảo toàn thứ tự phím mũi tên `p4-05`/`p4-06`, ẩn khi listen-only) cùng huy hiệu động trên Header mở **Ngăn phải `360px` non-modal kiểu MS Teams** tự thu gọn sân khấu trên màn `>= 1024px` để không che Bảng trắng Excalidraw và không remount ô `<video>`.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1073/1073`** trên `104` file — tăng `48` bài test mới, `security:bundle` `218` file, Storybook build, Go `40` package + `go vet`), `SHA256SUMS.txt` `5/5` khớp tuyệt đối, `check-whiteboard-performance-bundle.mjs` PASS (`issues: []`), và trọn bộ Chromium Playwright E2E `p4-03..07` (`36/36` bài chạy thực tế gồm mở Studio Modal ở Pre-Join, `320px` `forced-colors`, mở Drawer phải trong Phòng học không remount `<video>` và Axe `0` vi phạm) **`PASS` (`44.3s`)**.
 
 ### Checkpoint `PREJOIN-CLONE-04` Dựng Chuẩn 1:1 Màn Pre-Join Tinh Gọn (Khung `16:9` `#202124` + 3 Nút Tròn + 4 Pill & Form `Enter Meeting` / `Vào phòng học`) (`DONE`) — 2026-11-23
 

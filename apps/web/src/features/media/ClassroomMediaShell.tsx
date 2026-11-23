@@ -21,6 +21,7 @@ import {
   Drawer,
   DrawerClose,
   DrawerContent,
+  DrawerDescription,
   DrawerTitle,
   DrawerTrigger,
   IconButton,
@@ -46,6 +47,7 @@ import {
   ScreenShareOff,
   Settings2,
   Smile,
+  Sparkles,
   MessageCircle,
   UserRound,
   Users,
@@ -56,6 +58,8 @@ import {
   RemoteTrackPublication,
   Track,
   VideoQuality,
+  type LocalVideoTrack,
+  type TrackProcessor,
 } from "livekit-client";
 import {
   useCallback,
@@ -71,6 +75,19 @@ import {
   type ReactNode,
 } from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
+import {
+  DEFAULT_VISUAL_EFFECTS,
+  effectiveVisualEffects,
+  hasActiveVisualEffects,
+  resolveVisualEffectsPlan,
+  saveVisualEffectsPreference,
+  useCustomBackgrounds,
+  visualEffectsSummaryKey,
+  type ClassroomVisualEffectsState,
+  type VisualEffectsRenderPlan,
+  type VisualEffectsScope,
+} from "../../app/visualEffects";
+import { VisualEffectsPicker } from "../../components/VisualEffectsPicker";
 import { MediaLobbyWaitingCountContext } from "../../components/MediaLobbyPanel";
 import {
   ClassroomDegradationController,
@@ -119,8 +136,253 @@ export interface ClassroomMediaShellProps {
   moderation?: ClassroomModerationControlsModel;
   signals?: ClassroomSignalControls;
   tools?: readonly ClassroomToolDefinition[];
+  /**
+   * ADR-0041 visual effects for the local camera. Optional: without it the
+   * shell starts with no effect and no personal background library.
+   */
+  visualEffects?: ClassroomVisualEffectsModel;
   onLeave: () => void;
   onTerminalMediaCleanup: () => Promise<void>;
+}
+
+export interface ClassroomVisualEffectsModel {
+  /** The choice carried over from Pre-Join (memory escrow). */
+  readonly initialState?: ClassroomVisualEffectsState;
+  /** Scope of the device-local preference and personal backgrounds. */
+  readonly scope?: VisualEffectsScope | null;
+  /** Test seam; defaults to a dynamic import of the effects pipeline. */
+  readonly loadRuntime?: () => Promise<RoomVisualEffectsRuntime>;
+}
+
+export type RoomVisualEffectsStatus =
+  "off" | "loading" | "active" | "unsupported" | "failed" | "overloaded";
+
+export interface RoomVisualEffectsProcessor extends TrackProcessor<Track.Kind.Video> {
+  readonly visualEffectsMode: "lighting" | "background";
+  applyPlan(plan: VisualEffectsRenderPlan): Promise<boolean>;
+}
+
+export interface RoomVisualEffectsRuntime {
+  supportsVisualEffects(mode: "lighting" | "background"): boolean;
+  createVisualEffectsProcessor(
+    plan: VisualEffectsRenderPlan,
+    options: { onOverload?: () => void; onFailure?: () => void },
+  ): Promise<RoomVisualEffectsProcessor>;
+}
+
+type ProcessableVideoTrack = Pick<
+  LocalVideoTrack,
+  "getProcessor" | "setProcessor" | "stopProcessor"
+>;
+
+function loadRoomVisualEffectsRuntime(): Promise<RoomVisualEffectsRuntime> {
+  return import("./visualEffectsProcessor");
+}
+
+function isProcessableVideoTrack(
+  track: unknown,
+): track is ProcessableVideoTrack {
+  if (typeof track !== "object" || track === null) return false;
+  const candidate = track as Partial<
+    Record<keyof ProcessableVideoTrack, unknown>
+  >;
+  return (
+    typeof candidate.setProcessor === "function" &&
+    typeof candidate.stopProcessor === "function" &&
+    typeof candidate.getProcessor === "function"
+  );
+}
+
+/**
+ * Keeps the published camera track's processor in line with the effects
+ * choice. LiveKit already restarts an attached processor when the camera is
+ * re-enabled or switched, and destroys it when the track stops; this only
+ * attaches, updates, swaps (mode change) and removes it. Serialised, and each
+ * await re-checks that its inputs are still current.
+ */
+class LocalCameraEffectsController {
+  private status: RoomVisualEffectsStatus = "off";
+  private readonly listeners = new Set<() => void>();
+  private desired: {
+    track: ProcessableVideoTrack | null;
+    cameraEnabled: boolean;
+    plan: VisualEffectsRenderPlan | null;
+    key: string;
+  } = { track: null, cameraEnabled: false, plan: null, key: "" };
+  private suspendedKey: string | null = null;
+  private attached: {
+    track: ProcessableVideoTrack;
+    processor: RoomVisualEffectsProcessor;
+    key: string;
+  } | null = null;
+  private queue: Promise<void> = Promise.resolve();
+  private active = false;
+
+  constructor(
+    private readonly loadRuntime: () => Promise<RoomVisualEffectsRuntime>,
+  ) {}
+
+  getStatus = (): RoomVisualEffectsStatus => this.status;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  activate(): void {
+    this.active = true;
+    this.schedule();
+  }
+
+  /** Unmount / leave: removes the processor (idempotent). */
+  deactivate(): void {
+    this.active = false;
+    this.schedule();
+  }
+
+  update(
+    track: ProcessableVideoTrack | null,
+    cameraEnabled: boolean,
+    plan: VisualEffectsRenderPlan | null,
+  ): void {
+    const key = plan ? JSON.stringify(plan) : "";
+    if (key !== this.desired.key) this.suspendedKey = null;
+    this.desired = { track, cameraEnabled, plan, key };
+    this.schedule();
+  }
+
+  private schedule(): void {
+    this.queue = this.queue.then(() => this.reconcile()).catch(() => undefined);
+  }
+
+  private setStatus(status: RoomVisualEffectsStatus): void {
+    if (this.status === status) return;
+    this.status = status;
+    for (const listener of this.listeners) listener();
+  }
+
+  private ownsProcessorOn(track: ProcessableVideoTrack): boolean {
+    const attached = this.attached;
+    return Boolean(
+      attached &&
+      attached.track === track &&
+      track.getProcessor() === attached.processor,
+    );
+  }
+
+  private async detach(): Promise<void> {
+    const attached = this.attached;
+    this.attached = null;
+    if (!attached) return;
+    try {
+      if (attached.track.getProcessor() === attached.processor) {
+        await attached.track.stopProcessor();
+      }
+    } catch {
+      // A stopped or unpublished track already destroyed its processor.
+    }
+    await attached.processor.destroy().catch(() => undefined);
+  }
+
+  private trip(
+    processor: RoomVisualEffectsProcessor,
+    status: "overloaded" | "failed",
+  ): void {
+    if (this.attached?.processor !== processor) return;
+    this.suspendedKey = this.desired.key;
+    this.setStatus(status);
+    this.schedule();
+  }
+
+  private async reconcile(): Promise<void> {
+    const { track, cameraEnabled, key } = this.desired;
+    const suspended = this.suspendedKey !== null && this.suspendedKey === key;
+    const plan = this.active && !suspended ? this.desired.plan : null;
+    const isCurrent = () =>
+      this.active &&
+      this.desired.track === track &&
+      this.desired.cameraEnabled === cameraEnabled &&
+      this.desired.key === key &&
+      this.suspendedKey !== key;
+
+    if (!plan || !track) {
+      await this.detach();
+      if (!suspended) this.setStatus("off");
+      return;
+    }
+    if (this.attached && this.attached.track !== track) {
+      await this.detach();
+    }
+    const attached = this.attached;
+    if (attached && this.ownsProcessorOn(track)) {
+      if (attached.key === key) {
+        this.setStatus("active");
+        return;
+      }
+      const applied = await attached.processor
+        .applyPlan(plan)
+        .catch(() => false);
+      if (!isCurrent()) return;
+      if (applied) {
+        attached.key = key;
+        this.setStatus("active");
+        return;
+      }
+    }
+    // A new processor is only ever attached to a live camera.
+    if (!cameraEnabled) {
+      await this.detach();
+      this.setStatus("off");
+      return;
+    }
+
+    this.setStatus("loading");
+    let runtime: RoomVisualEffectsRuntime;
+    try {
+      runtime = await this.loadRuntime();
+    } catch {
+      if (isCurrent()) this.setStatus("failed");
+      return;
+    }
+    if (!isCurrent()) return;
+    if (!runtime.supportsVisualEffects(plan.mode)) {
+      await this.detach();
+      this.setStatus("unsupported");
+      return;
+    }
+    let processor: RoomVisualEffectsProcessor;
+    try {
+      processor = await runtime.createVisualEffectsProcessor(plan, {
+        onOverload: () => this.trip(processor, "overloaded"),
+        onFailure: () => this.trip(processor, "failed"),
+      });
+    } catch {
+      if (isCurrent()) this.setStatus("failed");
+      return;
+    }
+    if (!isCurrent()) {
+      await processor.destroy().catch(() => undefined);
+      return;
+    }
+    const previous = this.attached;
+    try {
+      // Replaces (and stops) a previous processor of the other mode.
+      await track.setProcessor(processor);
+    } catch {
+      await processor.destroy().catch(() => undefined);
+      await this.detach();
+      if (isCurrent()) {
+        this.suspendedKey = key;
+        this.setStatus("failed");
+      }
+      return;
+    }
+    if (previous && previous.processor !== processor) {
+      await previous.processor.destroy().catch(() => undefined);
+    }
+    this.attached = { track, processor, key };
+    this.setStatus("active");
+  }
 }
 
 export type ClassroomToolID = "whiteboard";
@@ -188,6 +450,7 @@ type ToolbarControlKey =
   | "camera"
   | "screen-share"
   | "devices"
+  | "effects"
   | "hand"
   | "reaction"
   | "chat"
@@ -228,6 +491,7 @@ export function ClassroomMediaShell({
   moderation,
   signals,
   tools = [],
+  visualEffects: visualEffectsModel,
   onLeave,
   onTerminalMediaCleanup,
 }: ClassroomMediaShellProps) {
@@ -301,6 +565,7 @@ export function ClassroomMediaShell({
   );
   const speakingParticipants = useSpeakingParticipants();
   const {
+    cameraTrack: localCameraPublication,
     isCameraEnabled,
     isMicrophoneEnabled,
     isScreenShareEnabled,
@@ -310,6 +575,42 @@ export function ClassroomMediaShell({
     useState<ConnectionQuality>(localParticipant.connectionQuality);
   const [degradationStage, setDegradationStage] =
     useState<ClassroomDegradationStage>("normal");
+
+  // ADR-0041 visual effects (local camera only).
+  const effectsScope = visualEffectsModel?.scope ?? null;
+  const [effectsChoice, setEffectsChoice] =
+    useState<ClassroomVisualEffectsState>(
+      () => visualEffectsModel?.initialState ?? DEFAULT_VISUAL_EFFECTS,
+    );
+  const [effectsOpen, setEffectsOpen] = useState(false);
+  const effectsReturnFocus = useRef<HTMLElement | null>(null);
+  const effectsDescriptionID = useId();
+  const backgroundLibrary = useCustomBackgrounds(effectsScope);
+  const libraryStatus = backgroundLibrary.status;
+  const libraryUrlFor = backgroundLibrary.urlFor;
+  const visualEffects = useMemo(
+    () =>
+      effectiveVisualEffects(effectsChoice, {
+        status: libraryStatus,
+        urlFor: libraryUrlFor,
+      }),
+    [effectsChoice, libraryStatus, libraryUrlFor],
+  );
+  const visualEffectsPlan = useMemo(
+    () => resolveVisualEffectsPlan(visualEffects, libraryUrlFor),
+    [libraryUrlFor, visualEffects],
+  );
+  const loadEffectsRuntime =
+    visualEffectsModel?.loadRuntime ?? loadRoomVisualEffectsRuntime;
+  const [effectsController] = useState(
+    () => new LocalCameraEffectsController(loadEffectsRuntime),
+  );
+  const effectsStatus = useSyncExternalStore(
+    effectsController.subscribe,
+    effectsController.getStatus,
+    effectsController.getStatus,
+  );
+  const localCameraTrack = localCameraPublication?.track;
 
   const participantAttributeRevision = liveKitParticipants
     .map(
@@ -415,6 +716,7 @@ export function ClassroomMediaShell({
       setPendingControl(null);
       setMediaError(false);
       setDevicePanelOpen(false);
+      setEffectsOpen(false);
       setControlsTerminated(true);
     };
     if (controlAbortSignal.aborted) {
@@ -427,6 +729,29 @@ export function ClassroomMediaShell({
     return () =>
       controlAbortSignal.removeEventListener("abort", invalidateControls);
   }, [controlAbortSignal]);
+
+  useEffect(() => {
+    effectsController.activate();
+    return () => effectsController.deactivate();
+  }, [effectsController]);
+
+  useEffect(() => {
+    const publishing = canPublishCameraMicrophone && !controlsTerminated;
+    effectsController.update(
+      publishing && isProcessableVideoTrack(localCameraTrack)
+        ? localCameraTrack
+        : null,
+      isCameraEnabled,
+      publishing ? visualEffectsPlan : null,
+    );
+  }, [
+    canPublishCameraMicrophone,
+    controlsTerminated,
+    effectsController,
+    isCameraEnabled,
+    localCameraTrack,
+    visualEffectsPlan,
+  ]);
 
   useEffect(() => {
     const handleConnectionQuality = (quality: ConnectionQuality) => {
@@ -496,6 +821,9 @@ export function ClassroomMediaShell({
         ? (["screen-share"] as const)
         : []),
       ...(!controlsTerminated ? (["devices"] as const) : []),
+      ...(canPublishCameraMicrophone && !controlsTerminated
+        ? (["effects"] as const)
+        : []),
       ...(signals?.projection?.viewer_operations.can_raise_hand
         ? (["hand"] as const)
         : []),
@@ -971,6 +1299,34 @@ export function ClassroomMediaShell({
     }));
   };
 
+  const effectsActive = hasActiveVisualEffects(visualEffects);
+  const effectsName = t(visualEffectsSummaryKey(visualEffects));
+  const effectsLabel = effectsActive
+    ? t("media.fx.header", { name: effectsName })
+    : t("media.p405.effectsNone");
+  const effectsProblem =
+    effectsActive &&
+    (effectsStatus === "unsupported" ||
+      effectsStatus === "failed" ||
+      effectsStatus === "overloaded")
+      ? effectsStatus
+      : null;
+  const effectsAvailable = canPublishCameraMicrophone && !controlsTerminated;
+  const localCameraTrackRef = cameraTrackRefs.find(
+    (trackRef) => trackRef.participant.isLocal && isTrackReference(trackRef),
+  );
+
+  const chooseEffects = (next: ClassroomVisualEffectsState) => {
+    setEffectsChoice(next);
+    saveVisualEffectsPreference(effectsScope, next);
+  };
+
+  const toggleEffectsDrawer = (opener: HTMLElement) => {
+    if (!effectsAvailable) return;
+    effectsReturnFocus.current = opener;
+    setEffectsOpen((open) => !open);
+  };
+
   const rail = (
     <ParticipantRail
       attachedVideoItemIDs={attachedCameraVideoItemIDs}
@@ -989,7 +1345,9 @@ export function ClassroomMediaShell({
   return (
     <div
       aria-busy={connectionStatus === "connecting" || undefined}
-      className="media-p405-shell"
+      className={`media-p405-shell${
+        effectsOpen && effectsAvailable ? " media-p405-shell--effects-open" : ""
+      }`}
       ref={shellRef}
     >
       <header className="media-p405-header">
@@ -1006,7 +1364,25 @@ export function ClassroomMediaShell({
             {!canPublishCameraMicrophone && (
               <span>{t("media.room.listenOnly")}</span>
             )}
-            <span>{t("media.p405.effectsNone")}</span>
+            {canPublishCameraMicrophone ? (
+              <button
+                aria-expanded={effectsOpen && effectsAvailable}
+                aria-haspopup="dialog"
+                className={`media-p405-effects-badge${
+                  effectsActive ? " media-p405-effects-badge--on" : ""
+                }`}
+                disabled={controlsTerminated}
+                onClick={(event) => toggleEffectsDrawer(event.currentTarget)}
+                type="button"
+              >
+                <span>
+                  <Sparkles aria-hidden="true" />
+                  {effectsLabel}
+                </span>
+              </button>
+            ) : (
+              <span>{effectsLabel}</span>
+            )}
           </div>
           {moderation && (
             <ClassroomModerationControls
@@ -1393,6 +1769,31 @@ export function ClassroomMediaShell({
             <Settings2 />
           </IconButton>
 
+          {canPublishCameraMicrophone && (
+            <IconButton
+              aria-describedby={
+                effectsActive ? effectsDescriptionID : undefined
+              }
+              aria-expanded={effectsOpen && effectsAvailable}
+              aria-haspopup="dialog"
+              data-media-control="effects"
+              disabled={controlsTerminated}
+              id="media-p405-control-effects"
+              label={t("media.fx.openEffects")}
+              onClick={(event) => toggleEffectsDrawer(event.currentTarget)}
+              onFocus={() => setToolbarFocusKey("effects")}
+              tabIndex={toolbarTabIndex("effects")}
+              variant={effectsActive ? "primary" : "secondary"}
+            >
+              <Sparkles />
+            </IconButton>
+          )}
+          {canPublishCameraMicrophone && effectsActive && (
+            <span className="visually-hidden" id={effectsDescriptionID}>
+              {t("media.fx.activeDescription", { name: effectsName })}
+            </span>
+          )}
+
           {signals?.projection?.viewer_operations.can_raise_hand && (
             <IconButton
               aria-pressed={Boolean(selfHand)}
@@ -1603,6 +2004,71 @@ export function ClassroomMediaShell({
 
         <LeaveRoomDialog onLeave={handleLeave} />
       </footer>
+
+      {canPublishCameraMicrophone && (
+        // Non-modal side panel (Teams-style): no overlay, the whiteboard and
+        // camera grid stay interactive, and wide rooms reserve its width so
+        // it never covers the stage. Closing returns focus to its opener.
+        <Drawer
+          modal={false}
+          onOpenChange={setEffectsOpen}
+          open={effectsOpen && effectsAvailable}
+        >
+          <DrawerContent
+            aria-describedby={`${effectsDescriptionID}-drawer`}
+            className="media-p405-effects-drawer"
+            closeLabel={t("media.p405.close")}
+            data-theme="dark"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              effectsReturnFocus.current?.focus();
+            }}
+            onInteractOutside={(event) => event.preventDefault()}
+          >
+            <DrawerTitle className="media-p405-effects-drawer__title">
+              {t("media.fx.title")}
+            </DrawerTitle>
+            <DrawerDescription
+              className="media-p405-effects-drawer__description"
+              id={`${effectsDescriptionID}-drawer`}
+            >
+              {t("media.fx.drawerDescription")}
+            </DrawerDescription>
+            <div className="media-p405-effects-drawer__preview">
+              {isCameraEnabled &&
+              localCameraTrackRef &&
+              isTrackReference(localCameraTrackRef) ? (
+                <VideoTrack
+                  aria-label={t("media.fx.selfPreview")}
+                  manageSubscription={false}
+                  trackRef={localCameraTrackRef}
+                />
+              ) : (
+                <p>{t("media.fx.drawerCameraOff")}</p>
+              )}
+              {isCameraEnabled && effectsStatus === "loading" && (
+                <span className="media-p405-effects-drawer__badge">
+                  {t("media.fx.status.loading")}
+                </span>
+              )}
+            </div>
+            <p
+              aria-live="polite"
+              className="media-p405-effects-drawer__status"
+              role="status"
+            >
+              {effectsProblem ? t(`media.fx.status.${effectsProblem}`) : ""}
+            </p>
+            <VisualEffectsPicker
+              disabled={controlsTerminated}
+              library={backgroundLibrary}
+              onChange={chooseEffects}
+              surface="drawer"
+              value={visualEffects}
+            />
+          </DrawerContent>
+        </Drawer>
+      )}
 
       {devicePanelOpen && !controlsTerminated && (
         <DevicePanel

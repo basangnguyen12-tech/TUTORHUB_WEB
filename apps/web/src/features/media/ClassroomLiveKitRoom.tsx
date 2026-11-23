@@ -24,6 +24,7 @@ import {
   type ReactNode,
 } from "react";
 import { useI18n } from "../../app/i18n";
+import { useOptionalSession } from "../../app/session";
 import type {
   MediaInstanceCredentialProjection,
   MediaJoinChoices,
@@ -33,6 +34,7 @@ import {
   type ClassroomConnectionStatus,
   type ClassroomMediaShellProps,
   type ClassroomSignalControls,
+  type ClassroomVisualEffectsModel,
 } from "./ClassroomMediaShell";
 import type { ClassroomModerationControlsModel } from "./ClassroomModerationControls";
 
@@ -135,6 +137,22 @@ function ConnectedClassroomLiveKitRoom({
   const terminalCallbackFired = useRef(false);
   const lifecycleGeneration = useRef(0);
   const canPublishCameraMicrophone = credential.can_publish_camera_microphone;
+  // ADR-0041: the Pre-Join effects choice follows into the room; personal
+  // backgrounds stay scoped to this (tenant, user) on this device.
+  const session = useOptionalSession();
+  const effectsTenantId = session?.currentUser?.active_tenant?.id ?? "";
+  const effectsUserId = session?.currentUser?.user.id ?? "";
+  const [initialVisualEffects] = useState(() => choices.visualEffects);
+  const visualEffects = useMemo<ClassroomVisualEffectsModel>(
+    () => ({
+      initialState: initialVisualEffects,
+      scope:
+        effectsTenantId && effectsUserId
+          ? { tenantId: effectsTenantId, userId: effectsUserId }
+          : null,
+    }),
+    [effectsTenantId, effectsUserId, initialVisualEffects],
+  );
   const audioCaptureOptions = useMemo(
     () =>
       canPublishCameraMicrophone ? roomAudioCaptureOptions(choices) : false,
@@ -366,6 +384,7 @@ function ConnectedClassroomLiveKitRoom({
           moderation={moderation}
           signals={signals}
           tools={tools}
+          visualEffects={visualEffects}
           onLeave={handleLeave}
           onTerminalMediaCleanup={stopOwnedLocalTracks}
         />

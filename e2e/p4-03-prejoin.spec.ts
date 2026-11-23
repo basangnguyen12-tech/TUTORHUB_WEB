@@ -691,7 +691,7 @@ for (const viewport of [
       allowButton(page),
       deviceButton(page, "Microphone"),
       deviceButton(page, "Camera"),
-      page.getByRole("button", { name: "Noise suppression" }),
+      page.getByRole("button", { name: "Backgrounds and effects" }),
       page.getByRole("combobox", { name: "Speaker" }),
       page.getByRole("combobox", { name: "Audio mode" }),
       page.getByRole("textbox", { name: "Your Name" }),
@@ -788,4 +788,154 @@ test("PREJOIN-CLONE-04 reports zero Axe violations at forced colors on desktop",
     (await new AxeBuilder({ page }).include(".media-p403-page").analyze())
       .violations,
   ).toEqual([]);
+});
+
+// VIDEO-FX-01 (ADR-0041): Google Meet-style effects studio on Pre-Join.
+// Set VIDEO_FX_SCREENSHOT_DIR to save a reference screenshot for review.
+const fxScreenshotDir = process.env.VIDEO_FX_SCREENSHOT_DIR?.trim() ?? "";
+
+// 32x18 opaque PNG: real image bytes for the device-local upload path.
+const tinyPNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAASCAIAAAC1qksFAAADx0lEQVR4nBWUEbbFMABEu5zKk0rlSaVSqVQqlSeVSuRKJBKJRCKRSCQSiUQikS7rnz8bmDNn5s4w8n54J96Z98u78K68G+/Oe/CevBfvj/fmfXgFL7ySV/FqXsNreR2v5w28kTfxZt7CW3kbb+cdRvqHPtFn+pe+0Ff6Rt/pB/2kX/Qf/aY/dEGHLumKrumGbumO7umBHumJnumFXumN3unDSPvQJtpM+9IW2krbaDvtoJ20i/aj3bSHJmjQJE3RNM3QLM3RPC3QIi3RMq3QKq3ROm0YqR/qRJ2pX+pCXakbdace1JN6UX/Um/pQBRWqpCqqphqqpTqqpwZqpCZqphZqpTZqpw4j5UOZKDPlS1koK2Wj7JSDclIuyo9yUx6KoECRFEXRFEOxFEfxlECJlETJlEKplEbplGEkf8gTeSZ/yQt5JW/knXyQT/JF/pFv8kMWZMiSrMiabMiW7MieHMiRnMiZXMiV3MidPIykD2kizaQvaSGtpI20kw7SSbpIP9JNekiCBEmSFEmTDMmSHMmTAimSEimTCqmSGqmThpH4IU7EmfglLsSVuBF34kE8iRfxR7yJD1EQIUqiImqiIVqiI3piIEZiImZiIVZiI3biMBI+hIkwE76EhbASNsJOOAgn4SL8CDfhIQgCBElQBE0wBEtwBE8IhEhIhEwohEpohE4YRvwHP+Fn/Be/4Ff8ht/xB/7EX/gf/sY/eIEHL/EKr/EGb/EO7/EBH/EJn/EFX/EN3/HDiPvgJtyM++IW3IrbcDvuwJ24C/fD3bgHJ3DgJE7hNM7gLM7hPC7gIi7hMq7gKq7hOm4YsR/shJ2xX+yCXbEbdsce2BN7YX/YG/tgBRasxCqsxhqsxTqsxwZsxCZsxhZsxTZsxw4j5oOZMDPmi1kwK2bD7JgDc2IuzA9zYx6MwICRGIXRGIOxGIfxmICJmITJmIKpmIbpmGFEf9ATekZ/0Qt6RW/oHX2gT/SF/qFv9IMWaNASrdAabdAW7dAeHdARndAZXdAV3dAdPYyoD2pCzagvakGtqA21ow7UibpQP9SNelACBUqiFEqjDMqiHMqjAiqiEiqjCqqiGqqjhhH5QU7IGflFLsgVuSF35IE8kRfyh7yRD1IgQUqkQmqkQVqkQ3pkQEZkQmZkQVZkQ3bkMMIHJpjhCwussMEOB5xwwQ9ueEDwL8l/EM1/IZb/YXn+AYn8g575P6zK//F2GEbEBzEhZsQXsSBWxIbYEQfiRFyIH+JGPAjxbyEkQiE0wiAswiE8IiAiIiEyoiAqoiE64g+q1HjuXVQAyAAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+test("VIDEO-FX-01 opens the effects studio, records a background without capturing and passes Axe", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const observed = await installApiMocks(page, "admitted");
+  await openEnglishPrejoin(page);
+
+  const trigger = page.getByRole("button", { name: "Backgrounds and effects" });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const studio = page.getByRole("dialog", { name: "Backgrounds and effects" });
+  await expect(studio).toBeVisible();
+
+  // Two columns: the 16:9 preview on the left, the picker on the right.
+  const studioBox = await studio.boundingBox();
+  expect(studioBox!.width).toBeLessThanOrEqual(920);
+  expect(
+    await studio.evaluate((element) => getComputedStyle(element).borderRadius),
+  ).toBe("24px");
+  const preview = await studio.locator(".media-p403-fx-preview").boundingBox();
+  const side = await studio.locator(".media-p403-fx-side").boundingBox();
+  expect(Math.abs(preview!.width / preview!.height - 16 / 9)).toBeLessThan(
+    0.02,
+  );
+  expect(side!.x).toBeGreaterThan(preview!.x + preview!.width);
+  expect(preview!.width / (preview!.width + side!.width)).toBeGreaterThan(0.55);
+  await expect(
+    studio.getByRole("button", { name: "Turn on camera to preview" }),
+  ).toBeVisible();
+
+  const library = studio.getByRole("button", { name: "Library" });
+  await library.click();
+  await expect(library).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    studio.getByRole("button", { name: "Turn off all effects" }),
+  ).toBeVisible();
+
+  // A personal image is decoded, re-encoded and kept on this device only.
+  await studio.getByTestId("vfx-upload-input").setInputFiles({
+    name: "classroom.png",
+    mimeType: "image/png",
+    buffer: tinyPNG,
+  });
+  const personal = studio.getByRole("button", {
+    name: "Your image 1",
+    exact: true,
+  });
+  await expect(personal).toHaveAttribute("aria-pressed", "true");
+  await studio.getByRole("button", { name: "Remove your image 1" }).click();
+  await expect(personal).toHaveCount(0);
+  await expect(studio.getByRole("button", { name: "None" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await library.click();
+
+  await studio.getByRole("tab", { name: "Lighting" }).click();
+  await studio.getByText("Low-light boost").click();
+  await expect(
+    studio.getByRole("radio", { name: "Low-light boost" }),
+  ).toBeChecked();
+  await studio.getByRole("tab", { name: "Backgrounds" }).click();
+
+  expect(await readMediaProbe(page)).toEqual({
+    enumerateDevicesCalls: 0,
+    getUserMediaCalls: 0,
+    stoppedTracks: 0,
+  });
+  expect(observed.order).toEqual([]);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p403-fx-dialog").analyze())
+      .violations,
+  ).toEqual([]);
+  if (fxScreenshotDir) {
+    await page.screenshot({
+      path: `${fxScreenshotDir}/prejoin-effects-modal.png`,
+    });
+  }
+
+  await page.keyboard.press("Escape");
+  await expect(studio).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(trigger).toHaveClass(/media-p403-round--effects-on/);
+
+  // Only the explicit preview button opens the camera, and only the camera.
+  await trigger.click();
+  await studio
+    .getByRole("button", { name: "Turn on camera to preview" })
+    .click();
+  await expect
+    .poll(async () => readMediaProbe(page))
+    .toMatchObject({ getUserMediaCalls: 1 });
+  await expect(
+    studio.getByRole("button", { name: "Turn on camera to preview" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(studio).toHaveCount(0);
+  await expect(deviceButton(page, "Camera")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(deviceButton(page, "Microphone")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+});
+
+test("VIDEO-FX-01 keeps the effects studio usable at 320 CSS pixels with forced colors", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await installApiMocks(page, "admitted");
+  await openEnglishPrejoin(page);
+
+  await page.getByRole("button", { name: "Backgrounds and effects" }).click();
+  const studio = page.getByRole("dialog", { name: "Backgrounds and effects" });
+  await expect(studio).toBeVisible();
+  await studio.getByRole("button", { name: "Strong blur" }).click();
+  await expect(
+    studio.getByRole("button", { name: "Strong blur" }),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p403-fx-dialog").analyze())
+      .violations,
+  ).toEqual([]);
+  expect(await readMediaProbe(page)).toEqual({
+    enumerateDevicesCalls: 0,
+    getUserMediaCalls: 0,
+    stoppedTracks: 0,
+  });
 });

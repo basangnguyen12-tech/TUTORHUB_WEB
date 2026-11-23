@@ -1,0 +1,4 @@
+# Keep vendored WASM loaders, models, and binary assets byte-exact across OS checkouts
+apps/web/public/vendor/** -text
+*.wasm binary
+*.tflite binary

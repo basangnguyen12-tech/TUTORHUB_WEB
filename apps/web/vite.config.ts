@@ -10,6 +10,17 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             {
+              // ADR-0041: the visual effects pipeline (track processors and
+              // the MediaPipe tasks runtime) stays in its own chunk, loaded
+              // only through import() once an effect is enabled on a live
+              // camera, so neither the LiveKit chunk nor the Pre-Join chunk
+              // grows.
+              name: "media-effects",
+              test: /node_modules[\\/](?:@livekit[\\/]track-processors|@mediapipe[\\/]tasks-vision)[\\/]/,
+              priority: 110,
+              includeDependenciesRecursively: false,
+            },
+            {
               name: "livekit",
               test: /node_modules[\\/](?:@livekit|livekit-client)[\\/]/,
               priority: 100,

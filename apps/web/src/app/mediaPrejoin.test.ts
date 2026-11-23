@@ -1,14 +1,21 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   clearMediaRoomEscrow,
+  clearVisualEffectsDeviceStorage,
   finalizeMediaRoomEscrowClaim,
   mediaPrejoinErrorCode,
   MediaPrejoinController,
+  NO_VISUAL_EFFECTS,
   probeMediaNetwork,
   putMediaRoomEscrow,
   takeMediaRoomEscrow,
   type MediaRoomEscrowValue,
 } from "./mediaPrejoin";
+import type {
+  ClassroomVisualEffectsState,
+  MediaVisualEffectsRuntime,
+  VisualEffectsRenderPlan,
+} from "./visualEffects";
 
 function fakeTrack(kind: "audio" | "video", settings: MediaTrackSettings = {}) {
   return {
@@ -712,6 +719,7 @@ describe("media prejoin privacy and bounded failures", () => {
         videoDeviceId: "",
         speakerDeviceId: "speaker-a",
         audioMode: "speech",
+        visualEffects: NO_VISUAL_EFFECTS,
       },
     };
     putMediaRoomEscrow(value);
@@ -750,5 +758,261 @@ describe("media prejoin privacy and bounded failures", () => {
       probeMediaNetwork({ fetch: fetchMock, online: false }),
     ).resolves.toEqual({ status: "offline", latency: "unknown" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MediaPrejoinController visual effects (ADR-0041)", () => {
+  const lightingPlan: VisualEffectsRenderPlan = {
+    mode: "lighting",
+    lighting: { brightness: "low_light", tone: "natural" },
+  };
+  const blurPlan: VisualEffectsRenderPlan = {
+    mode: "background",
+    background: { kind: "blur", blurRadius: 8 },
+    lighting: { brightness: "normal", tone: "natural" },
+  };
+  const lightingState: ClassroomVisualEffectsState = {
+    background: { kind: "none" },
+    lighting: { brightness: "low_light", tone: "natural" },
+  };
+
+  interface FakeHandle {
+    mode: "lighting" | "background";
+    stream: MediaStream;
+    apply: Mock<(plan: VisualEffectsRenderPlan) => Promise<boolean>>;
+    destroy: Mock<() => Promise<void>>;
+    onOverload?: () => void;
+    track: MediaStreamTrack;
+  }
+
+  function fakeRuntime(supported = true) {
+    const handles: FakeHandle[] = [];
+    const runtime: MediaVisualEffectsRuntime = {
+      supportsVisualEffects: vi.fn(() => supported),
+      startStandaloneVisualEffects: vi.fn(async (track, plan, options) => {
+        const handle: FakeHandle = {
+          mode: plan.mode,
+          stream: {
+            id: "processed-" + String(handles.length),
+          } as unknown as MediaStream,
+          apply: vi.fn(
+            async (next: VisualEffectsRenderPlan) => next.mode === plan.mode,
+          ),
+          destroy: vi.fn(async () => undefined),
+          onOverload: options?.onOverload,
+          track,
+        };
+        handles.push(handle);
+        return handle;
+      }),
+    };
+    return { handles, runtime };
+  }
+
+  function effectsController(
+    mediaDevices: FakeMediaDevices,
+    runtime: MediaVisualEffectsRuntime | null,
+  ) {
+    return new MediaPrejoinController({
+      mediaDevices: mediaDevices as unknown as MediaDevices,
+      createAudioContext: () => null,
+      requestFrame: () => 1,
+      cancelFrame: () => undefined,
+      loadVisualEffects: runtime ? async () => runtime : null,
+    });
+  }
+
+  function previewElement() {
+    return {
+      muted: false,
+      srcObject: null as MediaStream | null,
+      play: vi.fn(async () => undefined),
+    } as unknown as HTMLVideoElement;
+  }
+
+  async function settle() {
+    for (let index = 0; index < 12; index += 1) {
+      await Promise.resolve();
+    }
+  }
+
+  it("only records a choice while the camera is off and never opens hardware", async () => {
+    const mediaDevices = new FakeMediaDevices();
+    const { runtime } = fakeRuntime();
+    const controller = effectsController(mediaDevices, runtime);
+    controller.setVisualEffects(lightingState, lightingPlan);
+    await settle();
+
+    expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(mediaDevices.enumerateDevices).not.toHaveBeenCalled();
+    expect(runtime.startStandaloneVisualEffects).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().effectsStatus).toBe("off");
+    expect(controller.choices().visualEffects).toEqual(lightingState);
+    expect(controller.choices(true).visualEffects).toEqual(NO_VISUAL_EFFECTS);
+  });
+
+  it("runs on the explicit camera, feeds every preview and tears down with the camera", async () => {
+    const mediaDevices = new FakeMediaDevices();
+    const video = fakeTrack("video");
+    const rawStream = fakeStream(fakeTrack("audio"), video);
+    mediaDevices.getUserMedia.mockResolvedValue(rawStream);
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+    const { handles, runtime } = fakeRuntime();
+    const controller = effectsController(mediaDevices, runtime);
+    const main = previewElement();
+    const studio = previewElement();
+    controller.attachPreview(main);
+    controller.attachPreview(studio, "effects");
+    controller.setVisualEffects(lightingState, lightingPlan);
+
+    await controller.toggleCamera();
+    await vi.waitFor(() =>
+      expect(controller.getSnapshot().effectsStatus).toBe("active"),
+    );
+    expect(mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: false,
+      video: {},
+    });
+    expect(runtime.startStandaloneVisualEffects).toHaveBeenCalledWith(
+      video,
+      lightingPlan,
+      expect.objectContaining({ onOverload: expect.any(Function) }),
+    );
+    expect(main.srcObject).toBe(handles[0]?.stream);
+    expect(studio.srcObject).toBe(handles[0]?.stream);
+
+    // Same mode: applied in place, no second pipeline.
+    controller.setVisualEffects(lightingState, {
+      mode: "lighting",
+      lighting: { brightness: "studio_bright", tone: "warm" },
+    });
+    await settle();
+    expect(handles[0]?.apply).toHaveBeenCalledTimes(1);
+    expect(runtime.startStandaloneVisualEffects).toHaveBeenCalledTimes(1);
+
+    // Mode change: a new pipeline replaces the old one.
+    controller.setVisualEffects(
+      { ...lightingState, background: { kind: "blur", strength: "light" } },
+      blurPlan,
+    );
+    await vi.waitFor(() => expect(handles).toHaveLength(2));
+    expect(handles[0]?.destroy).toHaveBeenCalledTimes(1);
+
+    await controller.toggleCamera();
+    await settle();
+    expect(handles[1]?.destroy).toHaveBeenCalled();
+    expect(main.srcObject).toBeNull();
+    expect(controller.getSnapshot().effectsStatus).toBe("off");
+    expect(video.stop).toHaveBeenCalled();
+  });
+
+  it("falls back to the raw camera when unsupported or overloaded", async () => {
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+
+    const firstStream = fakeStream();
+    mediaDevices.getUserMedia.mockResolvedValueOnce(firstStream);
+    const unsupported = fakeRuntime(false);
+    const first = effectsController(mediaDevices, unsupported.runtime);
+    const firstPreview = previewElement();
+    first.attachPreview(firstPreview);
+    first.setVisualEffects(lightingState, lightingPlan);
+    await first.toggleCamera();
+    await vi.waitFor(() =>
+      expect(first.getSnapshot().effectsStatus).toBe("unsupported"),
+    );
+    expect(
+      unsupported.runtime.startStandaloneVisualEffects,
+    ).not.toHaveBeenCalled();
+    expect(firstPreview.srcObject).toBe(firstStream);
+
+    const secondStream = fakeStream();
+    mediaDevices.getUserMedia.mockResolvedValueOnce(secondStream);
+    const working = fakeRuntime();
+    const second = effectsController(mediaDevices, working.runtime);
+    const secondPreview = previewElement();
+    second.attachPreview(secondPreview);
+    second.setVisualEffects(lightingState, lightingPlan);
+    await second.toggleCamera();
+    await vi.waitFor(() =>
+      expect(second.getSnapshot().effectsStatus).toBe("active"),
+    );
+    working.handles[0]?.onOverload?.();
+    await vi.waitFor(() =>
+      expect(second.getSnapshot().effectsStatus).toBe("overloaded"),
+    );
+    await vi.waitFor(() =>
+      expect(working.handles[0]?.destroy).toHaveBeenCalled(),
+    );
+    expect(secondPreview.srcObject).toBe(secondStream);
+    // No automatic retry in the same incident.
+    await settle();
+    expect(working.runtime.startStandaloneVisualEffects).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it("releases the pipeline on stop and dispose, and reports a missing runtime", async () => {
+    const mediaDevices = new FakeMediaDevices();
+    mediaDevices.getUserMedia.mockResolvedValue(fakeStream());
+    mediaDevices.enumerateDevices.mockResolvedValue([]);
+    const { handles, runtime } = fakeRuntime();
+    const controller = effectsController(mediaDevices, runtime);
+    controller.setVisualEffects(lightingState, lightingPlan);
+    await controller.startPreview();
+    await vi.waitFor(() => expect(handles).toHaveLength(1));
+    await controller.stopPreview();
+    expect(handles[0]?.destroy).toHaveBeenCalled();
+    await controller.dispose();
+
+    const withoutRuntime = effectsController(mediaDevices, null);
+    withoutRuntime.setVisualEffects(lightingState, lightingPlan);
+    await withoutRuntime.toggleCamera();
+    await vi.waitFor(() =>
+      expect(withoutRuntime.getSnapshot().effectsStatus).toBe("unsupported"),
+    );
+  });
+
+  it("clears every stored effect preference and the personal background database", async () => {
+    const storage = new Map<string, string>([
+      ["tutorhub.visual-effects.v1:tenant-a:user-a", "{}"],
+      ["tutorhub.visual-effects.v1:tenant-b:user-b", "{}"],
+      ["unrelated", "keep"],
+    ]);
+    const fakeStorage = {
+      get length() {
+        return storage.size;
+      },
+      key: (index: number) => [...storage.keys()][index] ?? null,
+      removeItem: (key: string) => storage.delete(key),
+    } as unknown as Storage;
+    const request = {} as IDBOpenDBRequest;
+    const databases = {
+      deleteDatabase: vi.fn(() => request),
+    } as unknown as IDBFactory;
+    const cleared = clearVisualEffectsDeviceStorage({
+      storage: fakeStorage,
+      databases,
+    });
+    request.onblocked?.call(
+      request,
+      new Event("blocked") as IDBVersionChangeEvent,
+    );
+    await cleared;
+    expect([...storage.keys()]).toEqual(["unrelated"]);
+    expect(databases.deleteDatabase).toHaveBeenCalledWith(
+      "tutorhub-visual-effects",
+    );
+
+    vi.useFakeTimers();
+    const stalled = clearVisualEffectsDeviceStorage({
+      storage: null,
+      databases: {
+        deleteDatabase: vi.fn(() => ({})),
+      } as unknown as IDBFactory,
+      timeoutMs: 50,
+    });
+    await vi.advanceTimersByTimeAsync(60);
+    await expect(stalled).resolves.toBeUndefined();
   });
 });

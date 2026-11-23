@@ -12,6 +12,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import {
   Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
   Menu,
   MenuContent,
   MenuItem,
@@ -24,7 +28,7 @@ import {
 import {
   AlertTriangle,
   EllipsisVertical,
-  Grip,
+  Layers,
   Mic,
   MicOff,
   PowerOff,
@@ -55,6 +59,7 @@ import { isAllowedLiveKitServerURL } from "../app/media";
 import {
   clearMediaRoomEscrow,
   MediaPrejoinController,
+  NO_VISUAL_EFFECTS,
   probeMediaNetwork,
   putMediaRoomEscrow,
   type MediaAudioMode,
@@ -76,6 +81,21 @@ import {
   recordBoundedMediaDiagnostic,
 } from "../app/mediaDiagnostics";
 import { MediaSpaceInvitePanel } from "../components/MediaSpaceInvitePanel";
+import { VisualEffectsPicker } from "../components/VisualEffectsPicker";
+import {
+  DEFAULT_VISUAL_EFFECTS,
+  effectiveVisualEffects,
+  hasActiveVisualEffects,
+  loadVisualEffectsPreference,
+  resolveVisualEffectsPlan,
+  saveVisualEffectsPreference,
+  useCustomBackgrounds,
+  visualEffectsScopeKey,
+  visualEffectsSummaryKey,
+  type ClassroomVisualEffectsState,
+  type MediaVisualEffectsRuntime,
+  type VisualEffectsScope,
+} from "../app/visualEffects";
 import { SignInLegalDialog } from "./SignInLegalDialog";
 import type { SignInLegalTab } from "./signInLegalContent";
 import "./SignInPage.css";
@@ -130,7 +150,15 @@ const unsupportedSnapshot: MediaPrejoinSnapshot = {
   errorCode: "media_capture_unsupported_or_policy_blocked",
   announcement: "",
   speakerTestStatus: "unsupported",
+  effectsStatus: "off",
 };
+
+/** ADR-0041: the effects pipeline is only fetched once an effect runs. */
+function loadVisualEffectsRuntime(): Promise<MediaVisualEffectsRuntime> {
+  return import("../features/media/visualEffectsProcessor").then(
+    (module) => module.visualEffectsRuntime,
+  );
+}
 
 export function MediaSpacePreJoinPage() {
   const { spaceId } = useParams();
@@ -196,7 +224,9 @@ export function MediaSpacePreJoinPage() {
     if (!supported || !spaceId || !tenantId || !userId) {
       return null;
     }
-    return new MediaPrejoinController();
+    return new MediaPrejoinController({
+      loadVisualEffects: loadVisualEffectsRuntime,
+    });
   }, [spaceId, supported, tenantId, userId]);
   const snapshot = useSyncExternalStore(
     controller?.subscribe ?? emptySubscribe,
@@ -212,6 +242,56 @@ export function MediaSpacePreJoinPage() {
     (element: HTMLVideoElement | null) => controller?.attachPreview(element),
     [controller],
   );
+  const attachEffectsPreview = useCallback(
+    (element: HTMLVideoElement | null) =>
+      controller?.attachPreview(element, "effects"),
+    [controller],
+  );
+
+  // ADR-0041 visual effects: a per-(tenant, user) choice that never opens the
+  // camera by itself. It follows the viewer into the classroom.
+  const effectsScope = useMemo<VisualEffectsScope | null>(
+    () => (tenantId && userId ? { tenantId, userId } : null),
+    [tenantId, userId],
+  );
+  const effectsScopeKey = effectsScope
+    ? visualEffectsScopeKey(effectsScope)
+    : "";
+  const [effectsChoice, setEffectsChoice] = useState(() => ({
+    scopeKey: effectsScopeKey,
+    state: loadVisualEffectsPreference(effectsScope),
+  }));
+  let chosenEffects = effectsChoice.state;
+  if (effectsChoice.scopeKey !== effectsScopeKey) {
+    // Another workspace or account: restore that principal's own choice.
+    const restored = {
+      scopeKey: effectsScopeKey,
+      state: loadVisualEffectsPreference(effectsScope),
+    };
+    setEffectsChoice(restored);
+    chosenEffects = restored.state;
+  }
+  const backgroundLibrary = useCustomBackgrounds(effectsScope);
+  const libraryStatus = backgroundLibrary.status;
+  const libraryUrlFor = backgroundLibrary.urlFor;
+  const visualEffects = useMemo(
+    () =>
+      effectiveVisualEffects(chosenEffects, {
+        status: libraryStatus,
+        urlFor: libraryUrlFor,
+      }),
+    [chosenEffects, libraryStatus, libraryUrlFor],
+  );
+  const visualEffectsPlan = useMemo(
+    () => resolveVisualEffectsPlan(visualEffects, libraryUrlFor),
+    [libraryUrlFor, visualEffects],
+  );
+  const [effectsOpen, setEffectsOpen] = useState(false);
+  const effectsDescriptionId = useId();
+
+  useEffect(() => {
+    controller?.setVisualEffects(visualEffects, visualEffectsPlan);
+  }, [controller, visualEffects, visualEffectsPlan]);
 
   // "Allow microphone and camera" leaves the frame once access is granted;
   // keep keyboard focus on the camera button that now sits in its place.
@@ -361,6 +441,9 @@ export function MediaSpacePreJoinPage() {
         mediaPath: mediaDiagnosticPath(choices),
         durationMS: performance.now() - credentialStartedAt,
       });
+      // Effects may change while waiting for admission; hand over the latest.
+      const latestEffects =
+        controller?.choices(false).visualEffects ?? choices.visualEffects;
       await controller?.stopPreview();
       const effectiveChoices = {
         ...choices,
@@ -368,6 +451,9 @@ export function MediaSpacePreJoinPage() {
           choices.audioEnabled && credential.can_publish_camera_microphone,
         videoEnabled:
           choices.videoEnabled && credential.can_publish_camera_microphone,
+        visualEffects: credential.can_publish_camera_microphone
+          ? latestEffects
+          : NO_VISUAL_EFFECTS,
       };
       putMediaRoomEscrow({
         scope: {
@@ -840,6 +926,28 @@ export function MediaSpacePreJoinPage() {
         ? "terminal"
         : "actions";
   const speakerPlaying = snapshot.speakerTestStatus === "playing";
+  const effectsActive = hasActiveVisualEffects(visualEffects);
+  const effectsName = t(visualEffectsSummaryKey(visualEffects));
+  const effectsProblem =
+    effectsActive &&
+    (snapshot.effectsStatus === "unsupported" ||
+      snapshot.effectsStatus === "failed" ||
+      snapshot.effectsStatus === "overloaded")
+      ? snapshot.effectsStatus
+      : null;
+
+  const chooseEffects = (next: ClassroomVisualEffectsState) => {
+    setEffectsChoice({ scopeKey: effectsScopeKey, state: next });
+    saveVisualEffectsPreference(effectsScope, next);
+  };
+
+  // The only path from the effects studio to the camera: an explicit press.
+  const turnOnCameraForPreview = () => {
+    if (!controller || deviceControlsLocked || snapshot.videoEnabled) {
+      return;
+    }
+    void controller.toggleCamera();
+  };
 
   const joinNow = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -894,6 +1002,11 @@ export function MediaSpacePreJoinPage() {
       )}
       {networkStatus === "offline" && (
         <InlineAlert>{t("media.p403.network.offline")}</InlineAlert>
+      )}
+      {effectsProblem && (
+        <p className="media-p403-fx-notice" role="status">
+          {t(`media.fx.status.${effectsProblem}`)}
+        </p>
       )}
     </>
   );
@@ -1015,23 +1128,117 @@ export function MediaSpacePreJoinPage() {
                 ref={cameraToggle}
                 state={cameraState}
               />
-              <button
-                aria-disabled={joinActionLocked || undefined}
-                aria-label={t("media.p403.noiseSuppression")}
-                aria-pressed={snapshot.audioMode === "speech"}
-                className="media-p403-round media-p403-round--effects"
-                onClick={() =>
-                  setAudioMode(
-                    snapshot.audioMode === "speech"
-                      ? "original_sound"
-                      : "speech",
-                  )
-                }
-                title={t("media.p403.noiseSuppression")}
-                type="button"
-              >
-                <Grip aria-hidden="true" />
-              </button>
+              <Dialog onOpenChange={setEffectsOpen} open={effectsOpen}>
+                <DialogTrigger asChild>
+                  <button
+                    aria-describedby={
+                      effectsActive ? effectsDescriptionId : undefined
+                    }
+                    aria-label={t("media.fx.openEffects")}
+                    className={`media-p403-round media-p403-round--effects${
+                      effectsActive ? " media-p403-round--effects-on" : ""
+                    }`}
+                    title={t("media.fx.openEffects")}
+                    type="button"
+                  >
+                    <Sparkles aria-hidden="true" />
+                    {effectsActive && (
+                      <span
+                        aria-hidden="true"
+                        className="media-p403-round__dot"
+                      />
+                    )}
+                  </button>
+                </DialogTrigger>
+                <DialogContent
+                  aria-describedby={undefined}
+                  className="media-p403-fx-dialog"
+                  closeLabel={t("media.fx.close")}
+                >
+                  <DialogTitle className="media-p403-fx-dialog__title">
+                    {t("media.fx.title")}
+                  </DialogTitle>
+                  <div className="media-p403-fx-dialog__body">
+                    <div className="media-p403-fx-stage">
+                      <div
+                        className={[
+                          "media-p403-fx-preview",
+                          showVideo && "media-p403-fx-preview--video",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        <video
+                          aria-label={t("media.fx.previewLabel")}
+                          autoPlay
+                          muted
+                          playsInline
+                          ref={attachEffectsPreview}
+                        />
+                        {!showVideo && (
+                          <div className="media-p403-fx-preview__off">
+                            <p>{t("media.fx.cameraOff")}</p>
+                            <button
+                              aria-disabled={
+                                !controller || deviceControlsLocked || undefined
+                              }
+                              className="media-p403-fx-preview__camera"
+                              onClick={turnOnCameraForPreview}
+                              type="button"
+                            >
+                              <Video aria-hidden="true" />
+                              {t("media.fx.turnOnCamera")}
+                            </button>
+                          </div>
+                        )}
+                        {showVideo && snapshot.effectsStatus === "loading" && (
+                          <p className="media-p403-fx-preview__badge">
+                            {t("media.fx.status.loading")}
+                          </p>
+                        )}
+                        {effectsActive && (
+                          <button
+                            aria-label={t("media.fx.resetAll")}
+                            className="media-p403-fx-preview__reset"
+                            onClick={() =>
+                              chooseEffects(DEFAULT_VISUAL_EFFECTS)
+                            }
+                            title={t("media.fx.resetAll")}
+                            type="button"
+                          >
+                            <Layers aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                      <p
+                        aria-live="polite"
+                        className="media-p403-fx-status"
+                        role="status"
+                      >
+                        {effectsProblem
+                          ? t(`media.fx.status.${effectsProblem}`)
+                          : ""}
+                      </p>
+                      <p className="media-p403-fx-hint">
+                        {t("media.fx.onDeviceHint")}
+                      </p>
+                    </div>
+                    <div className="media-p403-fx-side">
+                      <VisualEffectsPicker
+                        library={backgroundLibrary}
+                        onChange={chooseEffects}
+                        surface="modal"
+                        value={visualEffects}
+                      />
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              {effectsActive && (
+                <span className="visually-hidden" id={effectsDescriptionId}>
+                  {t("media.fx.activeDescription", { name: effectsName })}
+                </span>
+              )}
               {!snapshot.permissionGranted && (
                 <span className="visually-hidden" id={permissionHintId}>
                   {t("media.p403.permissionHint")}
@@ -1645,6 +1852,7 @@ function listenOnlyChoices(): MediaJoinChoices {
     videoDeviceId: "",
     speakerDeviceId: "",
     audioMode: "speech",
+    visualEffects: NO_VISUAL_EFFECTS,
   };
 }
 

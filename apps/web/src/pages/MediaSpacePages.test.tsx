@@ -30,6 +30,7 @@ import { I18nProvider } from "../app/i18n";
 import {
   clearMediaRoomEscrow,
   finalizeMediaRoomEscrowClaim,
+  NO_VISUAL_EFFECTS,
   putMediaRoomEscrow,
   takeMediaRoomEscrow,
   type MediaInstanceCredentialProjection,
@@ -89,6 +90,38 @@ const liveKitMocks = vi.hoisted(() => {
     unpublishTrack,
   };
 });
+
+const effectsRuntime = vi.hoisted(() => {
+  const started: Array<{
+    stream: MediaStream;
+    destroy: ReturnType<typeof vi.fn>;
+  }> = [];
+  const runtime = {
+    supportsVisualEffects: vi.fn(() => true),
+    startStandaloneVisualEffects: vi.fn(
+      async (
+        _track: MediaStreamTrack,
+        plan: { mode: "lighting" | "background" },
+      ) => {
+        const handle = {
+          mode: plan.mode,
+          stream: { id: "processed-preview" } as unknown as MediaStream,
+          apply: vi.fn(
+            async (next: { mode: string }) => next.mode === plan.mode,
+          ),
+          destroy: vi.fn(async () => undefined),
+        };
+        started.push(handle);
+        return handle;
+      },
+    ),
+  };
+  return { runtime, started };
+});
+
+vi.mock("../features/media/visualEffectsProcessor", () => ({
+  visualEffectsRuntime: effectsRuntime.runtime,
+}));
 
 vi.mock("@tutorhub/api-client", async (importOriginal) => {
   const original =
@@ -599,7 +632,7 @@ function putCanonicalRoomEscrow(
       expires_at: "2030-08-03T00:05:00Z",
       ...credentialOverrides,
     },
-    choices,
+    choices: { ...choices, visualEffects: NO_VISUAL_EFFECTS },
   });
 }
 
@@ -899,9 +932,12 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     expect(
       within(controls).getByRole("button", { name: "Camera" }),
     ).toHaveAttribute("aria-pressed", "false");
-    expect(
-      within(controls).getByRole("button", { name: "Noise suppression" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    // ADR-0041: the third circle opens Backgrounds and effects.
+    const effects = within(controls).getByRole("button", {
+      name: "Backgrounds and effects",
+    });
+    expect(effects).toHaveAttribute("aria-haspopup", "dialog");
+    expect(effects).not.toHaveAttribute("aria-pressed");
 
     // Four disabled "Permission needed" pills; nothing is enumerated yet.
     const pills = screen.getByRole("group", { name: "Devices" });
@@ -1095,9 +1131,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
       },
       video: false,
     });
-    expect(
-      screen.getByRole("button", { name: "Noise suppression" }),
-    ).toHaveAttribute("aria-pressed", "false");
+    expect(audioMode).toHaveValue("original_sound");
   });
 
   it("does not capture media or create a join attempt during initial render", async () => {
@@ -1280,11 +1314,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     fireEvent.click(
       within(menu).getByRole("menuitemradio", { name: "Original sound" }),
     );
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Noise suppression" }),
-      ).toHaveAttribute("aria-pressed", "false"),
-    );
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
     // Neither the speaker test nor the audio profile opens a device.
     expect(media.getUserMedia).not.toHaveBeenCalled();
     expect(media.enumerateDevices).not.toHaveBeenCalled();
@@ -2579,3 +2609,208 @@ function createDeferred<T>() {
 function createMockLocalTrack(): MockLocalTrack {
   return { detach: vi.fn(), stop: vi.fn() };
 }
+
+describe("MediaSpacePreJoinPage ADR-0041 effects studio", () => {
+  beforeEach(() => {
+    clearMediaRoomEscrow();
+    localStorage.clear();
+    effectsRuntime.started.length = 0;
+    vi.mocked(effectsRuntime.runtime.startStandaloneVisualEffects).mockClear();
+    apiMocks.getMediaSpace.mockResolvedValue(mediaSpace);
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithWhiteboard(false),
+    );
+    apiMocks.rotateCSRFToken.mockResolvedValue({ csrf_token: "media-csrf" });
+    apiMocks.getCurrentCSRF.mockReturnValue("media-csrf");
+    apiMocks.recordDiagnostic.mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(
+      () => undefined,
+    );
+  });
+
+  afterEach(async () => {
+    cleanup();
+    await Promise.resolve();
+    clearMediaRoomEscrow();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    apiMocks.createJoinAttempt.mockReset();
+    apiMocks.issueJoinCredential.mockReset();
+    apiMocks.getMediaSpace.mockReset();
+  });
+
+  it("opens a two-column studio and records a choice without opening the camera", async () => {
+    const media = fakeMediaDevices(fakeStream().stream);
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Enter Meeting" });
+    const trigger = screen.getByRole("button", {
+      name: "Backgrounds and effects",
+    });
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    fireEvent.click(trigger);
+
+    const studio = await screen.findByRole("dialog", {
+      name: "Backgrounds and effects",
+    });
+    expect(
+      within(studio).getByText(
+        "Your camera is off. You can still pick an effect; the camera only turns on when you ask.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(studio).getByRole("button", { name: "Turn on camera to preview" }),
+    ).toBeInTheDocument();
+    expect(
+      within(studio).getByLabelText("Effects preview"),
+    ).toBeInTheDocument();
+    expect(
+      within(studio).getByRole("tab", { name: "Backgrounds" }),
+    ).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(within(studio).getByRole("button", { name: "Library" }));
+    expect(
+      within(studio).getByRole("button", { name: "Library" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(studio).getByRole("button", { name: "Turn off all effects" }),
+    ).toBeInTheDocument();
+    // A choice alone never opens hardware.
+    expect(media.getUserMedia).not.toHaveBeenCalled();
+    expect(media.enumerateDevices).not.toHaveBeenCalled();
+    expect(
+      effectsRuntime.runtime.startStandaloneVisualEffects,
+    ).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(studio, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveClass("media-p403-round--effects-on");
+    expect(trigger).toHaveAccessibleDescription("On: Library");
+    // Remembered per (tenant, user) for the next class.
+    expect(JSON.stringify(Object.entries(localStorage))).toContain(
+      "academic-library",
+    );
+  });
+
+  it("starts the camera only from the explicit preview button and previews the effect", async () => {
+    const capture = fakeStream();
+    const media = fakeMediaDevices(capture.stream);
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Enter Meeting" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Backgrounds and effects" }),
+    );
+    const studio = await screen.findByRole("dialog", {
+      name: "Backgrounds and effects",
+    });
+    fireEvent.click(
+      within(studio).getByRole("button", { name: "Slight blur" }),
+    );
+    expect(media.getUserMedia).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      within(studio).getByRole("button", { name: "Turn on camera to preview" }),
+    );
+    await waitFor(() => expect(media.getUserMedia).toHaveBeenCalledTimes(1));
+    expect(media.getUserMedia).toHaveBeenCalledWith({
+      audio: false,
+      video: {},
+    });
+    await waitFor(() =>
+      expect(
+        effectsRuntime.runtime.startStandaloneVisualEffects,
+      ).toHaveBeenCalledWith(
+        capture.video,
+        {
+          mode: "background",
+          background: { kind: "blur", blurRadius: 8 },
+          lighting: { brightness: "normal", tone: "natural" },
+        },
+        expect.objectContaining({ onOverload: expect.any(Function) }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        within(studio).queryByRole("button", {
+          name: "Turn on camera to preview",
+        }),
+      ).toBeNull(),
+    );
+    const preview = within(studio).getByLabelText(
+      "Effects preview",
+    ) as HTMLVideoElement & { srcObject: unknown };
+    await waitFor(() =>
+      expect(preview.srcObject).toBe(effectsRuntime.started[0]?.stream),
+    );
+
+    fireEvent.click(
+      within(studio).getByRole("button", { name: "Turn off all effects" }),
+    );
+    await waitFor(() =>
+      expect(effectsRuntime.started[0]?.destroy).toHaveBeenCalled(),
+    );
+    expect(
+      within(studio).getByRole("button", { name: "None" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("hands the latest effects choice to the classroom without opening the camera", async () => {
+    const media = fakeMediaDevices(fakeStream().stream);
+    apiMocks.createJoinAttempt.mockResolvedValue({
+      admission_request_id: null,
+      join_attempt_id: joinAttemptID,
+      participant_session_id: participantSessionID,
+      room_instance_id: roomInstanceID,
+      status: "admitted",
+      version: 1,
+    });
+    apiMocks.issueJoinCredential.mockResolvedValue({
+      access_token: "effects-token",
+      server_url: "wss://media.example.test",
+      participant_session_id: participantSessionID,
+      room_instance_id: roomInstanceID,
+      join_attempt_id: joinAttemptID,
+      instance_role: "attendee",
+      can_publish_camera_microphone: true,
+      can_share_screen: false,
+      can_subscribe: true,
+      expires_at: "2030-08-03T00:05:00Z",
+    });
+    renderPrejoin(media);
+    await screen.findByRole("heading", { name: "Enter Meeting" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Backgrounds and effects" }),
+    );
+    const studio = await screen.findByRole("dialog", {
+      name: "Backgrounds and effects",
+    });
+    fireEvent.click(
+      within(studio).getByRole("button", { name: "Lecture hall" }),
+    );
+    fireEvent.mouseDown(within(studio).getByRole("tab", { name: "Lighting" }), {
+      button: 0,
+    });
+    fireEvent.click(
+      within(studio).getByRole("radio", { name: "Low-light boost" }),
+    );
+    fireEvent.keyDown(studio, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Join" }));
+    await screen.findByText("Canonical room destination");
+    expect(
+      takeMediaRoomEscrow({
+        tenantId: tenantID,
+        userId: userID,
+        spaceId: spaceID,
+        roomInstanceId: roomInstanceID,
+      })?.choices.visualEffects,
+    ).toEqual({
+      background: { kind: "preset", presetId: "lecture-studio" },
+      lighting: { brightness: "low_light", tone: "natural" },
+    });
+    expect(media.getUserMedia).not.toHaveBeenCalled();
+  });
+});

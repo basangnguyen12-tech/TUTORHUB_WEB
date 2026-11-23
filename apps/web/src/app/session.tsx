@@ -27,7 +27,10 @@ import {
   clearExpiredSessionCaches,
 } from "./queryClient";
 import { clearClientDrafts } from "./clientDrafts";
-import { clearMediaRoomEscrow } from "./mediaPrejoin";
+import {
+  clearMediaRoomEscrow,
+  clearVisualEffectsDeviceStorage,
+} from "./mediaPrejoin";
 
 export type SessionStatus =
   "loading" | "authenticated" | "unauthenticated" | "error";
@@ -108,7 +111,12 @@ export async function clearPrivateSessionCache(queryClient: QueryClient) {
   advancePrincipalGeneration(queryClient);
   clearClientDrafts();
   clearMediaRoomEscrow();
-  await queryClient.cancelQueries();
+  // ADR-0041: personal backgrounds (IndexedDB) and the effect preference are
+  // device-local and scoped per (tenant, user); none of it outlives sign-out.
+  await Promise.all([
+    clearVisualEffectsDeviceStorage(),
+    queryClient.cancelQueries(),
+  ]);
   queryClient.clear();
 }
 
@@ -312,4 +320,12 @@ export function useSession() {
     throw new Error("useSession must be used inside SessionProvider.");
   }
   return context;
+}
+
+/**
+ * Like `useSession`, but returns `null` outside a `SessionProvider` (isolated
+ * fixtures and harnesses) instead of throwing.
+ */
+export function useOptionalSession() {
+  return useContext(SessionContext);
 }

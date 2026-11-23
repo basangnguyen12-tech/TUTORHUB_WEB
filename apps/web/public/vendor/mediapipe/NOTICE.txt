@@ -1,0 +1,41 @@
+TutorHub V2 — self-hosted MediaPipe assets for classroom visual effects (ADR-0041)
+================================================================================
+
+These files are served same-origin from /vendor/mediapipe/ so the background
+effects pipeline never loads code or models from a third-party CDN at runtime.
+They are byte-for-byte copies; see SHA256SUMS.txt for the pinned digests.
+
+wasm/vision_wasm_internal.js
+wasm/vision_wasm_internal.wasm
+wasm/vision_wasm_nosimd_internal.js
+wasm/vision_wasm_nosimd_internal.wasm
+  Source:  npm package @mediapipe/tasks-vision@0.10.14 (directory "wasm/")
+  Project: MediaPipe — https://github.com/google-ai-edge/mediapipe
+  License: Apache License, Version 2.0
+  Copyright holders: The MediaPipe Authors (package author: mediapipe@google.com)
+
+models/selfie_segmenter.tflite
+  Source:  MediaPipe "selfie_segmenter" image segmenter model (float16, v1),
+           249,537 bytes, downloaded and verified by the TutorHub Gatekeeper
+  Project: MediaPipe — https://github.com/google-ai-edge/mediapipe
+  License: Apache License, Version 2.0
+  Copyright holders: The MediaPipe Authors (package author: mediapipe@google.com)
+
+Runtime consumer (bundled, not copied here):
+  npm package @livekit/track-processors@0.8.3
+  Project: https://github.com/livekit/track-processors-js
+  License: Apache License, Version 2.0
+  Copyright holders: LiveKit and contributors (see upstream repository)
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+No modifications were made to the files listed above.

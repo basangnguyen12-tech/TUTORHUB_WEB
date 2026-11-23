@@ -2587,6 +2587,79 @@ const messages = {
     "media.p405.listenOnlyDescription":
       "Bạn đang ở chế độ chỉ nghe; quyền phát camera và micro không được cấp.",
     "media.p405.effectsNone": "Hiệu ứng: Không dùng",
+    "media.fx.title": "Nền và hiệu ứng",
+    "media.fx.tabBackgrounds": "Phông nền",
+    "media.fx.tabLighting": "Ánh sáng",
+    "media.fx.tabsLabel": "Loại hiệu ứng",
+    "media.fx.groupBlur": "Làm mờ & Cá nhân",
+    "media.fx.groupSpaces": "Không gian học tập",
+    "media.fx.none": "Không dùng",
+    "media.fx.blurLight": "Làm mờ nhẹ",
+    "media.fx.blurStrong": "Làm mờ mạnh",
+    "media.fx.upload": "Tải ảnh lên",
+    "media.fx.uploading": "Đang xử lý ảnh…",
+    "media.fx.customImage": "Ảnh của bạn {index}",
+    "media.fx.removeCustom": "Xóa ảnh của bạn {index}",
+    "media.fx.customRemoved": "Đã xóa ảnh nền cá nhân.",
+    "media.fx.customAdded": "Đã thêm và chọn ảnh nền cá nhân.",
+    "media.fx.customPrivacy":
+      "Ảnh tải lên được nén lại, xóa thông tin vị trí và chỉ lưu trên thiết bị này (tối đa {count} ảnh).",
+    "media.fx.customUnavailable":
+      "Trình duyệt này không cho lưu ảnh nền cá nhân.",
+    "media.fx.error.unsupported_type": "Chỉ hỗ trợ ảnh JPG, PNG hoặc WebP.",
+    "media.fx.error.too_large": "Ảnh vượt quá 8 MB.",
+    "media.fx.error.decode_failed": "Không đọc được ảnh này. Hãy thử ảnh khác.",
+    "media.fx.error.limit_reached":
+      "Đã đủ {count} ảnh. Xóa bớt một ảnh để tải ảnh mới.",
+    "media.fx.error.storage_unavailable":
+      "Không lưu được ảnh trên thiết bị này.",
+    "media.fx.preset.academic-library": "Thư viện",
+    "media.fx.preset.modern-classroom": "Phòng học",
+    "media.fx.preset.nordic-study": "Góc Bắc Âu",
+    "media.fx.preset.lecture-studio": "Giảng đường",
+    "media.fx.preset.daylight-office": "Phòng nắng",
+    "media.fx.preset.warm-lounge": "Phòng đọc",
+    "media.fx.preset.botanical-calm": "Không gian xanh",
+    "media.fx.brightnessLegend": "Độ sáng khuôn mặt",
+    "media.fx.brightness.normal": "Mặc định",
+    "media.fx.brightness.low_light": "Tăng sáng phòng tối",
+    "media.fx.brightness.studio_bright": "Sáng rõ Studio",
+    "media.fx.toneLegend": "Tông màu",
+    "media.fx.tone.natural": "Tự nhiên",
+    "media.fx.tone.warm": "Ấm dịu",
+    "media.fx.tone.crisp": "Trong trẻo",
+    "media.fx.lightingHint":
+      "Chỉnh sáng nhẹ nhàng, không làm thay đổi khuôn mặt.",
+    "media.fx.resetLighting": "Đặt lại mặc định",
+    "media.fx.resetAll": "Tắt mọi hiệu ứng",
+    "media.fx.cameraOff":
+      "Máy ảnh đang tắt. Bạn vẫn có thể chọn hiệu ứng; máy ảnh chỉ bật khi bạn yêu cầu.",
+    "media.fx.turnOnCamera": "Bật camera để xem thử",
+    "media.fx.previewLabel": "Xem trước hiệu ứng",
+    "media.fx.onDeviceHint":
+      "Hiệu ứng được xử lý ngay trên thiết bị này; không khung hình nào được gửi tới máy chủ để xử lý.",
+    "media.fx.status.loading": "Đang áp dụng hiệu ứng…",
+    "media.fx.status.unsupported":
+      "Thiết bị hoặc trình duyệt này chưa hỗ trợ hiệu ứng này; đang dùng camera gốc.",
+    "media.fx.status.failed":
+      "Không áp dụng được hiệu ứng; đang dùng camera gốc. Chọn lại để thử lần nữa.",
+    "media.fx.status.overloaded":
+      "Đã tắt hiệu ứng vì máy đang quá tải; đang dùng camera gốc. Chọn lại để thử lần nữa.",
+    "media.fx.activeDescription": "Đang bật: {name}",
+    "media.fx.header": "Hiệu ứng: {name}",
+    "media.fx.short.low_light": "Tăng sáng",
+    "media.fx.short.studio_bright": "Sáng Studio",
+    "media.fx.short.warm": "Ấm dịu",
+    "media.fx.short.crisp": "Trong trẻo",
+    "media.fx.short.custom": "Ảnh của bạn",
+    "media.fx.drawerDescription":
+      "Thay đổi chỉ áp dụng cho camera của bạn và không che bảng trắng.",
+    "media.fx.selfPreview": "Camera của bạn",
+    "media.fx.drawerCameraOff":
+      "Bật camera để xem trước hiệu ứng trên chính bạn.",
+    "media.fx.close": "Đóng",
+    "media.fx.done": "Xong",
+    "media.fx.openEffects": "Nền và hiệu ứng",
     "media.p405.degradation.reduced-visible-video":
       "Mạng chưa ổn định. TutorHub đang hiển thị ít video hơn nhưng vẫn giữ âm thanh và điều khiển.",
     "media.p405.degradation.lower-remote-quality":
@@ -5629,6 +5702,81 @@ const messages = {
     "media.p405.listenOnlyDescription":
       "You are in listen-only mode; camera and microphone publishing was not granted.",
     "media.p405.effectsNone": "Effects: None",
+    "media.fx.title": "Backgrounds and effects",
+    "media.fx.tabBackgrounds": "Backgrounds",
+    "media.fx.tabLighting": "Lighting",
+    "media.fx.tabsLabel": "Effect type",
+    "media.fx.groupBlur": "Blur & personal",
+    "media.fx.groupSpaces": "Learning spaces",
+    "media.fx.none": "None",
+    "media.fx.blurLight": "Slight blur",
+    "media.fx.blurStrong": "Strong blur",
+    "media.fx.upload": "Upload image",
+    "media.fx.uploading": "Processing image…",
+    "media.fx.customImage": "Your image {index}",
+    "media.fx.removeCustom": "Remove your image {index}",
+    "media.fx.customRemoved": "Personal background removed.",
+    "media.fx.customAdded": "Personal background added and selected.",
+    "media.fx.customPrivacy":
+      "Uploads are re-compressed, stripped of location data and stay on this device (up to {count} images).",
+    "media.fx.customUnavailable":
+      "This browser can't store personal backgrounds.",
+    "media.fx.error.unsupported_type":
+      "Only JPG, PNG or WebP images are supported.",
+    "media.fx.error.too_large": "The image is larger than 8 MB.",
+    "media.fx.error.decode_failed":
+      "This image couldn't be read. Try another one.",
+    "media.fx.error.limit_reached":
+      "You already have {count} images. Remove one to add another.",
+    "media.fx.error.storage_unavailable":
+      "The image couldn't be saved on this device.",
+    "media.fx.preset.academic-library": "Library",
+    "media.fx.preset.modern-classroom": "Classroom",
+    "media.fx.preset.nordic-study": "Nordic study",
+    "media.fx.preset.lecture-studio": "Lecture hall",
+    "media.fx.preset.daylight-office": "Daylight office",
+    "media.fx.preset.warm-lounge": "Reading room",
+    "media.fx.preset.botanical-calm": "Botanical",
+    "media.fx.brightnessLegend": "Face brightness",
+    "media.fx.brightness.normal": "Default",
+    "media.fx.brightness.low_light": "Low-light boost",
+    "media.fx.brightness.studio_bright": "Studio bright",
+    "media.fx.toneLegend": "Color tone",
+    "media.fx.tone.natural": "Natural",
+    "media.fx.tone.warm": "Warm",
+    "media.fx.tone.crisp": "Crisp",
+    "media.fx.lightingHint":
+      "Gentle light correction; your features stay unchanged.",
+    "media.fx.resetLighting": "Reset to default",
+    "media.fx.resetAll": "Turn off all effects",
+    "media.fx.cameraOff":
+      "Your camera is off. You can still pick an effect; the camera only turns on when you ask.",
+    "media.fx.turnOnCamera": "Turn on camera to preview",
+    "media.fx.previewLabel": "Effects preview",
+    "media.fx.onDeviceHint":
+      "Effects run on this device; no video frame is sent to a server for processing.",
+    "media.fx.status.loading": "Applying effect…",
+    "media.fx.status.unsupported":
+      "This device or browser doesn't support this effect; using your original camera.",
+    "media.fx.status.failed":
+      "The effect couldn't be applied; using your original camera. Choose it again to retry.",
+    "media.fx.status.overloaded":
+      "Effects were turned off because the device is overloaded; using your original camera. Choose one again to retry.",
+    "media.fx.activeDescription": "On: {name}",
+    "media.fx.header": "Effects: {name}",
+    "media.fx.short.low_light": "Low-light boost",
+    "media.fx.short.studio_bright": "Studio bright",
+    "media.fx.short.warm": "Warm",
+    "media.fx.short.crisp": "Crisp",
+    "media.fx.short.custom": "Your image",
+    "media.fx.drawerDescription":
+      "Changes apply to your camera only and never cover the whiteboard.",
+    "media.fx.selfPreview": "Your camera",
+    "media.fx.drawerCameraOff":
+      "Turn on your camera to preview effects on yourself.",
+    "media.fx.close": "Close",
+    "media.fx.done": "Done",
+    "media.fx.openEffects": "Backgrounds and effects",
     "media.p405.degradation.reduced-visible-video":
       "The network is unstable. TutorHub is showing fewer videos while keeping audio and room controls available.",
     "media.p405.degradation.lower-remote-quality":

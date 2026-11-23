@@ -439,3 +439,23 @@
     forced-color-adjust: auto;
   }
 }
+
+/* ---- ADR-0041 effects drawer ------------------------------------------
+ * The Teams-style effects panel is non-modal. On wide rooms the shell gives
+ * up the panel's width so the whiteboard stage and camera strip reflow
+ * beside it instead of being covered; only padding changes, so no media
+ * tile remounts.
+ */
+@media (min-width: 1024px) {
+  .media-p405-room .media-p405-shell.media-p405-shell--effects-open {
+    padding-inline-end: calc(360px + 12px);
+    transition: padding-inline-end var(--duration-base, 200ms)
+      var(--ease-standard, ease);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-p405-room .media-p405-shell.media-p405-shell--effects-open {
+    transition: none;
+  }
+}

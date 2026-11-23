@@ -437,6 +437,9 @@ test("P4-05 listen-only fixture never captures media and exposes no publish cont
   await expect(
     page.getByRole("button", { name: /Share screen|Stop sharing screen/i }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Backgrounds and effects" }),
+  ).toHaveCount(0);
   await expect(page.locator(".media-p405-tile video")).toHaveCount(5);
   expect(await readMediaProbe(page)).toEqual({
     enumerateDevicesCalls: 0,
@@ -446,4 +449,126 @@ test("P4-05 listen-only fixture never captures media and exposes no publish cont
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
   ).toEqual([]);
+});
+
+// VIDEO-FX-01 (ADR-0041): Teams-style effects drawer inside the classroom.
+// Set VIDEO_FX_SCREENSHOT_DIR to save a reference screenshot for review.
+const fxScreenshotDir = process.env.VIDEO_FX_SCREENSHOT_DIR?.trim() ?? "";
+
+test("VIDEO-FX-01 opens a right effects drawer without remounting camera tiles", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_280, height: 900 });
+  await mountClassroomFixture(page, { participantCount: 5 });
+  // Load the same global styles as the app entry plus the room layout, so the
+  // drawer is measured as in production.
+  await page.evaluate(async () => {
+    const dynamicImport = new Function(
+      "specifier",
+      "return import(specifier)",
+    ) as (specifier: string) => Promise<unknown>;
+    await Promise.all([
+      dynamicImport("/@id/@tutorhub/design-tokens/tokens.css"),
+      dynamicImport("/@id/@tutorhub/ui/styles.css"),
+      dynamicImport("/src/pages/ClassroomRoomStage.css"),
+    ]);
+  });
+
+  // Tag the live tiles so a remount would be visible.
+  const taggedTiles = await page.evaluate(() => {
+    const videos = Array.from(
+      document.querySelectorAll<HTMLVideoElement>(".media-p405-tile video"),
+    );
+    videos.forEach((video, index) => {
+      video.dataset.fxProbe = String(index);
+    });
+    return videos.length;
+  });
+  expect(taggedTiles).toBe(5);
+
+  // The control sits right after Devices; roving order is unchanged.
+  const toolbar = page.getByRole("toolbar", { name: "Classroom controls" });
+  const devices = page.getByRole("button", { name: "Devices" });
+  const effects = page.getByRole("button", { name: "Backgrounds and effects" });
+  await devices.focus();
+  await toolbar.press("ArrowRight");
+  await expect(effects).toBeFocused();
+  await expect(effects).toHaveAttribute("id", "media-p405-control-effects");
+
+  await page.keyboard.press("Enter");
+  const drawer = page.getByRole("dialog", { name: "Backgrounds and effects" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toHaveAttribute("data-theme", "dark");
+  // Wait for the slide-in to settle at the right edge.
+  await expect
+    .poll(async () => {
+      const box = await drawer.boundingBox();
+      return box ? Math.round(box.x + box.width) : 0;
+    })
+    .toBe(1_280);
+  const drawerBox = await drawer.boundingBox();
+  expect(drawerBox!.width).toBeLessThanOrEqual(361);
+  // Wide rooms give the drawer its width: the stage reflows beside it.
+  const stageBox = await page.locator(".media-p405-stage").boundingBox();
+  expect(stageBox!.x + stageBox!.width).toBeLessThanOrEqual(drawerBox!.x + 1);
+  await expect(
+    page.getByRole("button", { name: "Effects: None" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  // Non-modal: no overlay and the classroom stays interactive behind it.
+  await expect(page.locator(".th-dialog-overlay")).toHaveCount(0);
+  await expect(drawer.getByLabel("Your camera")).toBeVisible();
+
+  const library = drawer.getByRole("button", { name: "Library" });
+  await library.click();
+  await expect(library).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Effects: Library" }),
+  ).toBeVisible();
+  await drawer.getByRole("tab", { name: "Lighting" }).click();
+  await drawer.getByText("Studio bright").click();
+  await expect(
+    drawer.getByRole("radio", { name: "Studio bright" }),
+  ).toBeChecked();
+  await drawer.getByRole("tab", { name: "Backgrounds" }).click();
+
+  // Same tiles, never remounted by the drawer or the effect choice.
+  expect(
+    await page.evaluate(
+      () =>
+        document.querySelectorAll(".media-p405-tile video[data-fx-probe]")
+          .length,
+    ),
+  ).toBe(5);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p405-effects-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p405-shell")
+        // Pre-existing, out of VIDEO-FX-01 scope: with the real dark tokens
+        // the shared danger button (Leave room) is white on #f09aa0. Reported
+        // to the Gatekeeper; the bare fixture never loaded those tokens.
+        .exclude("#media-p405-control-leave")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  if (fxScreenshotDir) {
+    await page.waitForTimeout(1_500);
+    await page.screenshot({
+      path: `${fxScreenshotDir}/classroom-effects-drawer.png`,
+    });
+  }
+
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(effects).toBeFocused();
+  expect(await readMediaProbe(page)).toEqual({
+    enumerateDevicesCalls: 0,
+    getUserMediaCalls: 0,
+  });
 });

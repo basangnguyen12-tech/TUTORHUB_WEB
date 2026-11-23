@@ -419,22 +419,36 @@
 }
 
 /*
- * The reference measures #5f6368 for this circle over the dark scrim, so the
- * fill is nearly opaque; the dot grid stays faint (>= 3:1) while noise
- * suppression is on and turns bright on a lighter fill when it is off.
+ * ADR-0041: the third circle opens "Backgrounds and effects". It keeps the
+ * reference #5f6368 fill and turns Meet-blue with a dot while an effect is on.
  */
 .media-p403-round--effects {
   background: rgb(95 99 104 / 95%);
-  color: rgb(255 255 255 / 55%);
-}
-
-.media-p403-round--effects[aria-pressed="false"] {
-  background: #80868b;
   color: #fff;
 }
 
 .media-p403-round--effects:hover:not([aria-disabled="true"]) {
   background: #6f7378;
+}
+
+.media-p403-round--effects-on {
+  background: #8ab4f8;
+  color: #202124;
+}
+
+.media-p403-round--effects-on:hover:not([aria-disabled="true"]) {
+  background: #aecbfa;
+}
+
+.media-p403-round__dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #202124;
+  border-radius: 50%;
+  background: #1a73e8;
 }
 
 .media-p403-round[aria-disabled="true"] {
@@ -872,7 +886,19 @@
     outline-offset: 1px;
   }
 
-  .media-p403-round__badge {
+  .media-p403-round__badge,
+  .media-p403-round__dot {
+    border: 1px solid CanvasText;
+  }
+
+  .media-p403-round--effects-on {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+
+  .media-p403-fx-preview,
+  .media-p403-fx-preview__camera,
+  .media-p403-fx-preview__reset {
     border: 1px solid CanvasText;
   }
 
@@ -887,5 +913,255 @@
   .media-p403-studio :is(a, button, select, input, h1):focus-visible,
   .media-p403-pill:focus-within {
     outline-color: Highlight;
+  }
+}
+
+/* ADR-0041 effects studio (portaled dialog, Google Meet-style 2 columns) -- */
+
+.th-dialog-content.media-p403-fx-dialog {
+  display: flex;
+  width: min(920px, calc(100vw - 32px));
+  height: min(640px, calc(100dvh - 32px));
+  max-height: none;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px 24px 24px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 24px;
+  background: #fff;
+  color: #202124;
+}
+
+.media-p403-fx-dialog .th-dialog-close {
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #3c4043;
+}
+
+.media-p403-fx-dialog .th-dialog-close:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+.media-p403-fx-dialog__title.th-dialog-title {
+  color: #202124;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+.media-p403-fx-dialog__body {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  gap: 24px;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.media-p403-fx-stage {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.media-p403-fx-preview {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 16px;
+  aspect-ratio: 16 / 9;
+  background: #202124;
+  color: #fff;
+  isolation: isolate;
+}
+
+.media-p403-fx-preview video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  visibility: hidden;
+}
+
+.media-p403-fx-preview--video video {
+  visibility: visible;
+}
+
+.media-p403-fx-preview__off {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 18px;
+  padding: 24px 40px;
+  text-align: center;
+}
+
+.media-p403-fx-preview__off p {
+  max-width: 440px;
+  margin: 0;
+  color: #e8eaed;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.media-p403-fx-preview__camera {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: #8ab4f8;
+  color: #202124;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.media-p403-fx-preview__camera:hover:not([aria-disabled="true"]) {
+  background: #aecbfa;
+}
+
+.media-p403-fx-preview__camera[aria-disabled="true"] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.media-p403-fx-preview__camera svg {
+  width: 18px;
+  height: 18px;
+}
+
+.media-p403-fx-preview__reset {
+  position: absolute;
+  z-index: 2;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: rgb(138 180 248 / 92%);
+  color: #202124;
+  cursor: pointer;
+  place-items: center;
+}
+
+.media-p403-fx-preview__reset:hover {
+  background: #aecbfa;
+}
+
+.media-p403-fx-preview__reset svg {
+  width: 22px;
+  height: 22px;
+}
+
+.media-p403-fx-preview__badge {
+  position: absolute;
+  z-index: 2;
+  bottom: 14px;
+  left: 14px;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(32 33 36 / 78%);
+  color: #fff;
+  font-size: 13px;
+}
+
+.media-p403-fx-preview :is(button):focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.media-p403-fx-status {
+  min-height: 20px;
+  margin: 0;
+  color: #5f6368;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.media-p403-fx-hint {
+  margin: 0;
+  color: #5f6368;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.media-p403-fx-status:empty {
+  display: none;
+}
+
+.media-p403-fx-side {
+  min-width: 0;
+  min-height: 0;
+  padding: 0 6px 4px 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.media-p403-fx-notice {
+  margin: 0;
+  color: #5f6368;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .th-dialog-content.media-p403-fx-dialog {
+    height: auto;
+    max-height: calc(100dvh - 24px);
+    padding: 18px 16px 20px;
+    overflow-y: auto;
+  }
+
+  .media-p403-fx-dialog__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+
+  .media-p403-fx-side {
+    overflow: visible;
+  }
+
+  .media-p403-fx-preview__off p {
+    font-size: 15px;
+  }
+}
+
+@media (forced-colors: active) {
+  .media-p403-fx-preview {
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .media-p403-fx-preview__off p,
+  .media-p403-fx-status,
+  .media-p403-fx-hint,
+  .media-p403-fx-notice {
+    color: CanvasText;
+  }
+
+  .media-p403-fx-preview__camera,
+  .media-p403-fx-preview__reset,
+  .media-p403-fx-preview__badge {
+    background: ButtonFace;
+    color: ButtonText;
   }
 }

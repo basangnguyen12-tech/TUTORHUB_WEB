@@ -8,6 +8,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +17,7 @@ import { MediaLobbyWaitingCountContext } from "../../components/MediaLobbyPanel"
 import {
   ClassroomMediaShell,
   type ClassroomSignalControls,
+  type RoomVisualEffectsRuntime,
 } from "./ClassroomMediaShell";
 
 const PARTICIPANT_A = "018f4c7b-9b0a-7a34-8a4c-96d26cb87221";
@@ -72,6 +74,7 @@ const liveKitState = vi.hoisted(() => {
 
   return {
     MockRemoteTrackPublication,
+    cameraPublication: undefined as undefined | { track: unknown },
     cameraTrackRefs: [] as MockTrackReference[],
     deviceSetters,
     screenShareTrackRefs: [] as MockTrackReference[],
@@ -174,6 +177,7 @@ vi.mock("@livekit/components-react", () => ({
   isTrackReference: (trackRef: MockTrackReference) =>
     Boolean(trackRef.publication),
   useLocalParticipant: () => ({
+    cameraTrack: liveKitState.cameraPublication,
     isCameraEnabled: liveKitState.mediaState.cameraEnabled,
     isMicrophoneEnabled: false,
     isScreenShareEnabled: false,
@@ -225,6 +229,7 @@ describe("ClassroomMediaShell", () => {
     liveKitState.speakingParticipants = [];
     liveKitState.localParticipant.connectionQuality = "excellent";
     liveKitState.mediaState.cameraEnabled = false;
+    liveKitState.cameraPublication = undefined;
     liveKitState.localParticipant.on.mockClear();
     liveKitState.localParticipant.off.mockClear();
     liveKitState.localParticipant.setCameraEnabled
@@ -1495,6 +1500,289 @@ describe("ClassroomMediaShell", () => {
 
     expect(focus).toHaveBeenCalledTimes(focusCallsBeforeUnmount);
     focus.mockRestore();
+  });
+});
+
+describe("ClassroomMediaShell visual effects (ADR-0041)", () => {
+  beforeEach(() => {
+    liveKitState.cameraTrackRefs = createCameraTracks(5);
+    liveKitState.screenShareTrackRefs = [];
+    liveKitState.audioTrackRefs = createAudioTracks(5);
+    liveKitState.speakingParticipants = [];
+    liveKitState.mediaState.cameraEnabled = false;
+    liveKitState.cameraPublication = undefined;
+    liveKitState.localParticipant.setCameraEnabled
+      .mockReset()
+      .mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    localStorage.clear();
+  });
+
+  interface FakeProcessor {
+    name: string;
+    visualEffectsMode: "lighting" | "background";
+    applyPlan: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+    init: ReturnType<typeof vi.fn>;
+    restart: ReturnType<typeof vi.fn>;
+  }
+
+  function fakeCameraTrack() {
+    let processor: FakeProcessor | undefined;
+    const track = {
+      getProcessor: vi.fn(() => processor),
+      setProcessor: vi.fn(async (next: FakeProcessor) => {
+        processor = next;
+      }),
+      stopProcessor: vi.fn(async () => {
+        processor = undefined;
+      }),
+    };
+    return track;
+  }
+
+  function fakeRuntime(supported = true) {
+    const processors: FakeProcessor[] = [];
+    const runtime = {
+      supportsVisualEffects: vi.fn(() => supported),
+      createVisualEffectsProcessor: vi.fn(
+        async (plan: { mode: "lighting" | "background" }) => {
+          const processor: FakeProcessor = {
+            name: "processor-" + String(processors.length),
+            visualEffectsMode: plan.mode,
+            applyPlan: vi.fn(
+              async (next: { mode: string }) => next.mode === plan.mode,
+            ),
+            destroy: vi.fn(async () => undefined),
+            init: vi.fn(async () => undefined),
+            restart: vi.fn(async () => undefined),
+          };
+          processors.push(processor);
+          return processor;
+        },
+      ),
+    };
+    return {
+      processors,
+      runtime,
+      loadRuntime: vi.fn(
+        async () => runtime as unknown as RoomVisualEffectsRuntime,
+      ),
+    };
+  }
+
+  function toolbarOrder() {
+    const toolbar = screen.getByRole("toolbar", { name: "Classroom controls" });
+    return Array.from(
+      toolbar.querySelectorAll<HTMLElement>("[data-media-control]"),
+    ).map((control) => control.dataset.mediaControl);
+  }
+
+  it("puts Effects after Devices and before the hand without changing roving order", () => {
+    const signals = createSignalControls({
+      projection: {
+        ...createSignalControls().projection!,
+        viewer_operations: {
+          can_raise_hand: true,
+          can_send_reaction: true,
+          can_moderate_hands: false,
+        },
+      },
+    });
+    renderShell({ signals });
+    const order = toolbarOrder();
+    expect(order.slice(0, 7)).toEqual([
+      "microphone",
+      "camera",
+      "screen-share",
+      "devices",
+      "effects",
+      "hand",
+      "reaction",
+    ]);
+    const hand = screen.getByRole("button", { name: "Raise hand" });
+    hand.focus();
+    fireEvent.keyDown(hand, { key: "ArrowRight" });
+    expect(
+      screen.getByRole("button", { name: "Send a reaction" }),
+    ).toHaveFocus();
+    const effects = screen.getByRole("button", {
+      name: "Backgrounds and effects",
+    });
+    expect(effects).toHaveAttribute("id", "media-p405-control-effects");
+    expect(effects).toHaveAttribute("aria-haspopup", "dialog");
+    expect(effects).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("renders no effects control for listen-only credentials", () => {
+    renderShell({ canPublishCameraMicrophone: false, canShareScreen: false });
+    expect(
+      screen.queryByRole("button", { name: "Backgrounds and effects" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Effects: None" })).toBeNull();
+    expect(screen.getByText("Effects: None")).toBeInTheDocument();
+    expect(toolbarOrder()).not.toContain("effects");
+  });
+
+  it("labels the active effect and opens a non-modal right drawer from the header", async () => {
+    const { runtime, loadRuntime } = fakeRuntime();
+    const { container } = renderShell({
+      visualEffects: {
+        initialState: {
+          background: { kind: "preset", presetId: "academic-library" },
+          lighting: { brightness: "normal", tone: "natural" },
+        },
+        loadRuntime,
+      },
+    });
+    const badge = screen.getByRole("button", { name: "Effects: Library" });
+    expect(badge).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(badge);
+
+    const drawer = await screen.findByRole("dialog", {
+      name: "Backgrounds and effects",
+    });
+    expect(drawer).toHaveAttribute("data-theme", "dark");
+    expect(drawer).not.toHaveAttribute("aria-modal");
+    expect(drawer.className).toContain("media-p405-effects-drawer");
+    expect(badge).toHaveAttribute("aria-expanded", "true");
+    expect(
+      container.querySelector(".media-p405-shell--effects-open"),
+    ).not.toBeNull();
+    // Non-modal: the toolbar and stage stay reachable while it is open.
+    expect(
+      screen.getByRole("toolbar", { name: "Classroom controls" }),
+    ).toBeVisible();
+    expect(
+      within(drawer).getByText(
+        "Turn on your camera to preview effects on yourself.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole("button", { name: "Library" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    // The camera is off: nothing is attached and nothing is loaded.
+    expect(runtime.createVisualEffectsProcessor).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(badge).toHaveFocus();
+  });
+
+  it("attaches, updates, swaps and removes the camera processor", async () => {
+    liveKitState.mediaState.cameraEnabled = true;
+    const track = fakeCameraTrack();
+    liveKitState.cameraPublication = { track };
+    const { processors, runtime, loadRuntime } = fakeRuntime();
+    const { unmount } = renderShell({ visualEffects: { loadRuntime } });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Backgrounds and effects" }),
+    );
+    const drawer = await screen.findByRole("dialog", {
+      name: "Backgrounds and effects",
+    });
+    expect(within(drawer).getByLabelText("Your camera")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Slight blur" }),
+    );
+    await waitFor(() => expect(track.setProcessor).toHaveBeenCalledTimes(1));
+    expect(runtime.createVisualEffectsProcessor).toHaveBeenCalledWith(
+      {
+        mode: "background",
+        background: { kind: "blur", blurRadius: 8 },
+        lighting: { brightness: "normal", tone: "natural" },
+      },
+      expect.objectContaining({ onOverload: expect.any(Function) }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Effects: Slight blur" }),
+    ).toBeVisible();
+
+    // Same mode: updated in place without flicker.
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Strong blur" }),
+    );
+    await waitFor(() => expect(processors[0]?.applyPlan).toHaveBeenCalled());
+    expect(track.setProcessor).toHaveBeenCalledTimes(1);
+
+    // Off: the processor is removed and the raw camera restored.
+    fireEvent.click(within(drawer).getByRole("button", { name: "None" }));
+    await waitFor(() => expect(track.stopProcessor).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Effects: None" })).toBeVisible();
+
+    // Lighting only: a lighting processor, no background pipeline.
+    fireEvent.mouseDown(within(drawer).getByRole("tab", { name: "Lighting" }), {
+      button: 0,
+    });
+    fireEvent.click(
+      within(drawer).getByRole("radio", { name: "Low-light boost" }),
+    );
+    await waitFor(() => expect(track.setProcessor).toHaveBeenCalledTimes(2));
+    expect(processors[1]?.visualEffectsMode).toBe("lighting");
+    expect(
+      screen.getByRole("button", { name: "Effects: Low-light boost" }),
+    ).toBeVisible();
+
+    unmount();
+    await waitFor(() => expect(track.stopProcessor).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps the raw camera with a polite notice when effects are unsupported", async () => {
+    liveKitState.mediaState.cameraEnabled = true;
+    const track = fakeCameraTrack();
+    liveKitState.cameraPublication = { track };
+    const { runtime, loadRuntime } = fakeRuntime(false);
+    renderShell({
+      visualEffects: {
+        initialState: {
+          background: { kind: "blur", strength: "strong" },
+          lighting: { brightness: "normal", tone: "natural" },
+        },
+        loadRuntime,
+      },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Backgrounds and effects" }),
+    );
+    const drawer = await screen.findByRole("dialog", {
+      name: "Backgrounds and effects",
+    });
+    expect(
+      await within(drawer).findByText(
+        "This device or browser doesn't support this effect; using your original camera.",
+      ),
+    ).toBeInTheDocument();
+    expect(runtime.createVisualEffectsProcessor).not.toHaveBeenCalled();
+    expect(track.setProcessor).not.toHaveBeenCalled();
+  });
+
+  it("never attaches a new processor while the camera is off", async () => {
+    liveKitState.mediaState.cameraEnabled = false;
+    const track = fakeCameraTrack();
+    liveKitState.cameraPublication = { track };
+    const { loadRuntime } = fakeRuntime();
+    renderShell({
+      visualEffects: {
+        initialState: {
+          background: { kind: "blur", strength: "light" },
+          lighting: { brightness: "normal", tone: "natural" },
+        },
+        loadRuntime,
+      },
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(loadRuntime).not.toHaveBeenCalled();
+    expect(track.setProcessor).not.toHaveBeenCalled();
+    expect(
+      liveKitState.localParticipant.setCameraEnabled,
+    ).not.toHaveBeenCalled();
   });
 });
 

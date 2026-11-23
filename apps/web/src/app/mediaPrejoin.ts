@@ -1,3 +1,10 @@
+import type {
+  ClassroomVisualEffectsState,
+  MediaVisualEffectsRuntime,
+  StandaloneVisualEffectsHandle,
+  VisualEffectsRenderPlan,
+} from "./visualEffects";
+
 export const MEDIA_PREJOIN_ERROR_CODES = [
   "media_permission_denied_or_blocked",
   "media_device_not_found",
@@ -24,6 +31,13 @@ export type MediaAudioMode = "speech" | "original_sound";
 
 export type SpeakerTestStatus =
   "idle" | "playing" | "success" | "blocked" | "unsupported" | "failed";
+
+/**
+ * Local visual-effects pipeline state for the preview. `off` covers both "no
+ * effect chosen" and "camera off": a choice never opens the camera by itself.
+ */
+export type MediaPrejoinEffectsStatus =
+  "off" | "loading" | "active" | "unsupported" | "failed" | "overloaded";
 
 export interface MediaDeviceChoice {
   deviceId: string;
@@ -53,6 +67,7 @@ export interface MediaPrejoinSnapshot {
   errorCode: MediaPrejoinErrorCode | null;
   announcement: string;
   speakerTestStatus: SpeakerTestStatus;
+  effectsStatus: MediaPrejoinEffectsStatus;
 }
 
 export interface MediaJoinChoices {
@@ -62,6 +77,83 @@ export interface MediaJoinChoices {
   videoDeviceId: string;
   speakerDeviceId: string;
   audioMode: MediaAudioMode;
+  /** ADR-0041: carried through the memory escrow into the classroom. */
+  visualEffects: ClassroomVisualEffectsState;
+}
+
+/**
+ * The neutral effects choice. Defined here (not in `visualEffects.ts`) so this
+ * entry-chunk module never pulls the effects module into the initial bundle.
+ */
+export const NO_VISUAL_EFFECTS: ClassroomVisualEffectsState = Object.freeze({
+  background: Object.freeze({ kind: "none" }),
+  lighting: Object.freeze({ brightness: "normal", tone: "natural" }),
+}) as ClassroomVisualEffectsState;
+
+/** IndexedDB database that holds personal background images (ADR-0041). */
+export const VISUAL_EFFECTS_DATABASE_NAME = "tutorhub-visual-effects";
+/** localStorage prefix for the light, per-(tenant, user) effect preference. */
+export const VISUAL_EFFECTS_PREFERENCE_PREFIX = "tutorhub.visual-effects.v1:";
+
+/**
+ * Removes every stored effect preference and the personal background
+ * database. Lives in this entry-chunk module so sign-out clears private
+ * effect data without loading (or depending on the network for) the effects
+ * chunk. Best effort and bounded: it never blocks sign-out for long.
+ */
+export async function clearVisualEffectsDeviceStorage(
+  options: {
+    storage?: Storage | null;
+    databases?: IDBFactory | null;
+    timeoutMs?: number;
+  } = {},
+): Promise<void> {
+  const storage =
+    options.storage === undefined ? safeLocalStorage() : options.storage;
+  if (storage) {
+    try {
+      const keys: string[] = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(VISUAL_EFFECTS_PREFERENCE_PREFIX)) keys.push(key);
+      }
+      for (const key of keys) storage.removeItem(key);
+    } catch {
+      // Storage may be blocked; scoped keys still prevent cross-user reads.
+    }
+  }
+  const databases =
+    options.databases === undefined
+      ? typeof indexedDB === "undefined"
+        ? null
+        : indexedDB
+      : options.databases;
+  if (!databases) return;
+  await new Promise<void>((resolve) => {
+    const timer = globalThis.setTimeout(resolve, options.timeoutMs ?? 2_000);
+    const finish = () => {
+      globalThis.clearTimeout(timer);
+      resolve();
+    };
+    try {
+      const request = databases.deleteDatabase(VISUAL_EFFECTS_DATABASE_NAME);
+      request.onsuccess = finish;
+      request.onerror = finish;
+      // Another tab still holds a connection: the deletion stays queued and
+      // completes once it closes, so sign-out does not wait for it.
+      request.onblocked = finish;
+    } catch {
+      finish();
+    }
+  });
+}
+
+function safeLocalStorage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
 }
 
 export interface MediaJoinAttemptProjection {
@@ -175,7 +267,14 @@ interface MediaPrejoinEnvironment {
   cancelFrame: (handle: number) => void;
   setTimer: (callback: () => void, delay: number) => number;
   clearTimer: (handle: number) => void;
+  /**
+   * Loads the visual-effects runtime on demand (a dynamic import). Without it
+   * the controller only ever shows the raw camera.
+   */
+  loadVisualEffects: (() => Promise<MediaVisualEffectsRuntime>) | null;
 }
+
+export type MediaPreviewSlot = "main" | "effects";
 
 type SnapshotListener = () => void;
 
@@ -212,6 +311,7 @@ export class MediaPrejoinController {
     errorCode: null,
     announcement: "",
     speakerTestStatus: "idle",
+    effectsStatus: "off",
   };
   // Each device kind owns its own track so the camera can be released (and
   // its hardware light turned off) while the microphone keeps running.
@@ -227,7 +327,20 @@ export class MediaPrejoinController {
     audio: 0,
     video: 0,
   };
-  private previewElement: HTMLVideoElement | null = null;
+  private readonly previewElements = new Map<
+    MediaPreviewSlot,
+    HTMLVideoElement
+  >();
+  // Visual effects (ADR-0041). The plan is only a choice: it is applied to a
+  // camera track that already exists and never opens the camera itself.
+  private visualEffectsState: ClassroomVisualEffectsState = NO_VISUAL_EFFECTS;
+  private effectsPlan: VisualEffectsRenderPlan | null = null;
+  private effectsPlanKey = "";
+  private effectsSuspended = false;
+  private effectsHandle: StandaloneVisualEffectsHandle | null = null;
+  private effectsSource: MediaStreamTrack | null = null;
+  private effectsAppliedKey = "";
+  private effectsQueue: Promise<void> = Promise.resolve();
   private meterContext: AudioContext | null = null;
   private meterSource: MediaStreamAudioSourceNode | null = null;
   private meterAnalyser: AnalyserNode | null = null;
@@ -273,6 +386,7 @@ export class MediaPrejoinController {
       clearTimer:
         environment?.clearTimer ??
         ((handle) => globalThis.clearTimeout(handle)),
+      loadVisualEffects: environment?.loadVisualEffects ?? null,
     };
   }
 
@@ -294,12 +408,47 @@ export class MediaPrejoinController {
     this.connected = true;
   }
 
-  attachPreview(element: HTMLVideoElement | null): void {
-    if (this.previewElement && this.previewElement !== element) {
-      this.previewElement.srcObject = null;
+  /**
+   * Points a preview `<video>` at the camera output (the processed track while
+   * an effect runs, the raw track otherwise). The Pre-Join frame uses the
+   * `main` slot and the effects studio its own `effects` slot.
+   */
+  attachPreview(
+    element: HTMLVideoElement | null,
+    slot: MediaPreviewSlot = "main",
+  ): void {
+    const previous = this.previewElements.get(slot);
+    if (previous && previous !== element) {
+      previous.srcObject = null;
     }
-    this.previewElement = element;
+    if (element) {
+      this.previewElements.set(slot, element);
+    } else {
+      this.previewElements.delete(slot);
+    }
     this.syncPreview();
+  }
+
+  /**
+   * Records the effects choice and applies it to the live camera, if any.
+   * Choosing an effect while the camera is off only stores the choice.
+   */
+  setVisualEffects(
+    state: ClassroomVisualEffectsState,
+    plan: VisualEffectsRenderPlan | null,
+  ): void {
+    if (this.disposed) {
+      return;
+    }
+    this.visualEffectsState = state;
+    const key = plan ? JSON.stringify(plan) : "";
+    if (key !== this.effectsPlanKey) {
+      this.effectsPlanKey = key;
+      this.effectsPlan = plan;
+      // A new explicit choice is a retry after an overload or failure.
+      this.effectsSuspended = false;
+    }
+    this.scheduleEffects();
   }
 
   setAudioMode(mode: MediaAudioMode): void {
@@ -556,6 +705,7 @@ export class MediaPrejoinController {
       videoDeviceId: listenOnly ? "" : this.currentSnapshot.selectedCameraId,
       speakerDeviceId: this.currentSnapshot.selectedSpeakerId,
       audioMode: this.currentSnapshot.audioMode,
+      visualEffects: listenOnly ? NO_VISUAL_EFFECTS : this.visualEffectsState,
     };
   }
 
@@ -753,6 +903,7 @@ export class MediaPrejoinController {
       this.videoStream = stream;
       this.ownedTracks.add(video);
       this.syncPreview();
+      this.scheduleEffects();
     }
   }
 
@@ -770,10 +921,12 @@ export class MediaPrejoinController {
     const track = this.videoTrack;
     this.videoTrack = null;
     this.videoStream = null;
+    void this.detachEffects();
     if (track && this.ownedTracks.delete(track)) {
       track.stop();
     }
     this.syncPreview();
+    this.scheduleEffects();
   }
 
   private handleKindFailure(kind: CaptureKind, error: unknown): void {
@@ -803,19 +956,128 @@ export class MediaPrejoinController {
     );
   }
 
-  /** Points the preview at the live camera stream only when it changed. */
+  /** Points every preview at the current camera output only when it changed. */
   private syncPreview(): void {
-    const element = this.previewElement;
-    if (!element) {
+    const stream =
+      this.effectsHandle && this.effectsSource === this.videoTrack
+        ? this.effectsHandle.stream
+        : this.videoStream;
+    for (const element of this.previewElements.values()) {
+      element.muted = true;
+      if (element.srcObject === stream) {
+        continue;
+      }
+      element.srcObject = stream;
+      if (stream) {
+        void element.play().catch(() => undefined);
+      }
+    }
+  }
+
+  private scheduleEffects(): void {
+    this.effectsQueue = this.effectsQueue
+      .then(() => this.reconcileEffects())
+      .catch(() => undefined);
+  }
+
+  /**
+   * Serialised: brings the effects pipeline in line with the latest choice and
+   * camera track. Every await re-checks that the track and plan it started
+   * with are still current, so a newer choice or a stopped camera wins.
+   */
+  private async reconcileEffects(): Promise<void> {
+    const track = this.videoTrack;
+    const plan = this.effectsSuspended ? null : this.effectsPlan;
+    const planKey = this.effectsPlanKey;
+    const load = this.environment.loadVisualEffects;
+    if (this.disposed || !track || !plan || !load) {
+      await this.detachEffects();
+      if (!this.disposed && !this.effectsSuspended) {
+        const settled =
+          plan && track && !load ? "unsupported" : ("off" as const);
+        this.updateEffectsStatus(settled);
+      }
       return;
     }
-    element.muted = true;
-    if (element.srcObject === this.videoStream) {
+    const isCurrent = () =>
+      !this.disposed &&
+      !this.effectsSuspended &&
+      this.videoTrack === track &&
+      this.effectsPlanKey === planKey;
+
+    const handle = this.effectsHandle;
+    if (handle && this.effectsSource === track) {
+      if (this.effectsAppliedKey === planKey) {
+        this.updateEffectsStatus("active");
+        return;
+      }
+      const applied = await handle.apply(plan).catch(() => false);
+      if (!isCurrent()) return;
+      if (applied) {
+        this.effectsAppliedKey = planKey;
+        this.updateEffectsStatus("active");
+        return;
+      }
+    }
+
+    await this.detachEffects();
+    if (!isCurrent()) return;
+    this.updateEffectsStatus("loading");
+    let runtime: MediaVisualEffectsRuntime;
+    try {
+      runtime = await load();
+    } catch {
+      if (isCurrent()) this.updateEffectsStatus("failed");
       return;
     }
-    element.srcObject = this.videoStream;
-    if (this.videoStream) {
-      void element.play().catch(() => undefined);
+    if (!isCurrent()) return;
+    if (!runtime.supportsVisualEffects(plan.mode)) {
+      this.updateEffectsStatus("unsupported");
+      return;
+    }
+    let started: StandaloneVisualEffectsHandle;
+    try {
+      started = await runtime.startStandaloneVisualEffects(track, plan, {
+        onOverload: () => this.handleEffectsOverload(started),
+      });
+    } catch {
+      if (isCurrent()) this.updateEffectsStatus("failed");
+      return;
+    }
+    if (!isCurrent()) {
+      await started.destroy().catch(() => undefined);
+      return;
+    }
+    this.effectsHandle = started;
+    this.effectsSource = track;
+    this.effectsAppliedKey = planKey;
+    this.syncPreview();
+    this.updateEffectsStatus("active");
+  }
+
+  /** Runtime guard (ADR-0031 §11): fall back to the raw camera, no auto-retry. */
+  private handleEffectsOverload(handle: StandaloneVisualEffectsHandle): void {
+    if (this.disposed || this.effectsHandle !== handle) {
+      return;
+    }
+    this.effectsSuspended = true;
+    this.updateEffectsStatus("overloaded");
+    this.scheduleEffects();
+  }
+
+  /** Drops the pipeline reference at once (preview back to raw), then frees it. */
+  private detachEffects(): Promise<void> {
+    const handle = this.effectsHandle;
+    this.effectsHandle = null;
+    this.effectsSource = null;
+    this.effectsAppliedKey = "";
+    this.syncPreview();
+    return handle ? handle.destroy().catch(() => undefined) : Promise.resolve();
+  }
+
+  private updateEffectsStatus(status: MediaPrejoinEffectsStatus): void {
+    if (this.currentSnapshot.effectsStatus !== status) {
+      this.update({ effectsStatus: status });
     }
   }
 
@@ -920,6 +1182,7 @@ export class MediaPrejoinController {
 
   private async releasePreviewResources(): Promise<void> {
     const meterStopped = this.stopMeter();
+    const effectsReleased = this.detachEffects();
     for (const track of this.ownedTracks) {
       track.stop();
     }
@@ -929,7 +1192,7 @@ export class MediaPrejoinController {
     this.audioStream = null;
     this.videoStream = null;
     this.syncPreview();
-    await meterStopped;
+    await Promise.all([meterStopped, effectsReleased]);
   }
 
   private async releaseSpeakerResources(): Promise<void> {
