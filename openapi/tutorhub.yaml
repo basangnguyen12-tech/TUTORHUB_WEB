@@ -16958,6 +16958,28 @@ components:
           type: string
           format: date-time
           description: Server-controlled expiry for the latest represented event; every event lives exactly 10 seconds, so a cluster opened by accepted_at can span at most 10.75 seconds including the fixed 750 millisecond grouping window.
+    MediaParticipantReaction:
+      type: object
+      additionalProperties: false
+      required:
+        [participant_key, reaction, signal_sequence, accepted_at, expires_at]
+      description: Newest unexpired reaction of one active roster participant, correlated only through the opaque participant key. It never carries user, ParticipantSession or provider identifiers.
+      properties:
+        participant_key:
+          $ref: "#/components/schemas/MediaParticipantKey"
+        reaction:
+          $ref: "#/components/schemas/MediaReaction"
+        signal_sequence:
+          type: integer
+          format: int64
+          minimum: 1
+        accepted_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          description: Server-controlled expiry exactly 10 seconds after accepted_at.
     MediaSignalViewerOperations:
       type: object
       additionalProperties: false
@@ -17033,6 +17055,12 @@ components:
           description: Bounded unexpired server-grouped reactions. Clients animate at most three clusters, keep the remaining groups in a bounded summary, and batch screen-reader announcements at most once every two seconds.
           items:
             $ref: "#/components/schemas/MediaReactionCluster"
+        participant_reactions:
+          type: array
+          maxItems: 50
+          description: Optional per-participant projection of the same unexpired reaction events behind reaction_clusters — at most one newest reaction per active participant key, ordered by signal_sequence descending. Clients show it as a decorative badge on that participant's own video tile; room-level announcements stay with reaction_clusters.
+          items:
+            $ref: "#/components/schemas/MediaParticipantReaction"
         server_time:
           type: string
           format: date-time

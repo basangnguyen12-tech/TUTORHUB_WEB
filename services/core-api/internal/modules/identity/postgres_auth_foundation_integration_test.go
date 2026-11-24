@@ -43,7 +43,7 @@ func authSchemaTestDatabase(t *testing.T) (context.Context, *pgxpool.Pool, strin
 	return ctx, pool, url
 }
 
-const latestAuthTestVersion = 52
+const latestAuthTestVersion = 53
 
 func requireAuthSchemaVersion(t *testing.T, ctx context.Context, url string, want uint) {
 	t.Helper()

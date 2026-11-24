@@ -2,7 +2,9 @@ package media
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,9 +17,13 @@ func TestMediaSignalServiceValidatesTypedCommandsAndReturnsPrivacySafeSnapshot(t
 	now := time.Date(2026, time.August, 12, 9, 0, 0, 0, time.UTC)
 	roomID := uuid.New()
 	participantKey := uuid.New()
-	repository := &fakeMediaSignalRepository{snapshot: testMediaParticipantSnapshot(
-		roomID, participantKey, now,
-	)}
+	acknowledged := testMediaParticipantSnapshot(roomID, participantKey, now)
+	acknowledged.ParticipantReactions = []ParticipantReaction{{
+		ParticipantKey: participantKey, Reaction: MediaReactionClap,
+		SignalSequence: acknowledged.LastSignalSequence,
+		AcceptedAt:     now, ExpiresAt: now.Add(mediaReactionTTL),
+	}}
+	repository := &fakeMediaSignalRepository{snapshot: acknowledged}
 	service, err := NewMediaSignalService(repository)
 	if err != nil {
 		t.Fatal(err)
@@ -36,6 +42,11 @@ func TestMediaSignalServiceValidatesTypedCommandsAndReturnsPrivacySafeSnapshot(t
 	})
 	if err != nil {
 		t.Fatalf("send valid signal: %v", err)
+	}
+	if len(result.ParticipantReactions) != 1 ||
+		result.ParticipantReactions[0].ParticipantKey != participantKey ||
+		result.ParticipantReactions[0].Reaction != MediaReactionClap {
+		t.Fatalf("valid participant reaction was not returned: %+v", result.ParticipantReactions)
 	}
 	if result.SelfParticipantKey != participantKey || repository.command.Kind != MediaSignalReaction ||
 		repository.command.Reaction != MediaReactionClap || len(repository.command.Fingerprint) != 32 ||
@@ -136,6 +147,94 @@ func TestGroupMediaReactionEventsIsSequenceOrderedWindowedAndBounded(t *testing.
 	}
 }
 
+func TestLatestParticipantReactionsKeepsNewestActiveReactionPerParticipant(t *testing.T) {
+	t.Parallel()
+
+	base := time.Date(2026, time.November, 24, 9, 0, 0, 0, time.UTC)
+	teacher := uuid.MustParse("018f4c7b-9b0a-7a34-8a4c-96d26cb87221")
+	student := uuid.MustParse("018f4c7b-9b0a-7a34-8a4c-96d26cb87222")
+	other := uuid.MustParse("018f4c7b-9b0a-7a34-8a4c-96d26cb87223")
+	departed := uuid.MustParse("018f4c7b-9b0a-7a34-8a4c-96d26cb87299")
+	roster := []MediaParticipant{
+		{ParticipantKey: teacher, RosterSequence: 1},
+		{ParticipantKey: student, RosterSequence: 2},
+		{ParticipantKey: other, RosterSequence: 3},
+	}
+	event := func(key uuid.UUID, reaction MediaReaction, sequence int64) mediaReactionEvent {
+		accepted := base.Add(time.Duration(sequence) * 100 * time.Millisecond)
+		return mediaReactionEvent{
+			Reaction: reaction, SignalSequence: sequence, AcceptedAt: accepted,
+			ExpiresAt: accepted.Add(mediaReactionTTL), ParticipantKey: key,
+		}
+	}
+	events := []mediaReactionEvent{
+		event(student, MediaReactionClap, 4),
+		event(teacher, MediaReactionThumbsUp, 2),
+		event(student, MediaReactionHeart, 7),
+		event(uuid.Nil, MediaReactionLaugh, 8),
+		event(departed, MediaReactionCelebrate, 9),
+		event(other, "fire", 10),
+		event(student, MediaReactionSurprised, 5),
+	}
+
+	reactions := latestParticipantReactions(events, roster)
+	if len(reactions) != 2 {
+		t.Fatalf("participant reactions = %+v, want student then teacher", reactions)
+	}
+	if reactions[0].ParticipantKey != student || reactions[0].Reaction != MediaReactionHeart ||
+		reactions[0].SignalSequence != 7 ||
+		reactions[1].ParticipantKey != teacher || reactions[1].Reaction != MediaReactionThumbsUp ||
+		reactions[1].SignalSequence != 2 {
+		t.Fatalf("unexpected newest-per-participant order: %+v", reactions)
+	}
+
+	// Room-level clusters stay a pure function of the same events: senders who
+	// left or are unknown still count toward the bounded summary (only the
+	// non-allowlisted event is dropped, exactly as before).
+	clusters := groupMediaReactionEvents(events)
+	total := 0
+	for _, cluster := range clusters {
+		total += cluster.Count
+	}
+	if total != len(events)-1 {
+		t.Fatalf("clusters lost events: total=%d clusters=%+v", total, clusters)
+	}
+
+	storm := make([]MediaParticipant, 0, maximumMediaRosterParticipants+5)
+	stormEvents := make([]mediaReactionEvent, 0, maximumMediaRosterParticipants+5)
+	for index := 0; index < maximumMediaRosterParticipants+5; index++ {
+		key := uuid.New()
+		storm = append(storm, MediaParticipant{ParticipantKey: key, RosterSequence: int64(index + 1)})
+		stormEvents = append(stormEvents, event(key, MediaReactionClap, int64(index+1)))
+	}
+	bounded := latestParticipantReactions(stormEvents, storm)
+	if len(bounded) != maximumParticipantReactions ||
+		bounded[0].SignalSequence != int64(len(stormEvents)) {
+		t.Fatalf("participant reactions were not bounded newest first: len=%d first=%+v", len(bounded), bounded[0])
+	}
+}
+
+func TestMediaParticipantSnapshotAlwaysSerializesParticipantReactionsArray(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.November, 24, 9, 0, 0, 0, time.UTC)
+	snapshot := testMediaParticipantSnapshot(uuid.New(), uuid.New(), now)
+	snapshot.ParticipantReactions = nil
+	body, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"participant_reactions":[]`) ||
+		!strings.Contains(string(body), `"reaction_clusters":[]`) {
+		t.Fatalf("participant_reactions must serialize as an array: %s", body)
+	}
+	for _, forbidden := range []string{"participant_session", "user_id", "email", "provider"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("snapshot leaked %q: %s", forbidden, body)
+		}
+	}
+}
+
 func TestMediaSignalServiceRejectsMalformedRepositoryProjection(t *testing.T) {
 	t.Parallel()
 
@@ -195,6 +294,57 @@ func TestMediaSignalServiceRejectsUnboundedOrDuplicateSignalProjection(t *testin
 			},
 		},
 	}
+
+	participantReaction := func(key uuid.UUID, sequence int64) ParticipantReaction {
+		return ParticipantReaction{
+			ParticipantKey: key, Reaction: MediaReactionHeart, SignalSequence: sequence,
+			AcceptedAt: now, ExpiresAt: now.Add(mediaReactionTTL),
+		}
+	}
+	type projectionCase = struct {
+		name   string
+		mutate func(*MediaParticipantSnapshot)
+	}
+	tests = append(tests,
+		projectionCase{
+			name: "participant reaction outside the roster",
+			mutate: func(snapshot *MediaParticipantSnapshot) {
+				snapshot.ParticipantReactions = []ParticipantReaction{participantReaction(uuid.New(), 3)}
+			},
+		},
+		projectionCase{
+			name: "duplicate participant reaction",
+			mutate: func(snapshot *MediaParticipantSnapshot) {
+				snapshot.ParticipantReactions = []ParticipantReaction{
+					participantReaction(participantKey, 4), participantReaction(participantKey, 3),
+				}
+			},
+		},
+		projectionCase{
+			name: "participant reaction outlives one event TTL",
+			mutate: func(snapshot *MediaParticipantSnapshot) {
+				reaction := participantReaction(participantKey, 4)
+				reaction.ExpiresAt = now.Add(mediaReactionTTL + time.Nanosecond)
+				snapshot.ParticipantReactions = []ParticipantReaction{reaction}
+			},
+		},
+		projectionCase{
+			name: "participant reaction after last signal sequence",
+			mutate: func(snapshot *MediaParticipantSnapshot) {
+				snapshot.ParticipantReactions = []ParticipantReaction{
+					participantReaction(participantKey, snapshot.LastSignalSequence+1),
+				}
+			},
+		},
+		projectionCase{
+			name: "participant reaction outside the allowlist",
+			mutate: func(snapshot *MediaParticipantSnapshot) {
+				reaction := participantReaction(participantKey, 4)
+				reaction.Reaction = "fire"
+				snapshot.ParticipantReactions = []ParticipantReaction{reaction}
+			},
+		},
+	)
 
 	for _, test := range tests {
 		test := test

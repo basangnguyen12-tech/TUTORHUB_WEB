@@ -7,10 +7,13 @@ import {
   foldClassroomSignalSnapshot,
   groupClassroomReactionEvents,
   identifyClassroomSignalSequenceGap,
+  projectParticipantReactions,
   projectReactionClusters,
+  projectTileSignals,
   sortCanonicalRoster,
   validateClassroomSignalSnapshot,
   visibleReactionCount,
+  type ClassroomParticipantReaction,
   type ClassroomReactionCluster,
   type ClassroomReactionEvent,
   type ClassroomSignalSnapshot,
@@ -420,6 +423,161 @@ describe("classroom reaction projection", () => {
       { reaction: "thumbs_up", count: 100, count_label: "99+" },
     ]);
     expect(visibleReactionCount(Number.POSITIVE_INFINITY)).toBe("0");
+  });
+});
+
+function participantReaction(
+  participantKey: string,
+  type: ClassroomParticipantReaction["reaction"],
+  sequence: number,
+  acceptedOffsetMs = 0,
+): ClassroomParticipantReaction {
+  return {
+    participant_key: participantKey,
+    reaction: type,
+    signal_sequence: sequence,
+    accepted_at: new Date(BASE_TIME_MS + acceptedOffsetMs).toISOString(),
+    expires_at: new Date(
+      BASE_TIME_MS + acceptedOffsetMs + REACTION_TTL_MS,
+    ).toISOString(),
+  };
+}
+
+describe("ROOM-STAGE-POLISH-04 participant reaction projection", () => {
+  it("keeps the optional field optional and leaves reaction clusters untouched", () => {
+    const withoutField = validateClassroomSignalSnapshot(snapshot());
+    expect(withoutField.valid).toBe(true);
+    expect(withoutField.snapshot).not.toHaveProperty("participant_reactions");
+
+    const clusters = [reactionCluster("clap", 0, 5, 2)];
+    const result = foldClassroomSignalSnapshot(
+      null,
+      {
+        ...snapshot({ reaction_clusters: clusters }),
+        participant_reactions: [
+          participantReaction(PARTICIPANT_C, "clap", 6, 100),
+        ],
+      },
+      BASE_TIME_MS + 1_000,
+    );
+    expect(result.status).toBe("applied");
+    expect(result.projection?.reactions).toEqual(
+      projectReactionClusters(clusters, BASE_TIME_MS + 1_000),
+    );
+    expect(result.projection?.participant_reactions).toEqual([
+      participantReaction(PARTICIPANT_C, "clap", 6, 100),
+    ]);
+    expect(
+      foldClassroomSignalSnapshot(null, snapshot(), BASE_TIME_MS).projection
+        ?.participant_reactions,
+    ).toEqual([]);
+  });
+
+  it("keeps only the newest unexpired reaction for each roster participant", () => {
+    const roster = snapshot().participants;
+    const projected = projectParticipantReactions(
+      [
+        participantReaction(PARTICIPANT_A, "clap", 3, 0),
+        participantReaction(PARTICIPANT_A, "heart", 6, 600),
+        participantReaction(PARTICIPANT_A, "laugh", 5, 500),
+        participantReaction(PARTICIPANT_B, "thumbs_up", 4, -9_500),
+        participantReaction(PARTICIPANT_C, "surprised", 2, 0),
+        participantReaction(
+          "018f4c7b-9b0a-7a34-8a4c-96d26cb87299",
+          "celebrate",
+          7,
+          0,
+        ),
+      ],
+      roster,
+      BASE_TIME_MS + 1_000,
+    );
+
+    // B expired (TTL from accepted_at -9.5 s), the unknown key is not in the
+    // roster, and A keeps its highest server sequence only.
+    expect(projected).toEqual([
+      participantReaction(PARTICIPANT_A, "heart", 6, 600),
+      participantReaction(PARTICIPANT_C, "surprised", 2, 0),
+    ]);
+    expect(
+      projectParticipantReactions(
+        [participantReaction(PARTICIPANT_C, "surprised", 2, 0)],
+        roster,
+        BASE_TIME_MS + REACTION_TTL_MS,
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects malformed, orphan, future or over-TTL participant reactions", () => {
+    const unsafe = validateClassroomSignalSnapshot({
+      ...snapshot(),
+      participant_reactions: [
+        { ...participantReaction(PARTICIPANT_A, "clap", 3), reaction: "fire" },
+        participantReaction("018f4c7b-9b0a-7a34-8a4c-96d26cb87299", "clap", 4),
+        participantReaction(PARTICIPANT_B, "heart", 99),
+        {
+          ...participantReaction(PARTICIPANT_C, "laugh", 5),
+          expires_at: new Date(
+            BASE_TIME_MS + REACTION_TTL_MS + 1,
+          ).toISOString(),
+        },
+      ],
+    });
+
+    expect(unsafe.valid).toBe(false);
+    expect(unsafe.issues).toEqual(
+      expect.arrayContaining([
+        "participant_reactions[0].reaction is not allowed",
+        "participant_reactions contains a participant outside the roster",
+        "participant_reactions contains a sequence after last_signal_sequence",
+        `participant reaction TTL must not exceed ${REACTION_TTL_MS} milliseconds`,
+      ]),
+    );
+    expect(
+      validateClassroomSignalSnapshot({
+        ...snapshot(),
+        participant_reactions: Array.from({ length: 51 }, (_, index) =>
+          participantReaction(PARTICIPANT_A, "clap", index + 1),
+        ),
+      }).issues,
+    ).toContain("participant_reactions must be an array with at most 50 items");
+  });
+
+  it("indexes hand badges and the newest reaction badge by participant key", () => {
+    const projection = foldClassroomSignalSnapshot(
+      null,
+      {
+        ...snapshot(),
+        participant_reactions: [
+          participantReaction(PARTICIPANT_A, "celebrate", 8, 200),
+          participantReaction(PARTICIPANT_B, "thumbs_up", 6, 100),
+        ],
+      },
+      BASE_TIME_MS + 500,
+    ).projection;
+    const tiles = projectTileSignals(projection);
+
+    expect(tiles.get(PARTICIPANT_A)).toEqual({
+      hand: { queue_position: 1, show_position: true },
+      reaction: { reaction: "celebrate", signal_sequence: 8 },
+    });
+    expect(tiles.get(PARTICIPANT_B)).toEqual({
+      hand: null,
+      reaction: { reaction: "thumbs_up", signal_sequence: 6 },
+    });
+    expect(tiles.get(PARTICIPANT_C)).toEqual({
+      hand: { queue_position: 2, show_position: true },
+      reaction: null,
+    });
+
+    const single = projectTileSignals({
+      raised_hands: projection!.raised_hands.slice(0, 1),
+    });
+    expect(single.get(PARTICIPANT_A)?.hand).toEqual({
+      queue_position: 1,
+      show_position: false,
+    });
+    expect(projectTileSignals(null).size).toBe(0);
   });
 });
 

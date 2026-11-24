@@ -389,7 +389,8 @@ func loadMediaParticipantSnapshot(
 			CanEndRoom:  authority.canEndRoom,
 		},
 		Participants: []MediaParticipant{}, RaisedHands: []RaisedHand{},
-		ReactionClusters: []ReactionCluster{}, ServerTime: databaseTime.UTC(),
+		ReactionClusters: []ReactionCluster{}, ParticipantReactions: []ParticipantReaction{},
+		ServerTime: databaseTime.UTC(),
 	}
 	rows, err := transaction.Query(
 		ctx,
@@ -476,13 +477,24 @@ LIMIT 50`,
 	}
 	handRows.Close()
 
+	// LEFT JOIN keeps every unexpired event for the room-level clusters exactly
+	// as before; the sender's opaque participant_key is projected only while
+	// that ParticipantSession is still active in the same tenant/space/room.
 	reactionRows, err := transaction.Query(
 		ctx,
-		`SELECT reaction, signal_sequence, accepted_at, expires_at
-FROM tutorhub.media_reaction_events
-WHERE tenant_id = $1 AND space_id = $2 AND room_instance_id = $3
-  AND expires_at > $4
-ORDER BY signal_sequence
+		`SELECT reaction.reaction, reaction.signal_sequence, reaction.accepted_at,
+       reaction.expires_at, participant.participant_key
+FROM tutorhub.media_reaction_events AS reaction
+LEFT JOIN tutorhub.media_participant_sessions AS participant
+  ON participant.tenant_id = reaction.tenant_id
+ AND participant.space_id = reaction.space_id
+ AND participant.room_instance_id = reaction.room_instance_id
+ AND participant.id = reaction.participant_session_id
+ AND participant.status IN ('joining', 'connected', 'reconnecting')
+WHERE reaction.tenant_id = $1 AND reaction.space_id = $2
+  AND reaction.room_instance_id = $3
+  AND reaction.expires_at > $4
+ORDER BY reaction.signal_sequence
 LIMIT 500`,
 		authority.scope.TenantID, authority.space.ID, authority.room.ID, databaseTime.UTC(),
 	)
@@ -492,11 +504,16 @@ LIMIT 500`,
 	events := make([]mediaReactionEvent, 0)
 	for reactionRows.Next() {
 		var event mediaReactionEvent
+		var participantKey *uuid.UUID
 		if err := reactionRows.Scan(
 			&event.Reaction, &event.SignalSequence, &event.AcceptedAt, &event.ExpiresAt,
+			&participantKey,
 		); err != nil {
 			reactionRows.Close()
 			return MediaParticipantSnapshot{}, err
+		}
+		if participantKey != nil {
+			event.ParticipantKey = *participantKey
 		}
 		event.AcceptedAt, event.ExpiresAt = event.AcceptedAt.UTC(), event.ExpiresAt.UTC()
 		events = append(events, event)
@@ -506,6 +523,7 @@ LIMIT 500`,
 		return MediaParticipantSnapshot{}, err
 	}
 	reactionRows.Close()
+	snapshot.ParticipantReactions = latestParticipantReactions(events, snapshot.Participants)
 	snapshot.ReactionClusters = groupMediaReactionEvents(events)
 	return snapshot, nil
 }

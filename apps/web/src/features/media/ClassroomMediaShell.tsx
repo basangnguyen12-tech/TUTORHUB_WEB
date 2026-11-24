@@ -79,6 +79,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -119,8 +120,13 @@ import {
 } from "./classroomLayout";
 import {
   CLASSROOM_REACTION_TYPES,
+  fnv1aHash,
+  mediaTileTone,
+  projectTileSignals,
   type ClassroomReactionType,
+  type ClassroomReactionVisualCluster,
   type ClassroomSignalProjection,
+  type ClassroomTileSignal,
 } from "./classroomSignals";
 import {
   ClassroomEndRoomDialog,
@@ -487,6 +493,13 @@ interface MediaTileProps {
   attachVideo: boolean;
   item: MediaLayoutItem;
   pinned: boolean;
+  /**
+   * ROOM-STAGE-POLISH-04: this participant's hand / reaction badges. Ignored
+   * on a screen-share tile, which never carries personal badges.
+   */
+  signal?: ClassroomTileSignal | undefined;
+  /** ROOM-STAGE-POLISH-04: camera-off surface tone (0–7). */
+  tone: number;
   trackRef?: TrackReferenceOrPlaceholder;
   variant: "grid" | "rail" | "stage";
   onTogglePin: (item: MediaLayoutItem, focusTarget: HTMLElement) => void;
@@ -858,6 +871,19 @@ export function ClassroomMediaShell({
       );
     };
   }, [localParticipant]);
+
+  // ROOM-STAGE-POLISH-04: top-right hand / reaction badges per tile, joined
+  // only through the opaque participant key (the tile id once the server
+  // roster is authoritative), and a per-room salt for camera-off tones.
+  const signalProjection = signals?.projection;
+  const tileSignals = useMemo(
+    () => projectTileSignals(signalProjection),
+    [signalProjection],
+  );
+  const toneSalt = useMemo(
+    () => fnv1aHash(signalProjection?.room_instance_id ?? ""),
+    [signalProjection?.room_instance_id],
+  );
 
   const allCameraItems = useMemo(() => {
     void participantAttributeRevision;
@@ -1434,6 +1460,8 @@ export function ClassroomMediaShell({
       items={projection.items}
       onTogglePin={handleTogglePin}
       pinnedID={layoutState.pinnedParticipantId}
+      tileSignals={tileSignals}
+      toneSalt={toneSalt}
     />
   );
   const selfHand = signals?.projection?.raised_hands.find(
@@ -1726,17 +1754,20 @@ export function ClassroomMediaShell({
             </div>
           </section>
         )}
+        {/*
+          ROOM-STAGE-POLISH-04: Meet / Zoom style floating reactions. At most
+          three server clusters (ADR-0031 §9) each fly up one lane above the
+          Dock; a newer event in the same cluster remounts it (key) so it
+          flies again. Reduced motion / forced colours keep static pills.
+        */}
         {signals?.projection && (
           <div aria-hidden="true" className="media-p406-reactions">
-            {signals.projection.reactions.clusters.map((cluster) => (
-              <span
-                className="media-p406-reaction-cluster"
-                data-reaction={cluster.reaction}
-                key={cluster.cluster_id}
-              >
-                <span>{reactionGlyph(cluster.reaction)}</span>
-                <span>{cluster.count_label}</span>
-              </span>
+            {signals.projection.reactions.clusters.map((cluster, lane) => (
+              <FloatingReaction
+                cluster={cluster}
+                key={`${cluster.cluster_id}:${cluster.last_signal_sequence}`}
+                lane={lane}
+              />
             ))}
           </div>
         )}
@@ -1761,6 +1792,8 @@ export function ClassroomMediaShell({
                       item={item}
                       onTogglePin={handleTogglePin}
                       pinned={layoutState.pinnedParticipantId === item.id}
+                      signal={tileSignals.get(item.id)}
+                      tone={mediaTileTone(item.sequence, toneSalt)}
                       variant="grid"
                     />
                   </li>
@@ -1781,6 +1814,8 @@ export function ClassroomMediaShell({
               item={stageItem}
               onTogglePin={handleTogglePin}
               pinned={layoutState.pinnedParticipantId === stageItem.id}
+              signal={tileSignals.get(stageItem.id)}
+              tone={mediaTileTone(stageItem.sequence, toneSalt)}
               trackRef={stageTrackRef}
               variant="stage"
             />
@@ -2781,12 +2816,16 @@ function MediaTile({
   item,
   onTogglePin,
   pinned,
+  signal,
+  tone,
   trackRef = item.trackRef,
   variant,
 }: MediaTileProps) {
   const { t } = useI18n();
   const displayName = item.displayName;
   const isPresentation = trackRef.source === Track.Source.ScreenShare;
+  // A screen share is never a person's tile: no personal badges, no tone.
+  const tileSignal = isPresentation ? undefined : signal;
   const label = t(
     isPresentation ? "media.p405.screenShare" : "media.p405.participantVideo",
     { name: displayName },
@@ -2799,6 +2838,7 @@ function MediaTile({
     <ParticipantTile
       aria-label={label}
       className={`media-p405-tile media-p405-tile--${variant}`}
+      data-tone={isPresentation ? undefined : tone}
       data-video-state={attachVideo ? "active" : "paused"}
       trackRef={trackRef}
     >
@@ -2810,13 +2850,41 @@ function MediaTile({
           trackRef={trackRef}
         />
       )}
-      <div
-        aria-hidden="true"
-        className="media-p405-avatar"
-        data-tone={avatarTone(displayName)}
-      >
+      <div aria-hidden="true" className="media-p405-avatar" data-tone={tone}>
         {displayName.slice(0, 1).toLocaleUpperCase()}
       </div>
+      {tileSignal && (tileSignal.hand || tileSignal.reaction) ? (
+        /*
+          Decorative: the room's polite live region already announces hand
+          queue changes and reaction summaries (ADR-0031 §8–9), so the
+          top-right badges stay out of the accessibility tree. The hand sits
+          in the corner; a transient reaction lands to its left.
+        */
+        <div aria-hidden="true" className="media-p406-tile-signals">
+          {tileSignal.reaction ? (
+            <span
+              className="media-p406-tile-reaction"
+              data-reaction={tileSignal.reaction.reaction}
+              key={tileSignal.reaction.signal_sequence}
+            >
+              {reactionGlyph(tileSignal.reaction.reaction)}
+            </span>
+          ) : null}
+          {tileSignal.hand ? (
+            <span
+              className="media-p406-tile-hand"
+              data-queue-position={tileSignal.hand.queue_position}
+            >
+              <Hand strokeWidth={2.2} />
+              {tileSignal.hand.show_position ? (
+                <span className="media-p406-tile-hand__position">
+                  {tileSignal.hand.queue_position}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <div className="media-p405-tile-meta">
         <span>{displayName}</span>
         <IconButton
@@ -2839,13 +2907,53 @@ function MediaTile({
   );
 }
 
-/** A stable colour slot (0–5) for the camera-off avatar, from the name. */
-function avatarTone(name: string): number {
-  let hash = 0;
-  for (const character of name) {
-    hash = (hash * 31 + (character.codePointAt(0) ?? 0)) >>> 0;
-  }
-  return hash % 6;
+/** Up to two trailing echo glyphs for a grouped burst; DOM stays bounded. */
+const MAX_REACTION_ECHOES = 2;
+/** Horizontal sway of one flight, in CSS px either side of its lane. */
+const REACTION_DRIFT_PX = 28;
+
+/**
+ * ROOM-STAGE-POLISH-04: one floating reaction lane. The sway comes from the
+ * cluster id and its latest sequence, so streams never stack on one straight
+ * line and a re-render never changes an in-flight path.
+ */
+function FloatingReaction({
+  cluster,
+  lane,
+}: {
+  cluster: ClassroomReactionVisualCluster;
+  lane: number;
+}) {
+  const glyph = reactionGlyph(cluster.reaction);
+  const drift =
+    (fnv1aHash(`${cluster.cluster_id}:${cluster.last_signal_sequence}`) %
+      (REACTION_DRIFT_PX * 2 + 1)) -
+    REACTION_DRIFT_PX;
+  const echoes = Math.min(MAX_REACTION_ECHOES, cluster.count - 1);
+  return (
+    <span
+      className="media-p406-reaction-cluster"
+      data-lane={lane}
+      data-reaction={cluster.reaction}
+      style={{ "--reaction-drift-x": `${drift}px` } as CSSProperties}
+    >
+      <span className="media-p406-reaction-glyph">{glyph}</span>
+      {Array.from({ length: echoes }, (_, index) => (
+        <span
+          className="media-p406-reaction-echo"
+          data-echo={index + 1}
+          key={index}
+        >
+          {glyph}
+        </span>
+      ))}
+      {cluster.count > 1 ? (
+        <span className="media-p406-reaction-count">
+          ×{cluster.count_label}
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 function ParticipantRail({
@@ -2853,11 +2961,15 @@ function ParticipantRail({
   items,
   onTogglePin,
   pinnedID,
+  tileSignals,
+  toneSalt,
 }: {
   attachedVideoItemIDs: ReadonlySet<string>;
   items: readonly MediaLayoutItem[];
   onTogglePin: MediaTileProps["onTogglePin"];
   pinnedID: string | null;
+  tileSignals: ReadonlyMap<string, ClassroomTileSignal>;
+  toneSalt: number;
 }) {
   const { t } = useI18n();
   if (items.length === 0) {
@@ -2872,6 +2984,8 @@ function ParticipantRail({
             item={item}
             onTogglePin={onTogglePin}
             pinned={pinnedID === item.id}
+            signal={tileSignals.get(item.id)}
+            tone={mediaTileTone(item.sequence, toneSalt)}
             variant="rail"
           />
         </li>

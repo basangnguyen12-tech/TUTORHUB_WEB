@@ -5837,6 +5837,20 @@ export type components = {
       /** Format: int64 */
       readonly target_participant_version: number;
     };
+    /** @description Newest unexpired reaction of one active roster participant, correlated only through the opaque participant key. It never carries user, ParticipantSession or provider identifiers. */
+    readonly MediaParticipantReaction: {
+      /** Format: date-time */
+      readonly accepted_at: string;
+      /**
+       * Format: date-time
+       * @description Server-controlled expiry exactly 10 seconds after accepted_at.
+       */
+      readonly expires_at: string;
+      readonly participant_key: components["schemas"]["MediaParticipantKey"];
+      readonly reaction: components["schemas"]["MediaReaction"];
+      /** Format: int64 */
+      readonly signal_sequence: number;
+    };
     readonly MediaParticipantRoleRequest: {
       /** @enum {string} */
       readonly desired_role: "co_host" | "attendee";
@@ -5857,6 +5871,8 @@ export type components = {
        * @description Highest server signal sequence represented by the snapshot; clients refetch after a gap.
        */
       readonly last_signal_sequence: number;
+      /** @description Optional per-participant projection of the same unexpired reaction events behind reaction_clusters — at most one newest reaction per active participant key, ordered by signal_sequence descending. Clients show it as a decorative badge on that participant's own video tile; room-level announcements stay with reaction_clusters. */
+      readonly participant_reactions?: readonly components["schemas"]["MediaParticipantReaction"][];
       readonly participants: readonly components["schemas"]["MediaParticipant"][];
       /**
        * Format: int64

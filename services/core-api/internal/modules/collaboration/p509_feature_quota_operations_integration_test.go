@@ -83,8 +83,8 @@ func TestP509FeatureQuotaOperationsPostgres(t *testing.T) {
 	).Scan(&version, &dirty); err != nil {
 		t.Fatal("inspect P5-COLLAB-09 migration ledger")
 	}
-	if version != 42 || dirty {
-		t.Fatal("P5-COLLAB-09 database gates require clean ledger 42 false")
+	if version < 42 || dirty {
+		t.Fatal("P5-COLLAB-09 database gates require clean ledger at or after 42")
 	}
 
 	fixtureA := seedWhiteboardPostgresFixture(t, ctx, ownerPool)

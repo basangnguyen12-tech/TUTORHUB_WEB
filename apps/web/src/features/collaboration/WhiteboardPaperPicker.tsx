@@ -6,6 +6,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { Palette } from "lucide-react";
 import { useI18n } from "../../app/i18n";
 import {
   isFixedPaperSurface,
@@ -18,7 +19,7 @@ import {
 } from "./whiteboardPaper";
 
 /**
- * Teacher/presenter: a glass trigger that opens a non-modal paper popover
+ * Teacher/presenter: a round glass palette key that opens a non-modal paper popover
  * (3×3 toggle cards + light/dark switch). Student (`readOnly`): a passive pill
  * naming the paper the teacher chose. Toggle buttons use `aria-pressed`, never
  * `role="radio"`, so Excalidraw's tool radios stay the only radios in view.
@@ -130,12 +131,17 @@ export function WhiteboardPaperPicker({
         ref={triggerRef}
         type="button"
       >
-        <PaperSwatch dark={paper.dark} mode={paper.mode} variant="chip" />
+        {/*
+          ROOM-STAGE-POLISH-04: one round palette key like Lock / ⋯ / Close.
+          The current paper lives in the accessible name and the tooltip.
+        */}
+        <Palette
+          aria-hidden="true"
+          className="whiteboard-paper-trigger-icon"
+          strokeWidth={1.9}
+        />
         <span className="whiteboard-paper-trigger-label">
           {t("whiteboard.paper.trigger", { mode: modeName })}
-        </span>
-        <span aria-hidden="true" className="whiteboard-paper-trigger-caret">
-          ▾
         </span>
       </button>
       {open ? (

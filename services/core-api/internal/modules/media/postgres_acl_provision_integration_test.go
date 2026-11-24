@@ -201,6 +201,10 @@ func runProvisionPostgresMediaLifecycleRuntimeExactACL(
 		if version != 32 || dirty {
 			t.Fatal("P4-06 ACL provisioning requires ledger 32 false")
 		}
+	} else if configuration.expectedVersion >= 42 {
+		if version < configuration.expectedVersion || dirty {
+			t.Fatalf("media ACL provisioning requires clean ledger at or after %d", configuration.expectedVersion)
+		}
 	} else if version != configuration.expectedVersion || dirty {
 		t.Fatalf("media ACL provisioning requires ledger %d false", configuration.expectedVersion)
 	}

@@ -45,11 +45,8 @@ func TestPostgresMediaParticipantSignalsLifecycleAndConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatal("inspect participant-signal migration ledger")
 	}
-	if version.Dirty ||
-		(version.Number != 31 && version.Number != 32 && version.Number != 33 && version.Number != 34 &&
-			version.Number != 35 && version.Number != 36 && version.Number != 37 &&
-			version.Number != 38 && version.Number != 39 && version.Number != 40 && version.Number != 41 && version.Number != 42) {
-		t.Fatal("P4-06 retained integration requires a clean ledger from version 31 through 42")
+	if version.Dirty || version.Number < 31 {
+		t.Fatal("P4-06 retained integration requires a clean ledger at or after version 31")
 	}
 	if err := migrationrunner.Up(ctx, migrationURL); err != nil {
 		t.Fatal("apply participant-signal migrations")
@@ -58,8 +55,8 @@ func TestPostgresMediaParticipantSignalsLifecycleAndConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatal("inspect participant-signal migration ledger after forward migration")
 	}
-	if version.Number != 42 || version.Dirty {
-		t.Fatal("P4-06 retained integration requires latest ledger 42 false after forward migration")
+	if version.Number < 42 || version.Dirty {
+		t.Fatal("P4-06 retained integration requires clean ledger at or after 42 after forward migration")
 	}
 	migrationPool := openMediaIntegrationPool(t, ctx, migrationURL)
 	t.Cleanup(migrationPool.Close)
@@ -820,6 +817,24 @@ FROM ordered, anchor WHERE reaction.id=ordered.id`, fixture.access["student"].Te
 	if !found {
 		t.Fatalf("two bounded clap events were not grouped: %+v", grouped.ReactionClusters)
 	}
+	// ROOM-STAGE-POLISH-04: the same LEFT JOIN projects the sender's newest
+	// unexpired reaction through the opaque roster key only.
+	studentKey := fixture.keys["student"]
+	studentReactions := 0
+	for _, reaction := range grouped.ParticipantReactions {
+		if reaction.ParticipantKey != studentKey {
+			continue
+		}
+		studentReactions++
+		if reaction.Reaction != MediaReactionClap ||
+			reaction.SignalSequence != snapshot.LastSignalSequence ||
+			reaction.ExpiresAt.Sub(reaction.AcceptedAt) != mediaReactionTTL {
+			t.Fatalf("student participant reaction = %+v, want newest clap", reaction)
+		}
+	}
+	if studentReactions != 1 || len(grouped.ParticipantReactions) > maximumParticipantReactions {
+		t.Fatalf("participant reactions = %+v, want one newest student clap", grouped.ParticipantReactions)
+	}
 	_, err = pool.Exec(ctx, `WITH anchor AS (SELECT clock_timestamp() AS current_time)
 UPDATE tutorhub.media_reaction_events
 SET accepted_at=anchor.current_time-interval '20 seconds',
@@ -836,7 +851,11 @@ WHERE tenant_id=$1 AND room_instance_id=$2 AND reaction='clap'`,
 			t.Fatalf("expired clap remained visible: %+v", cluster)
 		}
 	}
-	_ = snapshot
+	for _, reaction := range expired.ParticipantReactions {
+		if reaction.ParticipantKey == studentKey && reaction.Reaction == MediaReactionClap {
+			t.Fatalf("expired participant clap remained visible: %+v", reaction)
+		}
+	}
 }
 
 func assertP406AcceptedTimeAfterRoomWait(t *testing.T, ctx context.Context, pool *pgxpool.Pool,

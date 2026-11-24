@@ -6,16 +6,18 @@ import {
   MediaLobbyFilterContext,
   type MediaLobbyFilter,
 } from "../../components/MediaLobbyPanel";
-import { chatAvatarTone, normalizeEmojiSearch } from "./classroomChatMedia";
+import { normalizeEmojiSearch } from "./classroomChatMedia";
 import {
   ClassroomParticipantModerationMenu,
   type ClassroomModerationControlsModel,
 } from "./ClassroomModerationControls";
-import type {
-  ClassroomInstanceRole,
-  ClassroomRaisedHandProjection,
-  ClassroomRosterParticipant,
-  ClassroomSignalProjection,
+import {
+  fnv1aHash,
+  mediaTileTone,
+  type ClassroomInstanceRole,
+  type ClassroomRaisedHandProjection,
+  type ClassroomRosterParticipant,
+  type ClassroomSignalProjection,
 } from "./classroomSignals";
 
 /** The slice of the shell's signal controls the People panel reads. */
@@ -289,6 +291,10 @@ function PeopleInClass({
 }) {
   const { t } = useI18n();
   const projection = signals.projection;
+  const toneSalt = useMemo(
+    () => fnv1aHash(projection?.room_instance_id ?? ""),
+    [projection?.room_instance_id],
+  );
   const labelID = `${baseID}-in-class`;
 
   let content: ReactNode;
@@ -408,6 +414,7 @@ function PeopleInClass({
                   mutating={signals.mutating}
                   onLowerHand={onLowerHand}
                   person={person}
+                  tone={mediaTileTone(person.roster_sequence, toneSalt)}
                 />
               ))}
             </ul>
@@ -437,6 +444,7 @@ function PeopleRow({
   mutating,
   onLowerHand,
   person,
+  tone,
 }: {
   readonly actionSlots: number;
   readonly canModerateHands: boolean;
@@ -448,6 +456,7 @@ function PeopleRow({
   readonly mutating: boolean;
   readonly onLowerHand: (participantKey: string) => void;
   readonly person: ClassroomRosterParticipant;
+  readonly tone: number;
 }) {
   const { t } = useI18n();
   const name = person.display_name;
@@ -469,7 +478,7 @@ function PeopleRow({
       <span
         aria-hidden="true"
         className="media-p406-people-avatar"
-        data-tone={chatAvatarTone(name)}
+        data-tone={tone}
       >
         {(Array.from(name.trim())[0] ?? "?").toLocaleUpperCase()}
       </span>

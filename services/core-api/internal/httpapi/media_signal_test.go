@@ -30,7 +30,12 @@ func TestMediaParticipantSnapshotUsesExactAuthenticatedProjectionAndPrivacyHeade
 			ParticipantKey: participantKey, RosterSequence: 1, DisplayName: "Teacher",
 			InstanceRole: media.InstanceRoleHost, Connection: media.ParticipantConnectionConnected,
 		}},
-		RaisedHands: []media.RaisedHand{}, ReactionClusters: []media.ReactionCluster{}, ServerTime: fixedTime,
+		RaisedHands: []media.RaisedHand{}, ReactionClusters: []media.ReactionCluster{},
+		ParticipantReactions: []media.ParticipantReaction{{
+			ParticipantKey: participantKey, Reaction: media.MediaReactionHeart,
+			SignalSequence: 11, AcceptedAt: fixedTime, ExpiresAt: fixedTime.Add(10 * time.Second),
+		}},
+		ServerTime: fixedTime,
 	}}
 	identityService := classIdentityService(tenantID, actorID, nil)
 	handler := newMediaSignalTestHandler(identityService, service)
@@ -61,6 +66,18 @@ func TestMediaParticipantSnapshotUsesExactAuthenticatedProjectionAndPrivacyHeade
 		if strings.Contains(strings.ToLower(response.Body.String()), forbidden) {
 			t.Fatalf("participant snapshot leaked %q: %s", forbidden, response.Body.String())
 		}
+	}
+	var body struct {
+		ParticipantReactions []map[string]any `json:"participant_reactions"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode participant snapshot: %v", err)
+	}
+	if len(body.ParticipantReactions) != 1 ||
+		body.ParticipantReactions[0]["participant_key"] != participantKey.String() ||
+		body.ParticipantReactions[0]["reaction"] != "heart" ||
+		len(body.ParticipantReactions[0]) != 5 {
+		t.Fatalf("unexpected participant reactions projection: %s", response.Body.String())
 	}
 }
 
@@ -110,6 +127,11 @@ func TestMediaSignalMutationRequiresCSRFAndPassesExactTypedCommand(t *testing.T)
 		service.signalInput.Kind != media.MediaSignalReaction ||
 		service.signalInput.Reaction != media.MediaReactionClap {
 		t.Fatalf("unexpected signal mutation: status=%d service=%+v body=%s", response.Code, service, response.Body.String())
+	}
+	// A projection built without participant reactions still answers with an
+	// empty array, never null.
+	if !strings.Contains(response.Body.String(), `"participant_reactions":[]`) {
+		t.Fatalf("participant_reactions must be an array: %s", response.Body.String())
 	}
 }
 

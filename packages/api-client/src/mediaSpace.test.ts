@@ -165,6 +165,16 @@ describe("media-space API", () => {
           expires_at: "2030-08-03T00:00:19Z",
         },
       ],
+      // ROOM-STAGE-POLISH-04: optional newest reaction per opaque roster key.
+      participant_reactions: [
+        {
+          participant_key: targetParticipantOpaqueID,
+          reaction: "clap",
+          signal_sequence: 9,
+          accepted_at: "2030-08-03T00:00:09Z",
+          expires_at: "2030-08-03T00:00:19Z",
+        },
+      ],
       server_time: "2030-08-03T00:00:10Z",
     };
     const requestNonce = "signal-lower-one-0001";

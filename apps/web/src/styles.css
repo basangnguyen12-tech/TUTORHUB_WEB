@@ -5527,14 +5527,22 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+/*
+ * ROOM-STAGE-POLISH-04: Meet / Zoom floating reactions. The launch strip sits
+ * at the stage's bottom-left, just above the Dock (which lives outside the
+ * stage), so neither the right-hand inspector nor the camera column can cover
+ * it. Each of at most three server clusters (ADR-0031 §9) is one lane that
+ * pops, rises ~210px with a deterministic sway and fades at the top.
+ */
 .media-p406-reactions {
   position: absolute;
   z-index: 4;
-  right: 24px;
-  bottom: 24px;
-  display: grid;
-  max-width: min(280px, 55vw);
-  gap: 8px;
+  bottom: 16px;
+  left: 24px;
+  display: flex;
+  max-width: min(320px, 70vw);
+  align-items: flex-end;
+  gap: 16px;
   pointer-events: none;
 }
 
@@ -5543,24 +5551,127 @@ textarea:focus-visible {
 }
 
 .media-p406-reaction-cluster {
+  --reaction-drift-x: 0px;
+  position: relative;
   display: inline-flex;
   min-width: 48px;
-  min-height: 42px;
+  min-height: 48px;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  background: color-mix(in srgb, #090b0e 88%, transparent);
-  box-shadow: var(--shadow-md);
   color: #fff;
   font-weight: 700;
-  animation: media-p406-reaction-arrive 180ms ease-out both;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  animation: media-p406-reaction-float 3200ms cubic-bezier(0.22, 0.61, 0.36, 1)
+    both;
 }
 
-.media-p406-reaction-cluster > span:first-child {
+.media-p406-reaction-glyph {
+  font-size: 34px;
+  line-height: 1;
+  filter: drop-shadow(0 4px 10px rgb(0 0 0 / 40%));
+}
+
+/* A grouped burst trails at most two smaller echoes of the same glyph. */
+.media-p406-reaction-echo {
+  --echo-x: -24px;
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
   font-size: 22px;
+  line-height: 1;
+  opacity: 0;
+  animation: media-p406-reaction-echo 2400ms ease-out 220ms both;
+}
+
+.media-p406-reaction-echo[data-echo="2"] {
+  --echo-x: 22px;
+  animation-delay: 440ms;
+}
+
+.media-p406-reaction-count {
+  position: absolute;
+  right: -12px;
+  bottom: -2px;
+  min-width: 26px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 999px;
+  background: rgb(15 18 26 / 82%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 36%);
+  color: #fff;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-align: center;
+}
+
+/*
+ * ROOM-STAGE-POLISH-04: top-right signal badges on a person's own tile —
+ * clear of the centred avatar and of the name / pin row at the bottom.
+ * Decorative (aria-hidden): the room's live region announces the queue.
+ */
+.media-p406-tile-signals {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+/* Amber hand: #1f1400 on #f59e0b reads 8.4:1; rim + shadow lift it off video. */
+.media-p406-tile-hand {
+  display: inline-flex;
+  min-width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 7px;
+  border: 1px solid rgb(120 53 15 / 55%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 45%),
+    0 0 0 1px rgb(0 0 0 / 16%),
+    0 4px 12px rgb(0 0 0 / 34%);
+  color: #1f1400;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.media-p406-tile-hand svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.media-p406-tile-reaction {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 999px;
+  background: rgb(15 18 26 / 60%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 14%),
+    0 4px 12px rgb(0 0 0 / 32%);
+  font-size: 17px;
+  line-height: 1;
+  place-items: center;
+  animation: media-p406-tile-reaction-pop 420ms
+    cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .media-p406-reaction-menu {
@@ -6007,9 +6118,11 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
-.whiteboard-paper-trigger-caret {
-  font-size: 0.6875rem;
-  opacity: 0.8;
+/* ROOM-STAGE-POLISH-04: the palette icon replaces the swatch + caret. */
+.whiteboard-paper-trigger-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 
 .whiteboard-paper-readonly {
@@ -6534,9 +6647,13 @@ textarea:focus-visible {
   background: var(--color-surface-subtle);
 }
 
+/*
+ * ROOM-STAGE-POLISH-04: the camera-off tile's eight Meet medallion tones
+ * (white text >= 5.35:1 on every stop), so one person reads alike everywhere.
+ */
 .media-p406-people-avatar {
-  --avatar-from: #2f63d8;
-  --avatar-to: #5b3fd6;
+  --avatar-from: #457180;
+  --avatar-to: #365e6a;
   display: inline-grid;
   width: 32px;
   height: 32px;
@@ -6554,30 +6671,39 @@ textarea:focus-visible {
   place-items: center;
 }
 
-/* The camera-off tile's six tones, so one person reads alike everywhere. */
 .media-p406-people-avatar[data-tone="1"] {
-  --avatar-from: #0b7490;
-  --avatar-to: #1f5fcf;
+  --avatar-from: #5262b0;
+  --avatar-to: #42509a;
 }
 
 .media-p406-people-avatar[data-tone="2"] {
-  --avatar-from: #7a37d8;
-  --avatar-to: #b02a9a;
+  --avatar-from: #9b5442;
+  --avatar-to: #814232;
 }
 
 .media-p406-people-avatar[data-tone="3"] {
-  --avatar-from: #06775a;
-  --avatar-to: #0b6c86;
+  --avatar-from: #3a725c;
+  --avatar-to: #2d604b;
 }
 
 .media-p406-people-avatar[data-tone="4"] {
-  --avatar-from: #b0480c;
-  --avatar-to: #bd2446;
+  --avatar-from: #80529a;
+  --avatar-to: #69407f;
 }
 
 .media-p406-people-avatar[data-tone="5"] {
-  --avatar-from: #4338ca;
-  --avatar-to: #0b5f94;
+  --avatar-from: #7c6442;
+  --avatar-to: #665235;
+}
+
+.media-p406-people-avatar[data-tone="6"] {
+  --avatar-from: #41699a;
+  --avatar-to: #345a85;
+}
+
+.media-p406-people-avatar[data-tone="7"] {
+  --avatar-from: #924a6a;
+  --avatar-to: #7a3a56;
 }
 
 .media-p406-people-row__text {
@@ -6942,15 +7068,117 @@ textarea:focus-visible {
   flex: 0 0 auto;
 }
 
-@keyframes media-p406-reaction-arrive {
-  from {
+/*
+ * ROOM-STAGE-POLISH-04: one flight — pop (scale 1.18), rise 210px with a
+ * sway of ±--reaction-drift-x, then fade at the top. `both` keeps the spent
+ * glyph invisible until its cluster expires, so the DOM stays bounded by the
+ * three visible clusters.
+ */
+@keyframes media-p406-reaction-float {
+  0% {
     opacity: 0;
-    transform: translateY(8px) scale(0.96);
+    transform: translate3d(0, 12px, 0) scale(0.6);
   }
 
-  to {
+  10% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(calc(var(--reaction-drift-x) * 0.2), -14px, 0)
+      scale(1.18);
+  }
+
+  22% {
+    transform: translate3d(calc(var(--reaction-drift-x) * -0.3), -50px, 0)
+      scale(1);
+  }
+
+  48% {
+    transform: translate3d(var(--reaction-drift-x), -112px, 0) scale(1);
+  }
+
+  74% {
+    opacity: 0.95;
+    transform: translate3d(calc(var(--reaction-drift-x) * -0.45), -168px, 0)
+      scale(0.97);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(calc(var(--reaction-drift-x) * 0.5), -210px, 0)
+      scale(0.9);
+  }
+}
+
+@keyframes media-p406-reaction-echo {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--echo-x)), 22px) scale(0.5);
+  }
+
+  24% {
+    opacity: 0.85;
+    transform: translate(calc(-50% + var(--echo-x)), 8px) scale(0.92);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--echo-x) * 1.6), 46px) scale(0.7);
+  }
+}
+
+@keyframes media-p406-tile-reaction-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/*
+ * Reduced motion and forced colours: no travel, burst or pop. Each cluster is
+ * a still, compact pill (glyph + count) and tile badges simply appear.
+ */
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .media-p406-reaction-cluster,
+  .media-p406-tile-reaction {
+    animation: none;
+  }
+
+  .media-p406-reaction-cluster {
+    min-height: 42px;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    border: 1px solid rgb(255 255 255 / 18%);
+    border-radius: 999px;
+    background: rgb(9 11 14 / 88%);
+    box-shadow: 0 6px 18px rgb(0 0 0 / 32%);
+  }
+
+  .media-p406-reaction-glyph {
+    font-size: 22px;
+    filter: none;
+  }
+
+  .media-p406-reaction-echo {
+    display: none;
+  }
+
+  .media-p406-reaction-count {
+    position: static;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    font-size: 13px;
   }
 }
 
@@ -6972,6 +7200,25 @@ textarea:focus-visible {
   .media-p406-reaction-cluster,
   .media-p407-room-controls {
     border: 2px solid CanvasText;
+  }
+
+  /* ROOM-STAGE-POLISH-04: opaque system pills for the floating and tile badges. */
+  .media-p406-reaction-cluster,
+  .media-p406-reaction-count {
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+  }
+
+  .media-p406-tile-hand,
+  .media-p406-tile-reaction {
+    border: 1px solid CanvasText;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    forced-color-adjust: none;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
   }
 
   /* People: system borders, Highlight hover, row actions always shown. */

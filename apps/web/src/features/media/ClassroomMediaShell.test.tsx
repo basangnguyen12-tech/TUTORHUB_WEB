@@ -2255,6 +2255,370 @@ describe("ClassroomMediaShell", () => {
     });
   });
 
+  describe("ROOM-STAGE-POLISH-04 tile badges, floating reactions and tones", () => {
+    const PARTICIPANT_C = "018f4c7b-9b0a-7a34-8a4c-96d26cb87223";
+    const PARTICIPANT_D = "018f4c7b-9b0a-7a34-8a4c-96d26cb87224";
+    const PARTICIPANT_E = "018f4c7b-9b0a-7a34-8a4c-96d26cb87225";
+    const KEYS = [
+      PARTICIPANT_A,
+      PARTICIPANT_B,
+      PARTICIPANT_C,
+      PARTICIPANT_D,
+      PARTICIPANT_E,
+    ];
+    const NAMES = [
+      "Teacher One",
+      "Student 1",
+      "Student 2",
+      "Student 3",
+      "Student 4",
+    ];
+    const expiry = "2030-08-03T00:00:10Z";
+
+    function useRoster(count: number) {
+      liveKitState.cameraTrackRefs = createCameraTracks(count);
+      liveKitState.cameraTrackRefs.forEach((track, index) => {
+        track.participant.attributes = {
+          "tutorhub.participant_key": KEYS[index]!,
+        };
+      });
+      return KEYS.slice(0, count).map((participant_key, index) => ({
+        participant_key,
+        roster_sequence: index + 1,
+        display_name: NAMES[index]!,
+        instance_role: index === 0 ? ("host" as const) : ("attendee" as const),
+        connection_state: "connected" as const,
+      }));
+    }
+
+    function tileOf(container: HTMLElement, name: string) {
+      const tile = Array.from(
+        container.querySelectorAll<HTMLElement>(".media-p405-tile"),
+      ).find(
+        (candidate) =>
+          candidate.querySelector(".media-p405-tile-meta > span")
+            ?.textContent === name &&
+          candidate.getAttribute("data-lk-source") === "camera",
+      );
+      if (!tile) throw new Error(`No camera tile for ${name}.`);
+      return tile;
+    }
+
+    function hand(participantKey: string, position: number) {
+      return {
+        display_name: NAMES[KEYS.indexOf(participantKey)]!,
+        participant_key: participantKey,
+        queue_position: position,
+        raised_at: "2030-08-03T00:00:00Z",
+        signal_sequence: position,
+      };
+    }
+
+    function reaction(
+      participantKey: string,
+      type: "clap" | "heart" | "thumbs_up",
+      sequence: number,
+    ) {
+      return {
+        participant_key: participantKey,
+        reaction: type,
+        signal_sequence: sequence,
+        accepted_at: "2030-08-03T00:00:00Z",
+        expires_at: expiry,
+      };
+    }
+
+    it("puts the hand and the newest reaction in the top-right corner of the sender's own tile", () => {
+      const roster = useRoster(3);
+      const signals = createSignalControls({
+        projection: {
+          ...createSignalControls().projection!,
+          roster,
+          raised_hands: [hand(PARTICIPANT_B, 1), hand(PARTICIPANT_C, 2)],
+          participant_reactions: [
+            reaction(PARTICIPANT_B, "heart", 9),
+            reaction(PARTICIPANT_A, "clap", 8),
+          ],
+        },
+      });
+      const view = renderShell({ signals });
+
+      const student = tileOf(view.container, "Student 1");
+      const badges = student.querySelector(".media-p406-tile-signals");
+      expect(badges).toHaveAttribute("aria-hidden", "true");
+      // Reaction first, hand last: the hand stays anchored in the corner.
+      expect(Array.from(badges!.children, (child) => child.className)).toEqual([
+        "media-p406-tile-reaction",
+        "media-p406-tile-hand",
+      ]);
+      expect(
+        badges!.querySelector(".media-p406-tile-reaction"),
+      ).toHaveTextContent("❤️");
+      expect(
+        badges!.querySelector(".media-p406-tile-hand svg.lucide-hand"),
+      ).not.toBeNull();
+      // Two hands wait, so the queue number joins the hand.
+      expect(
+        badges!.querySelector(".media-p406-tile-hand__position"),
+      ).toHaveTextContent("1");
+
+      const teacher = tileOf(view.container, "Teacher One");
+      expect(teacher.querySelector(".media-p406-tile-hand")).toBeNull();
+      expect(
+        teacher.querySelector(".media-p406-tile-reaction"),
+      ).toHaveAttribute("data-reaction", "clap");
+
+      const second = tileOf(view.container, "Student 2");
+      expect(second.querySelector(".media-p406-tile-reaction")).toBeNull();
+      expect(
+        second.querySelector(".media-p406-tile-hand__position"),
+      ).toHaveTextContent("2");
+      // Badges never join the tile's accessible name (no double announcement).
+      expect(student).toHaveAttribute("aria-label", "Video from Student 1");
+
+      // One hand alone: Zoom / Meet style, no queue number.
+      view.rerender(
+        shellElement({
+          signals: createSignalControls({
+            projection: {
+              ...signals.projection!,
+              raised_hands: [hand(PARTICIPANT_B, 1)],
+              participant_reactions: [],
+            },
+          }),
+        }),
+      );
+      const alone = tileOf(view.container, "Student 1");
+      expect(alone.querySelector(".media-p406-tile-hand")).not.toBeNull();
+      expect(alone.querySelector(".media-p406-tile-hand__position")).toBeNull();
+      expect(alone.querySelector(".media-p406-tile-reaction")).toBeNull();
+      expect(
+        tileOf(view.container, "Student 2").querySelector(
+          ".media-p406-tile-signals",
+        ),
+      ).toBeNull();
+    });
+
+    it("re-pops the tile reaction for a newer signal and keeps badges on rail tiles only, never the share", async () => {
+      const roster = useRoster(3);
+      const projection = {
+        ...createSignalControls().projection!,
+        roster,
+        raised_hands: [hand(PARTICIPANT_B, 1)],
+        participant_reactions: [reaction(PARTICIPANT_B, "clap", 8)],
+      };
+      const view = renderShell({
+        signals: createSignalControls({ projection }),
+      });
+      const first = tileOf(view.container, "Student 1").querySelector(
+        ".media-p406-tile-reaction",
+      );
+      view.rerender(
+        shellElement({
+          signals: createSignalControls({
+            projection: {
+              ...projection,
+              participant_reactions: [reaction(PARTICIPANT_B, "clap", 11)],
+            },
+          }),
+        }),
+      );
+      const second = tileOf(view.container, "Student 1").querySelector(
+        ".media-p406-tile-reaction",
+      );
+      expect(second).toHaveAttribute("data-reaction", "clap");
+      // A new server sequence remounts the badge so the pop-in runs again.
+      expect(second).not.toBe(first);
+
+      liveKitState.screenShareTrackRefs = [
+        {
+          participant: liveKitState.cameraTrackRefs[2]!.participant,
+          publication: new liveKitState.MockRemoteTrackPublication(),
+          source: "screen_share",
+        },
+      ];
+      view.rerender(
+        shellElement({ signals: createSignalControls({ projection }) }),
+      );
+      await waitFor(() =>
+        expect(layoutMode(view.container)).toBe("presentation"),
+      );
+      const share = view.container.querySelector<HTMLElement>(
+        '.media-p405-tile--stage[data-lk-source="screen_share"]',
+      );
+      expect(share).not.toBeNull();
+      expect(share!.querySelector(".media-p406-tile-signals")).toBeNull();
+      expect(share).not.toHaveAttribute("data-tone");
+      const railStudent = Array.from(
+        view.container.querySelectorAll<HTMLElement>(
+          ".media-p405-rail-list .media-p405-tile",
+        ),
+      ).find(
+        (tile) =>
+          tile.querySelector(".media-p405-tile-meta > span")?.textContent ===
+          "Student 1",
+      );
+      expect(railStudent).toBeDefined();
+      expect(
+        railStudent!.querySelector(".media-p406-tile-hand"),
+      ).not.toBeNull();
+      expect(railStudent).toHaveAttribute("data-tone");
+    });
+
+    it("gives every camera-off tile a distinct Meet-style tone shared by its medallion", () => {
+      const roster = useRoster(5);
+      const signals = createSignalControls({
+        projection: { ...createSignalControls().projection!, roster },
+      });
+      const view = renderShell({ signals });
+      const tones = NAMES.map((name) => {
+        const tile = tileOf(view.container, name);
+        const tone = tile.getAttribute("data-tone");
+        expect(tone).toMatch(/^[0-7]$/);
+        expect(
+          tile.querySelector(".media-p405-avatar")?.getAttribute("data-tone"),
+        ).toBe(tone);
+        return tone;
+      });
+      // Teacher One + Student 1..4: five different surfaces.
+      expect(new Set(tones).size).toBe(5);
+
+      // Stable for the whole session: polling a new snapshot keeps every tone.
+      view.rerender(
+        shellElement({
+          signals: createSignalControls({
+            projection: {
+              ...signals.projection!,
+              projection_version: 9,
+              last_signal_sequence: 30,
+            },
+          }),
+        }),
+      );
+      expect(
+        NAMES.map((name) =>
+          tileOf(view.container, name).getAttribute("data-tone"),
+        ),
+      ).toEqual(tones);
+
+      // A two-person class never shares one surface.
+      cleanup();
+      const pair = useRoster(2);
+      const pairView = renderShell({
+        signals: createSignalControls({
+          projection: { ...createSignalControls().projection!, roster: pair },
+        }),
+      });
+      expect(
+        tileOf(pairView.container, "Teacher One").getAttribute("data-tone"),
+      ).not.toBe(
+        tileOf(pairView.container, "Student 1").getAttribute("data-tone"),
+      );
+    });
+
+    it("flies at most three bounded clusters with a deterministic sway and refreshes a cluster on a newer event", () => {
+      const cluster = (
+        type: "clap" | "heart" | "thumbs_up",
+        first: number,
+        count: number,
+      ) => ({
+        cluster_id: `${type}:${first}`,
+        reaction: type,
+        count,
+        count_label: String(count),
+        first_signal_sequence: first,
+        last_signal_sequence: first + count - 1,
+        accepted_at: "2030-08-03T00:00:00Z",
+        expires_at: expiry,
+      });
+      const base = createSignalControls().projection!;
+      const reactions = {
+        clusters: [
+          cluster("thumbs_up", 1, 1),
+          cluster("clap", 2, 3),
+          cluster("heart", 5, 2),
+        ],
+        hidden_cluster_count: 0,
+        summary: [],
+      };
+      const view = renderShell({
+        signals: createSignalControls({ projection: { ...base, reactions } }),
+      });
+      const region = view.container.querySelector(".media-p406-reactions");
+      expect(region).toHaveAttribute("aria-hidden", "true");
+      const clusters = Array.from(
+        region!.querySelectorAll<HTMLElement>(".media-p406-reaction-cluster"),
+      );
+      expect(clusters).toHaveLength(3);
+      for (const node of clusters) {
+        const drift = Number.parseFloat(
+          node.style.getPropertyValue("--reaction-drift-x"),
+        );
+        expect(Math.abs(drift)).toBeLessThanOrEqual(28);
+        expect(
+          node.querySelectorAll(".media-p406-reaction-echo").length,
+        ).toBeLessThanOrEqual(2);
+      }
+      // Single reaction: glyph only. Grouped burst: ×N chip + bounded echoes.
+      expect(
+        clusters[0]!.querySelector(".media-p406-reaction-count"),
+      ).toBeNull();
+      expect(
+        clusters[0]!.querySelectorAll(".media-p406-reaction-echo"),
+      ).toHaveLength(0);
+      expect(
+        clusters[1]!.querySelector(".media-p406-reaction-count"),
+      ).toHaveTextContent("×3");
+      expect(
+        clusters[1]!.querySelectorAll(".media-p406-reaction-echo"),
+      ).toHaveLength(2);
+      expect(
+        clusters[2]!.querySelectorAll(".media-p406-reaction-echo"),
+      ).toHaveLength(1);
+
+      // Same clusters re-polled: nothing remounts mid-flight.
+      view.rerender(
+        shellElement({
+          signals: createSignalControls({
+            projection: { ...base, reactions: { ...reactions } },
+          }),
+        }),
+      );
+      const repolled = Array.from(
+        view.container.querySelectorAll(".media-p406-reaction-cluster"),
+      );
+      expect(repolled[1]).toBe(clusters[1]);
+
+      // One more clap joins the cluster: it remounts and flies again.
+      view.rerender(
+        shellElement({
+          signals: createSignalControls({
+            projection: {
+              ...base,
+              reactions: {
+                ...reactions,
+                clusters: [
+                  reactions.clusters[0]!,
+                  cluster("clap", 2, 4),
+                  reactions.clusters[2]!,
+                ],
+              },
+            },
+          }),
+        }),
+      );
+      const refreshed = Array.from(
+        view.container.querySelectorAll(".media-p406-reaction-cluster"),
+      );
+      expect(refreshed).toHaveLength(3);
+      expect(refreshed[1]).not.toBe(clusters[1]);
+      expect(refreshed[0]).toBe(clusters[0]);
+      expect(
+        refreshed[1]!.querySelector(".media-p406-reaction-count"),
+      ).toHaveTextContent("×4");
+    });
+  });
+
   describe("ROOM-STUDIO-02 studio surface", () => {
     it.each([
       { participants: 1, tiles: 1 },

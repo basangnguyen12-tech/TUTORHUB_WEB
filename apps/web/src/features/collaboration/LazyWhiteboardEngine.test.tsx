@@ -535,6 +535,14 @@ describe("LazyWhiteboardEngine", () => {
     expect(trigger).toHaveAccessibleName("Paper: Plain Whiteboard");
     expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+    // ROOM-STAGE-POLISH-04: a round palette key — no swatch chip or caret;
+    // the current paper is the accessible name and the tooltip.
+    const paletteIcon = trigger.querySelector("svg.lucide-palette");
+    expect(paletteIcon).not.toBeNull();
+    expect(paletteIcon).toHaveAttribute("aria-hidden", "true");
+    expect(trigger.querySelector(".whiteboard-paper-swatch")).toBeNull();
+    expect(trigger).not.toHaveTextContent("▾");
+    expect(trigger).toHaveAttribute("data-tooltip", "Paper: Plain Whiteboard");
     expect(screen.queryByRole("dialog")).toBeNull();
 
     fireEvent.click(trigger);
@@ -627,6 +635,10 @@ describe("LazyWhiteboardEngine", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(trigger).toHaveFocus();
+    // The round key keeps its palette icon while name + tooltip follow paper.
+    expect(trigger).toHaveAccessibleName("Paper: Blackboard");
+    expect(trigger).toHaveAttribute("data-tooltip", "Paper: Blackboard");
+    expect(trigger.querySelectorAll("svg.lucide-palette")).toHaveLength(1);
   });
 
   it("never recolours a custom ink and closes the paper popover on an outside press", () => {

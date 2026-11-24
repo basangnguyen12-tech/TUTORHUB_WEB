@@ -54,6 +54,13 @@ interface FixtureOptions {
       coHost?: number;
       /** Roster index projected as `reconnecting`. */
       reconnecting?: number;
+      /**
+       * ROOM-STAGE-POLISH-04: each roster index's newest unexpired reaction
+       * (`participant_reactions`, top-right tile badge).
+       */
+      reactions?: { index: number; reaction: string }[];
+      /** ROOM-STAGE-POLISH-04: room-level clusters that float up. */
+      floating?: { reaction: string; count: number }[];
     };
   };
 }
@@ -471,7 +478,31 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
               queue_position: queueIndex + 1,
             }),
           ),
-          reactions: { clusters: [], hidden_cluster_count: 0, summary: [] },
+          participant_reactions: (people?.reactions ?? []).map(
+            ({ index, reaction }, order) => ({
+              participant_key: participantKey(index + 1),
+              reaction,
+              signal_sequence: 40 - order,
+              accepted_at: new Date(Date.now() - 1_000).toISOString(),
+              expires_at: new Date(Date.now() + 9_000).toISOString(),
+            }),
+          ),
+          reactions: {
+            clusters: (people?.floating ?? []).map(
+              ({ reaction, count }, order) => ({
+                cluster_id: `${reaction}:${10 + order * 5}`,
+                reaction,
+                count,
+                count_label: count > 99 ? "99+" : String(count),
+                first_signal_sequence: 10 + order * 5,
+                last_signal_sequence: 10 + order * 5 + count - 1,
+                accepted_at: new Date(Date.now() - 300).toISOString(),
+                expires_at: new Date(Date.now() + 60_000).toISOString(),
+              }),
+            ),
+            hidden_cluster_count: 0,
+            summary: [],
+          },
           server_time: new Date().toISOString(),
         },
         onLowerAllHands: noop,
@@ -2665,19 +2696,20 @@ test("ROOM-MEET-DOCK-04 compacts the whiteboard keys and never covers the paper 
   expect(connectionBox!.width).toBeLessThanOrEqual(1);
   expect(connectionBox!.height).toBeLessThanOrEqual(1);
 
-  // Paper: swatch + caret only, in the Top Bar beside Close; the full paper
-  // name is the tooltip.
+  // Paper (ROOM-STAGE-POLISH-04): a 28px round palette key in the Top Bar
+  // beside Close, level with it; the full paper name is the tooltip.
   const trigger = header.getByTestId("whiteboard-paper-trigger");
   await expect(trigger).toHaveAccessibleName("Giấy: Bảng trắng (Trơn)");
   const triggerBox = await trigger.boundingBox();
-  expect(triggerBox!.width).toBeLessThanOrEqual(60);
+  expect(Math.round(triggerBox!.width)).toBe(28);
   expect(Math.round(triggerBox!.height)).toBe(28);
+  expect(Math.round(triggerBox!.y)).toBe(Math.round(closeBox!.y));
   expect(triggerBox!.x + triggerBox!.width).toBeLessThan(closeBox!.x);
-  const swatchBox = await trigger
-    .locator(".whiteboard-paper-swatch")
-    .boundingBox();
-  expect(Math.round(swatchBox!.width)).toBe(22);
-  expect(Math.round(swatchBox!.height)).toBe(15);
+  await expect(trigger).toHaveCSS("border-top-left-radius", "999px");
+  await expect(trigger.locator(".whiteboard-paper-swatch")).toHaveCount(0);
+  const paletteBox = await trigger.locator("svg.lucide-palette").boundingBox();
+  expect(Math.round(paletteBox!.width)).toBe(15);
+  expect(Math.round(paletteBox!.height)).toBe(15);
   await trigger.hover();
   await expect(tooltip).toHaveText("Giấy: Bảng trắng (Trơn)");
   await expectTooltipBeside(page, trigger, "below");
@@ -4362,4 +4394,408 @@ test("ROOM-PEOPLE-03 reflows the People inspector at 320 CSS pixels with forced 
     ).violations,
   ).toEqual([]);
   await saveRoomPeopleScreenshot(page, "04-people-320px-forced-colors.png");
+});
+
+// ROOM-STAGE-POLISH-04: a round palette paper key, Google Meet tones on
+// camera-off tiles, top-right hand / reaction badges on the sender's own
+// tile and Zoom / Meet floating reactions. Set
+// ROOM_STAGE_POLISH_SCREENSHOT_DIR (for example
+// `.tmp/room-stage-polish-04/screenshots`) to save the acceptance shots.
+const roomStagePolishScreenshotDir =
+  process.env.ROOM_STAGE_POLISH_SCREENSHOT_DIR?.trim() || "";
+
+async function saveRoomStagePolishScreenshot(page: Page, name: string) {
+  if (!roomStagePolishScreenshotDir) return;
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${roomStagePolishScreenshotDir}/${name}` });
+}
+
+function boxesIntersect(
+  first: { x: number; y: number; width: number; height: number },
+  second: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    first.x < second.x + second.width &&
+    second.x < first.x + first.width &&
+    first.y < second.y + second.height &&
+    second.y < first.y + first.height
+  );
+}
+
+function roomTile(page: Page, name: string, scope: Page | Locator = page) {
+  return scope.locator(".media-p405-tile").filter({
+    has: page.locator(".media-p405-tile-meta > span", { hasText: name }),
+  });
+}
+
+/** Lets the badge pop-in settle so boxes are measured at scale 1. */
+async function settleTileBadges(tile: Locator) {
+  await tile
+    .locator(".media-p406-tile-signals")
+    .evaluate((element) =>
+      Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished),
+      ),
+    );
+}
+
+/** Asserts the badge cluster hugs the tile's top-right corner, clear of the HUD. */
+async function expectTopRightBadges(tile: Locator, inset: number) {
+  await settleTileBadges(tile);
+  const tileBox = await boxOf(tile);
+  const badges = tile.locator(".media-p406-tile-signals");
+  await expect(badges).toHaveAttribute("aria-hidden", "true");
+  await expect(badges).toHaveCSS("pointer-events", "none");
+  const badgeBox = await boxOf(badges);
+  // `top / right: inset` from the padding box, inside the tile's 1px rim.
+  for (const measured of [
+    tileBox.x + tileBox.width - (badgeBox.x + badgeBox.width),
+    badgeBox.y - tileBox.y,
+  ]) {
+    expect(measured).toBeGreaterThanOrEqual(inset - 0.5);
+    expect(measured).toBeLessThanOrEqual(inset + 1.5);
+  }
+  expect(
+    boxesIntersect(badgeBox, await boxOf(tile.locator(".media-p405-avatar"))),
+  ).toBe(false);
+  expect(
+    boxesIntersect(
+      badgeBox,
+      await boxOf(tile.locator(".media-p405-tile-meta > span")),
+    ),
+  ).toBe(false);
+  return badgeBox;
+}
+
+/** Freezes each floating lane at a different height for a stable screenshot. */
+async function freezeFloatingReactions(page: Page) {
+  await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      const effect = animation.effect;
+      const target = effect instanceof KeyframeEffect ? effect.target : null;
+      if (!(target instanceof HTMLElement)) continue;
+      const cluster = target.closest<HTMLElement>(
+        ".media-p406-reaction-cluster",
+      );
+      if (!cluster) continue;
+      const lane = Number(cluster.dataset.lane ?? "0");
+      animation.pause();
+      animation.currentTime = 760 + lane * 420;
+    }
+  });
+}
+
+test("ROOM-STAGE-POLISH-04 gives every camera-off tile its own Google Meet tone with readable initials", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await installRoomPeopleAdmissions(page, []);
+  await mountClassroomFixture(page, {
+    participantCount: 6,
+    studio: {
+      language: "vi",
+      roomTitle: "Lớp Toán 10 – Phương trình bậc hai",
+    },
+  });
+  await loadRoomStudioStyles(page);
+
+  const tiles = page.locator(".media-p405-grid .media-p405-tile");
+  await expect(tiles).toHaveCount(6);
+  const surfaces = await tiles.evaluateAll((elements) =>
+    elements.map((element) => {
+      const avatar = element.querySelector<HTMLElement>(".media-p405-avatar")!;
+      const style = getComputedStyle(element);
+      const avatarStyle = getComputedStyle(avatar);
+      const luminance = (hex: string) => {
+        const value = Number.parseInt(hex.trim().slice(1), 16);
+        const channel = (shift: number) => {
+          const c = ((value >> shift) & 255) / 255;
+          return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        };
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
+      };
+      const whiteOn = (hex: string) => 1.05 / (luminance(hex) + 0.05);
+      return {
+        avatarTone: avatar.dataset.tone,
+        background: style.backgroundImage,
+        minAvatarContrast: Math.min(
+          whiteOn(avatarStyle.getPropertyValue("--avatar-from")),
+          whiteOn(avatarStyle.getPropertyValue("--avatar-to")),
+        ),
+        minTileContrast: Math.min(
+          whiteOn(style.getPropertyValue("--tile-from")),
+          whiteOn(style.getPropertyValue("--tile-to")),
+        ),
+        tone: (element as HTMLElement).dataset.tone,
+      };
+    }),
+  );
+  // Six people, six different surfaces; each medallion shares its tile tone.
+  expect(new Set(surfaces.map(({ tone }) => tone)).size).toBe(6);
+  expect(new Set(surfaces.map(({ background }) => background)).size).toBe(6);
+  for (const surface of surfaces) {
+    expect(surface.tone).toMatch(/^[0-7]$/);
+    expect(surface.avatarTone).toBe(surface.tone);
+    expect(surface.background).toContain("linear-gradient");
+    expect(surface.minAvatarContrast).toBeGreaterThanOrEqual(5);
+    expect(surface.minTileContrast).toBeGreaterThanOrEqual(9);
+  }
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomStagePolishScreenshot(
+    page,
+    "02-google-meet-diverse-tile-colors-grid.png",
+  );
+});
+
+test("ROOM-STAGE-POLISH-04 pins hand and reaction badges to the sender's top-right corner while reactions float up above the Dock", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await installRoomPeopleAdmissions(page, []);
+  await mountClassroomFixture(page, {
+    participantCount: 5,
+    studio: {
+      language: "vi",
+      roomTitle: "Lớp Toán 10 – Phương trình bậc hai",
+      people: {
+        raisedHands: [1, 3],
+        reactions: [
+          { index: 1, reaction: "heart" },
+          { index: 2, reaction: "clap" },
+          { index: 0, reaction: "thumbs_up" },
+        ],
+        floating: [
+          { reaction: "heart", count: 3 },
+          { reaction: "clap", count: 2 },
+          { reaction: "celebrate", count: 1 },
+        ],
+      },
+    },
+  });
+  await loadRoomStudioStyles(page);
+
+  // Minh Anh: first in the hand queue and just sent a heart.
+  const minhAnh = roomTile(page, "Minh Anh");
+  await expectTopRightBadges(minhAnh, 10);
+  await expect(minhAnh.locator(".media-p406-tile-signals > *")).toHaveCount(2);
+  await expect(minhAnh.locator(".media-p406-tile-reaction")).toHaveText("❤️");
+  await expect(minhAnh.locator(".media-p406-tile-hand__position")).toHaveText(
+    "1",
+  );
+  const handBox = await boxOf(minhAnh.locator(".media-p406-tile-hand"));
+  const reactionBox = await boxOf(minhAnh.locator(".media-p406-tile-reaction"));
+  expect(reactionBox.x + reactionBox.width).toBeLessThanOrEqual(handBox.x - 4);
+  await expect(minhAnh.locator(".media-p406-tile-hand")).toHaveCSS(
+    "color",
+    "rgb(31, 20, 0)",
+  );
+  await expect(
+    roomTile(page, "Khánh Linh").locator(".media-p406-tile-hand__position"),
+  ).toHaveText("2");
+  await expect(
+    roomTile(page, "Gia Bảo").locator(".media-p406-tile-reaction"),
+  ).toHaveText("👏");
+  await expect(
+    roomTile(page, "Thu Hà").locator(".media-p406-tile-reaction"),
+  ).toHaveText("👍");
+  await expect(
+    roomTile(page, "Đức Huy").locator(".media-p406-tile-signals"),
+  ).toHaveCount(0);
+
+  // Floating reactions: at most three lanes, rising from the bottom-left of
+  // the stage just above the Dock, never catching the pointer.
+  const region = page.locator(".media-p406-reactions");
+  await expect(region).toHaveAttribute("aria-hidden", "true");
+  const clusters = region.locator(".media-p406-reaction-cluster");
+  await expect(clusters).toHaveCount(3);
+  await expect(clusters.first()).toHaveCSS(
+    "animation-name",
+    "media-p406-reaction-float",
+  );
+  await expect(clusters.first()).toHaveCSS("pointer-events", "none");
+  await expect(
+    clusters.nth(0).locator(".media-p406-reaction-count"),
+  ).toHaveText("×3");
+  await expect(
+    clusters.nth(2).locator(".media-p406-reaction-count"),
+  ).toHaveCount(0);
+  await expect(region.locator(".media-p406-reaction-echo")).toHaveCount(3);
+  const regionBox = await boxOf(region);
+  const footerBox = await boxOf(page.locator(".media-p405-footer"));
+  const stageBox = await boxOf(page.locator(".media-p405-classroom"));
+  expect(regionBox.y + regionBox.height).toBeLessThanOrEqual(footerBox.y);
+  expect(regionBox.x).toBeGreaterThanOrEqual(stageBox.x);
+  expect(regionBox.x - stageBox.x).toBeLessThanOrEqual(32);
+
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await freezeFloatingReactions(page);
+  await saveRoomStagePolishScreenshot(
+    page,
+    "03-top-right-hand-and-reaction-plus-floating-zoom.png",
+  );
+
+  // The 360px People inspector never covers the launch strip.
+  const drawer = await openRoomPeople(page, "Người tham gia (5)");
+  const drawerBox = await boxOf(drawer);
+  const shiftedRegion = await boxOf(region);
+  expect(shiftedRegion.x + shiftedRegion.width).toBeLessThanOrEqual(
+    drawerBox.x,
+  );
+  await page.keyboard.press("Escape");
+
+  // Reduced motion: still pills, no travel, no pop — badges stay.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(clusters.first()).toHaveCSS("animation-name", "none");
+  await expect(minhAnh.locator(".media-p406-tile-reaction")).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  await expect(
+    region.locator(".media-p406-reaction-echo").first(),
+  ).toBeHidden();
+  await expect(minhAnh.locator(".media-p406-tile-hand")).toBeVisible();
+});
+
+test("ROOM-STAGE-POLISH-04 keeps a round palette key in the Top Bar and compact badges on the 256px camera strip", async ({
+  page,
+}) => {
+  // Hermetic: Excalidraw may ask a CDN for optional fonts; stay on localhost.
+  await page.route(
+    /^https?:\/\/(?!127\.0\.0\.1[:/]|localhost[:/])[^/]+\//,
+    (route) => route.abort(),
+  );
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await installRoomPeopleAdmissions(page, []);
+  await mountClassroomFixture(page, {
+    participantCount: 4,
+    studio: {
+      boardTitle: "Bài 3 · Phương trình bậc hai & Đồ thị hàm số",
+      language: "vi",
+      roomTitle: "Lớp Toán 10 – Phương trình bậc hai",
+      whiteboard: "paper",
+      people: {
+        raisedHands: [1],
+        reactions: [
+          { index: 1, reaction: "heart" },
+          { index: 2, reaction: "clap" },
+        ],
+        floating: [
+          { reaction: "heart", count: 2 },
+          { reaction: "clap", count: 1 },
+        ],
+      },
+    },
+  });
+  await loadRoomStudioStyles(page);
+  await page
+    .getByRole("button", { name: "Mở bảng trắng", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Bề mặt bảng trắng tương tác" }),
+  ).toBeVisible();
+
+  // ---- Top Bar: palette key level with ⋯ and Close. ----
+  const header = page.locator(".media-p405-header");
+  const trigger = header.getByTestId("whiteboard-paper-trigger");
+  const close = header.getByRole("button", { name: "Đóng", exact: true });
+  await expect(trigger).toHaveAccessibleName("Giấy: Bảng trắng (Trơn)");
+  await expect(trigger).toHaveAttribute(
+    "data-tooltip",
+    "Giấy: Bảng trắng (Trơn)",
+  );
+  const triggerBox = await boxOf(trigger);
+  const closeBox = await boxOf(close);
+  expect(Math.round(triggerBox.width)).toBe(28);
+  expect(Math.round(triggerBox.height)).toBe(28);
+  expect(Math.round(triggerBox.y)).toBe(Math.round(closeBox.y));
+  const toolMenu = header.locator(".whiteboard-topbar-menu-trigger");
+  if ((await toolMenu.count()) > 0) {
+    const menuBox = await boxOf(toolMenu.first());
+    expect(Math.round(menuBox.width)).toBe(28);
+    expect(Math.round(menuBox.y)).toBe(Math.round(triggerBox.y));
+  }
+  await expect(trigger).toHaveCSS("border-top-left-radius", "999px");
+  expect((await readGlass(trigger)).backdropFilter).toMatch(/blur\(18px\)/);
+  const palette = trigger.locator("svg.lucide-palette");
+  await expect(palette).toHaveAttribute("aria-hidden", "true");
+  const paletteBox = await boxOf(palette);
+  expect(Math.round(paletteBox.width)).toBe(15);
+  expect(Math.round(paletteBox.height)).toBe(15);
+  await expect(trigger.locator(".whiteboard-paper-swatch")).toHaveCount(0);
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  expect((await readGlass(trigger)).backgroundImage).toContain(
+    "linear-gradient",
+  );
+  const popover = page.getByRole("dialog", { name: "Chọn chế độ giấy" });
+  await expect(popover).toBeVisible();
+  await expect(popover.locator("button[data-paper-mode]")).toHaveCount(9);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomStagePolishScreenshot(
+    page,
+    "01-topbar-palette-icon-and-popover.png",
+  );
+  await popover
+    .getByRole("button", { name: "Vở học sinh", exact: true })
+    .click();
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(trigger).toHaveAccessibleName("Giấy: Vở học sinh");
+  await expect(trigger.locator("svg.lucide-palette")).toHaveCount(1);
+  await page.mouse.move(720, 450);
+
+  // ---- 256px camera strip: toned tiles with compact top-right badges. ----
+  const strip = page.locator(
+    ".media-p405-classroom--tool-stage > .media-p405-stage",
+  );
+  const stripBox = await boxOf(strip);
+  expect(Math.round(stripBox.width)).toBe(256);
+  const stripTiles = strip.locator(".media-p405-tile");
+  await expect(stripTiles).toHaveCount(4);
+  const tones = await stripTiles.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("data-tone")),
+  );
+  expect(new Set(tones).size).toBe(4);
+  const minhAnh = roomTile(page, "Minh Anh", strip);
+  const badgeBox = await expectTopRightBadges(minhAnh, 6);
+  expect(Math.round(badgeBox.height)).toBe(24);
+  await expect(minhAnh.locator(".media-p406-tile-hand")).toHaveCSS(
+    "height",
+    "22px",
+  );
+  await expect(minhAnh.locator(".media-p406-tile-hand__position")).toHaveCount(
+    0,
+  );
+  const pin = minhAnh.locator(".media-p405-tile-meta .th-button");
+  expect(boxesIntersect(badgeBox, await boxOf(pin))).toBe(false);
+
+  // Reactions launch from the board's bottom-left, clear of the strip.
+  const region = page.locator(".media-p406-reactions");
+  await expect(region.locator(".media-p406-reaction-cluster")).toHaveCount(2);
+  const regionBox = await boxOf(region);
+  expect(regionBox.x + regionBox.width).toBeLessThan(stripBox.x);
+  // ... and above the board's own bottom row (zoom / undo), inset from its edge.
+  const boardBox = await boxOf(page.locator(".media-p506-tool-stage"));
+  expect(
+    boardBox.y + boardBox.height - (regionBox.y + regionBox.height),
+  ).toBeGreaterThanOrEqual(60);
+  expect(regionBox.x - boardBox.x).toBeGreaterThanOrEqual(30);
+  await trigger.evaluate((element) => element.blur());
+  await freezeFloatingReactions(page);
+  await saveRoomStagePolishScreenshot(
+    page,
+    "04-whiteboard-camera-strip-signals-and-tones.png",
+  );
 });

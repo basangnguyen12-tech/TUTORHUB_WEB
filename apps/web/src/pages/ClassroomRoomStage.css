@@ -478,7 +478,7 @@
   color: #fca5a5;
 }
 
-/* Paper picker in the Top Bar: a 28px glass pill (swatch + caret). */
+/* Paper picker in the Top Bar: a 28px round palette key (ROOM-STAGE-POLISH-04). */
 .media-p405-room .media-p405-header .whiteboard-paper-picker {
   flex: 0 0 auto;
 }
@@ -795,6 +795,75 @@
     box-shadow 200ms var(--room-ease-spring);
 }
 
+/*
+ * ROOM-STAGE-POLISH-04: Google Meet style camera-off surfaces. Each person's
+ * tile (never a screen share, which has no data-tone) gets one of eight deep,
+ * low-chroma tones with a very soft ambient lift behind the medallion — calm
+ * enough for a 90 minute lesson. A live <video> covers the whole tile on its
+ * own #0b0d13 ground, so a tone never tints camera or shared-screen pixels.
+ * White text on every tile stop reads >= 9.3:1 (contrast.mjs in the task's
+ * .tmp folder).
+ */
+.media-p405-room .media-p405-tile[data-tone] {
+  --tile-from: #2c4b54;
+  --tile-to: #1d353c;
+  background:
+    radial-gradient(
+      85% 70% at 50% 44%,
+      rgb(255 255 255 / 7%) 0%,
+      rgb(255 255 255 / 0%) 72%
+    ),
+    linear-gradient(160deg, var(--tile-from) 0%, var(--tile-to) 100%);
+}
+
+/* 0 Deep Slate Teal — the Meet reference surface. */
+.media-p405-room .media-p405-tile[data-tone="0"] {
+  --tile-from: #2c4b54;
+  --tile-to: #1d353c;
+}
+
+/* 1 Royal Indigo */
+.media-p405-room .media-p405-tile[data-tone="1"] {
+  --tile-from: #2c3a72;
+  --tile-to: #1d264f;
+}
+
+/* 2 Warm Terracotta */
+.media-p405-room .media-p405-tile[data-tone="2"] {
+  --tile-from: #5a2e23;
+  --tile-to: #3e1f18;
+}
+
+/* 3 Forest Emerald */
+.media-p405-room .media-p405-tile[data-tone="3"] {
+  --tile-from: #1f4739;
+  --tile-to: #163328;
+}
+
+/* 4 Mulberry Plum */
+.media-p405-room .media-p405-tile[data-tone="4"] {
+  --tile-from: #4b2a56;
+  --tile-to: #341d3c;
+}
+
+/* 5 Warm Bronze */
+.media-p405-room .media-p405-tile[data-tone="5"] {
+  --tile-from: #4b3c29;
+  --tile-to: #362b1d;
+}
+
+/* 6 Ocean Petrol */
+.media-p405-room .media-p405-tile[data-tone="6"] {
+  --tile-from: #223f5e;
+  --tile-to: #182d44;
+}
+
+/* 7 Deep Rosewood */
+.media-p405-room .media-p405-tile[data-tone="7"] {
+  --tile-from: #53273b;
+  --tile-to: #3b1b2a;
+}
+
 /* FaceTime framing: one or two people get softer 20px corners. */
 .media-p405-room
   :where(.media-p405-classroom:not(.media-p405-classroom--tool-stage))
@@ -860,30 +929,49 @@
   text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
 }
 
-/* Six medallion tones; every stop keeps white text >= 5:1. */
+/*
+ * ROOM-STAGE-POLISH-04: eight medallion tones paired with the tile surface —
+ * the same hue, a step lighter, like Meet. White initials stay >= 5.35:1 on
+ * every stop (worst: tone 0 Deep Slate Teal).
+ */
+.media-p405-room .media-p405-avatar[data-tone="0"] {
+  --avatar-from: #457180;
+  --avatar-to: #365e6a;
+}
+
 .media-p405-room .media-p405-avatar[data-tone="1"] {
-  --avatar-from: #0b7490;
-  --avatar-to: #1f5fcf;
+  --avatar-from: #5262b0;
+  --avatar-to: #42509a;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="2"] {
-  --avatar-from: #7a37d8;
-  --avatar-to: #b02a9a;
+  --avatar-from: #9b5442;
+  --avatar-to: #814232;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="3"] {
-  --avatar-from: #06775a;
-  --avatar-to: #0b6c86;
+  --avatar-from: #3a725c;
+  --avatar-to: #2d604b;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="4"] {
-  --avatar-from: #b0480c;
-  --avatar-to: #bd2446;
+  --avatar-from: #80529a;
+  --avatar-to: #69407f;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="5"] {
-  --avatar-from: #4338ca;
-  --avatar-to: #0b5f94;
+  --avatar-from: #7c6442;
+  --avatar-to: #665235;
+}
+
+.media-p405-room .media-p405-avatar[data-tone="6"] {
+  --avatar-from: #41699a;
+  --avatar-to: #345a85;
+}
+
+.media-p405-room .media-p405-avatar[data-tone="7"] {
+  --avatar-from: #924a6a;
+  --avatar-to: #7a3a56;
 }
 
 /* HUD: frosted name pill bottom-left, round pin button bottom-right. */
@@ -978,6 +1066,32 @@
     min-width: 28px;
     height: 28px;
     min-height: 28px;
+  }
+
+  /* ROOM-STAGE-POLISH-04: tighter top-right badges on rail / strip tiles. */
+  .media-p405-room .media-p406-tile-signals {
+    top: 6px;
+    right: 6px;
+    gap: 4px;
+  }
+
+  .media-p405-room .media-p406-tile-hand {
+    min-width: 22px;
+    height: 22px;
+    gap: 2px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .media-p405-room .media-p406-tile-hand svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .media-p405-room .media-p406-tile-reaction {
+    width: 24px;
+    height: 24px;
+    font-size: 14px;
   }
 }
 
@@ -2067,16 +2181,49 @@
   outline-offset: 2px;
 }
 
-/* The paper trigger shrinks to its swatch and caret (label kept for AT). */
+/*
+ * ROOM-STAGE-POLISH-04: the paper trigger is a 28px round palette key, level
+ * with the tool menu (⋯) and Close (✕) beside it — same rim, fill and 15px
+ * icon. It keeps the thin glass blur; the paper name stays its accessible
+ * name and tooltip, and an open popover lights it sapphire.
+ */
 .media-p405-room .whiteboard-paper-trigger {
   position: relative;
-  gap: 5px;
-  padding: 0 9px 0 7px;
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 11%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 6%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e5e7eb;
 }
 
-.media-p405-room .whiteboard-paper-trigger .whiteboard-paper-swatch--chip {
-  width: 22px;
+.media-p405-room .whiteboard-paper-trigger .whiteboard-paper-trigger-icon {
+  width: 15px;
   height: 15px;
+  flex: none;
+}
+
+.media-p405-room .whiteboard-paper-trigger:hover:not([aria-expanded="true"]) {
+  border-color: rgb(255 255 255 / 20%);
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-paper-trigger[aria-expanded="true"] {
+  border-color: #3b82f6;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #fff;
 }
 
 /* ---- ROOM-MEET-DOCK-04: the room tooltip ------------------------------
@@ -2211,8 +2358,14 @@
   min-height: 0;
 }
 
+/*
+ * ROOM-STAGE-POLISH-04: reactions launch from the board's bottom-left, so the
+ * 256px camera column on the right never covers them; 64px up clears the
+ * board's own zoom / undo row, and 36px in keeps echoes on the paper.
+ */
 .media-p405-classroom--tool-stage .media-p406-reactions {
-  right: 280px;
+  bottom: 64px;
+  left: 36px;
 }
 
 /* ---- Effects drawer reserve ------------------------------------------
@@ -2276,9 +2429,13 @@
     height: 100%;
   }
 
+  /*
+   * The camera strip is the bottom row here (116px + gap): launch above it
+   * and above the board's zoom / undo row.
+   */
   .media-p405-classroom--tool-stage .media-p406-reactions {
-    right: 16px;
-    bottom: 132px;
+    bottom: 192px;
+    left: 28px;
   }
 }
 
@@ -2709,6 +2866,15 @@
     border: 1px solid CanvasText;
     box-shadow: none;
     text-shadow: none;
+  }
+
+  /*
+   * ROOM-STAGE-POLISH-04: camera-off tones yield to the system pair; the tile
+   * keeps its CanvasText rim so state outlines stay visible.
+   */
+  .media-p405-room .media-p405-tile[data-tone],
+  .media-p405-room .media-p405-avatar[data-tone] {
+    background: Canvas;
   }
 
   .media-p405-room .media-p405-device-panel select,

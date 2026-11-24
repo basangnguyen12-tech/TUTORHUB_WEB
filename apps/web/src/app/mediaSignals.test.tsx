@@ -198,4 +198,30 @@ describe("P4-06 media signal query boundary", () => {
       "media-signal-hand_raise-a860f06d-34f9-4c57-89f8-1541bfb3b6d7",
     );
   });
+
+  it("ROOM-STAGE-POLISH-04 passes bounded participant reactions through the opaque key only", () => {
+    const reaction = {
+      participant_key: participantOpaqueID,
+      reaction: "heart",
+      signal_sequence: 9,
+      accepted_at: "2030-08-03T00:00:00Z",
+      expires_at: "2030-08-03T00:00:10Z",
+    } as const;
+    const parsed = parseMediaSignalSnapshot({
+      ...snapshot,
+      participant_reactions: [
+        { ...reaction, participant_session_id: roomInstanceID, email: "x@y" },
+      ],
+    });
+    expect(parsed.participant_reactions).toEqual([reaction]);
+    expect(parseMediaSignalSnapshot(snapshot)).not.toHaveProperty(
+      "participant_reactions",
+    );
+    expect(() =>
+      parseMediaSignalSnapshot({
+        ...snapshot,
+        participant_reactions: [{ ...reaction, reaction: "fire" }],
+      }),
+    ).toThrow(TypeError);
+  });
 });

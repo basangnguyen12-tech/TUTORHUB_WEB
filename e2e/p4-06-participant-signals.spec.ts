@@ -332,6 +332,23 @@ async function mountParticipantFixture(page: Page, options: FixtureOptions) {
           { reaction: "heart", count: 1, count_label: "1" },
         ],
       },
+      // ROOM-STAGE-POLISH-04: newest reaction per opaque roster key.
+      participant_reactions: [
+        {
+          participant_key: participantKey(2),
+          reaction: "heart",
+          signal_sequence: 9,
+          accepted_at: new Date(Date.now() - 100).toISOString(),
+          expires_at: futureExpiry,
+        },
+        {
+          participant_key: participantKey(1),
+          reaction: "thumbs_up",
+          signal_sequence: 5,
+          accepted_at: new Date(Date.now() - 500).toISOString(),
+          expires_at: futureExpiry,
+        },
+      ],
       server_time: new Date().toISOString(),
     };
 
@@ -504,6 +521,46 @@ test("P4-06 supports toolbar keyboard order, hand ACK, and allowlisted reaction"
     page.getByRole("button", { name: "Send a reaction" }),
   ).toBeFocused();
 
+  // ROOM-STAGE-POLISH-04: Student 1 (first in the queue, just sent a heart)
+  // carries both badges in the top-right corner of their own tile; the
+  // room-level clusters float up instead of standing still.
+  const studentTile = page.locator(".media-p405-tile").filter({
+    has: page.locator(".media-p405-tile-meta > span", {
+      hasText: /^Student 1$/,
+    }),
+  });
+  const studentBadges = studentTile.locator(".media-p406-tile-signals");
+  await expect(studentBadges).toHaveAttribute("aria-hidden", "true");
+  await expect(studentBadges.locator(".media-p406-tile-reaction")).toHaveText(
+    "❤️",
+  );
+  await expect(
+    studentBadges.locator(".media-p406-tile-hand__position"),
+  ).toHaveText("1");
+  const tileBox = (await studentTile.boundingBox())!;
+  const badgeBox = (await studentBadges.boundingBox())!;
+  // `top / right: 10px` from the padding box, inside the tile's 1px rim.
+  const rightInset = tileBox.x + tileBox.width - (badgeBox.x + badgeBox.width);
+  const topInset = badgeBox.y - tileBox.y;
+  for (const inset of [rightInset, topInset]) {
+    expect(inset).toBeGreaterThanOrEqual(9.5);
+    expect(inset).toBeLessThanOrEqual(11.5);
+  }
+  await expect(
+    page
+      .locator(".media-p405-tile")
+      .filter({
+        has: page.locator(".media-p405-tile-meta > span", {
+          hasText: "Teacher One",
+        }),
+      })
+      .locator(".media-p406-tile-reaction"),
+  ).toHaveText("👍");
+  await expect(page.locator(".media-p406-reaction-cluster").first()).toHaveCSS(
+    "animation-name",
+    "media-p406-reaction-float",
+  );
+
   await hand.click();
   await expect(
     page.getByRole("button", { name: "Lower your hand" }),
@@ -575,6 +632,11 @@ test("P4-06 reflows at 320 CSS pixels and 200% with Axe, forced colors, and redu
   ).toBeLessThanOrEqual(1);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await expect(page.locator(".media-p406-reaction-cluster").first()).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  // ROOM-STAGE-POLISH-04: the tile reaction badge appears without a pop.
+  await expect(page.locator(".media-p406-tile-reaction").first()).toHaveCSS(
     "animation-name",
     "none",
   );

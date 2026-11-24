@@ -195,7 +195,11 @@ Zoom/Meet:
 
 CSS Grid/container query chọn hàng/cột trong bound trên. Không attach hơn 16 camera video element
 đồng thời trong grid. Page change bằng action rõ, có số trang, không swipe-only. Khi page biến mất do
-leave, clamp về page hợp lệ gần nhất và restore focus tới page control hoặc tile ổn định.
+leave, clamp về page hợp lệ gần nhất và restore focus tới page control hoặc tile ổn định. Khi camera
+tắt hoặc video đang tạm dừng (`paused`), tile cá nhân (không áp dụng cho `screen_share`) dùng bảng
+màu nền tối đa sắc độ lấy cảm hứng từ Google Meet (tối thiểu 6 tông màu trầm hài hòa được chọn tất
+định theo khóa hiển thị ổn định của từng người, đi kèm huy chương avatar đồng tông sáng hơn đảm bảo
+tương phản chữ trắng `>= 4.5:1` và giữ viền hệ thống ở `forced-colors: active`).
 
 #### 6.2 Active speaker
 
@@ -252,7 +256,10 @@ arrival order hoặc display name không tham gia FIFO.
 - Participant chỉ tự hạ tay mình. Actor có `media.moderate` mới lower-one/lower-all; target và
   authority reload tại mutation.
 - Hand giữ active tới self-lower, moderator lower, participant left/removed hoặc RoomInstance
-  terminal. Active speaker không tự hạ tay và hand không reorder video grid.
+  terminal. Active speaker không tự hạ tay và hand không reorder video grid. Trên khung video của
+  người đang giơ tay (grid, main stage cá nhân, rail và dải camera cạnh Bảng trắng; không gắn lên
+  tile `screen_share`), hiển thị huy hiệu giơ tay ở **góc trên bên phải** để giáo viên nhận diện tức
+  thì mà không cần mở ngăn Người tham gia.
 - Snapshot có projection version + last sequence. Client fetch khi connect/reconnect/tab resume,
   sau sequence gap hoặc sau command timeout; snapshot thắng packet/event cũ.
 - `403`, `409`, `429`, offline và retry có feedback typed. Bounded display name được render; email,
@@ -283,14 +290,22 @@ chỉ trả reaction chưa hết TTL; expired reaction không trở thành chat,
 Projection grouping:
 
 - reaction cùng enum trong cửa sổ server 750 ms được gộp một cluster và count;
-- tối đa 3 cluster animation cùng lúc; count hiển thị `99+` thay vì tạo một DOM node/event;
+- bên cạnh `reaction_clusters` cấp phòng, `MediaParticipantSnapshot` được phép chiếu thêm danh sách
+  tùy chọn `participant_reactions` giới hạn tối đa 50 phần tử (tối đa 1 cảm xúc chưa hết hạn mới
+  nhất cho mỗi `participant_key` đang hoạt động, nối trực tiếp từ `media_reaction_events` sang
+  `media_participant_sessions.participant_key` không cần thêm bảng mới và không lộ user/session/
+  provider ID) để hiển thị huy hiệu cảm xúc ở **góc trên bên phải** khung video của chính người gửi
+  (phối hợp gọn với huy hiệu giơ tay nếu cả hai cùng đang bật);
+- tối đa 3 cluster/luồng cảm xúc bay lên (`bay lên` dọc từ phía trên thanh Dock kèm độ trôi ngang nhẹ
+  và mờ dần kiểu Zoom/Google Meet) cùng lúc; count hiển thị `99+` thay vì tạo một DOM node/event;
 - cluster vượt visual cap chỉ cập nhật bounded summary/count, không tạo animation hoặc hàng đợi DOM
   không giới hạn;
 - TTL không kéo dài vô hạn do thêm reaction mới: mỗi cluster giữ expiry mới nhất nhưng một event
   riêng không sống quá 10 giây;
 - event hết hạn và receipt signal được hard-delete bằng hai maintenance function bounded,
   `SECURITY DEFINER`/static search path/`SKIP LOCKED`; Core API runtime không có table-wide `DELETE`;
-- reduced-motion bỏ travel/burst animation nhưng giữ icon + count + text status.
+- reduced-motion bỏ travel/burst/floating animation nhưng giữ icon + count + huy hiệu góc trên phải ở
+  trạng thái tĩnh cùng text status.
 
 Initial cross-instance limits:
 

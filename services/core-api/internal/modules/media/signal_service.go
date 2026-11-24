@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -21,6 +22,7 @@ const (
 	mediaSignalReceiptRetention     = 24 * time.Hour
 	maximumReactionSnapshotClusters = 50
 	maximumReactionClusterCount     = 100
+	maximumParticipantReactions     = maximumMediaRosterParticipants
 )
 
 type MediaSignalKind string
@@ -104,6 +106,17 @@ type ReactionCluster struct {
 	ExpiresAt           time.Time     `json:"expires_at"`
 }
 
+// ParticipantReaction is the newest unexpired reaction of one active roster
+// participant, projected only through the opaque ParticipantKey that the roster
+// already exposes. It never carries a user, ParticipantSession or provider ID.
+type ParticipantReaction struct {
+	ParticipantKey uuid.UUID     `json:"participant_key"`
+	Reaction       MediaReaction `json:"reaction"`
+	SignalSequence int64         `json:"signal_sequence"`
+	AcceptedAt     time.Time     `json:"accepted_at"`
+	ExpiresAt      time.Time     `json:"expires_at"`
+}
+
 type MediaSignalViewerOperations struct {
 	CanRaiseHand     bool `json:"can_raise_hand"`
 	CanSendReaction  bool `json:"can_send_reaction"`
@@ -122,7 +135,20 @@ type MediaParticipantSnapshot struct {
 	Participants       []MediaParticipant          `json:"participants"`
 	RaisedHands        []RaisedHand                `json:"raised_hands"`
 	ReactionClusters   []ReactionCluster           `json:"reaction_clusters"`
-	ServerTime         time.Time                   `json:"server_time"`
+	// ParticipantReactions is bounded to one entry per active participant key
+	// (at most 50) and always serializes as an array.
+	ParticipantReactions []ParticipantReaction `json:"participant_reactions"`
+	ServerTime           time.Time             `json:"server_time"`
+}
+
+// MarshalJSON keeps participant_reactions an array even when a projection was
+// built without it, so clients never have to distinguish null from empty.
+func (snapshot MediaParticipantSnapshot) MarshalJSON() ([]byte, error) {
+	type wireSnapshot MediaParticipantSnapshot
+	if snapshot.ParticipantReactions == nil {
+		snapshot.ParticipantReactions = []ParticipantReaction{}
+	}
+	return json.Marshal(wireSnapshot(snapshot))
 }
 
 type GetMediaParticipantSnapshotInput struct {
@@ -160,6 +186,9 @@ type mediaReactionEvent struct {
 	SignalSequence int64
 	AcceptedAt     time.Time
 	ExpiresAt      time.Time
+	// ParticipantKey is uuid.Nil when the sender is no longer an active
+	// participant; such events still count toward room-level clusters.
+	ParticipantKey uuid.UUID
 }
 
 type MediaSignalRepository interface {
@@ -310,7 +339,8 @@ func validParticipantSnapshot(snapshot MediaParticipantSnapshot, expectedRoomID 
 		snapshot.LastSignalSequence < 0 || snapshot.SelfParticipantKey == uuid.Nil ||
 		snapshot.ServerTime.IsZero() || len(snapshot.Participants) > maximumMediaRosterParticipants ||
 		len(snapshot.RaisedHands) > maximumMediaRosterParticipants ||
-		len(snapshot.ReactionClusters) > maximumReactionSnapshotClusters {
+		len(snapshot.ReactionClusters) > maximumReactionSnapshotClusters ||
+		len(snapshot.ParticipantReactions) > maximumParticipantReactions {
 		return false
 	}
 	participantKeys := make(map[uuid.UUID]struct{}, len(snapshot.Participants))
@@ -361,6 +391,22 @@ func validParticipantSnapshot(snapshot MediaParticipantSnapshot, expectedRoomID 
 			cluster.ExpiresAt.Sub(cluster.AcceptedAt) > mediaReactionTTL+mediaReactionGroupingWindow {
 			return false
 		}
+	}
+	reactingParticipantKeys := make(map[uuid.UUID]struct{}, len(snapshot.ParticipantReactions))
+	for _, reaction := range snapshot.ParticipantReactions {
+		if reaction.ParticipantKey == uuid.Nil || !validMediaReaction(reaction.Reaction) ||
+			reaction.SignalSequence < 1 || reaction.SignalSequence > snapshot.LastSignalSequence ||
+			reaction.AcceptedAt.IsZero() || !reaction.ExpiresAt.After(reaction.AcceptedAt) ||
+			reaction.ExpiresAt.Sub(reaction.AcceptedAt) > mediaReactionTTL {
+			return false
+		}
+		if _, found := participantKeys[reaction.ParticipantKey]; !found {
+			return false
+		}
+		if _, duplicate := reactingParticipantKeys[reaction.ParticipantKey]; duplicate {
+			return false
+		}
+		reactingParticipantKeys[reaction.ParticipantKey] = struct{}{}
 	}
 	return true
 }
@@ -420,6 +466,55 @@ func groupMediaReactionEvents(events []mediaReactionEvent) []ReactionCluster {
 		}
 	}
 	return clusters
+}
+
+// latestParticipantReactions keeps the newest event (highest server sequence)
+// of every active participant key present in the roster. Events whose sender
+// has left (uuid.Nil key) or falls outside the bounded roster are skipped. The
+// result is ordered by signal_sequence DESC, participant_key ASC and capped at
+// one entry per roster participant.
+func latestParticipantReactions(
+	events []mediaReactionEvent,
+	participants []MediaParticipant,
+) []ParticipantReaction {
+	roster := make(map[uuid.UUID]struct{}, len(participants))
+	for _, participant := range participants {
+		roster[participant.ParticipantKey] = struct{}{}
+	}
+	latest := make(map[uuid.UUID]ParticipantReaction, len(participants))
+	for _, event := range events {
+		if event.ParticipantKey == uuid.Nil || !validMediaReaction(event.Reaction) ||
+			event.SignalSequence < 1 || event.AcceptedAt.IsZero() ||
+			!event.ExpiresAt.After(event.AcceptedAt) {
+			continue
+		}
+		if _, active := roster[event.ParticipantKey]; !active {
+			continue
+		}
+		if current, found := latest[event.ParticipantKey]; found &&
+			current.SignalSequence >= event.SignalSequence {
+			continue
+		}
+		latest[event.ParticipantKey] = ParticipantReaction{
+			ParticipantKey: event.ParticipantKey, Reaction: event.Reaction,
+			SignalSequence: event.SignalSequence,
+			AcceptedAt:     event.AcceptedAt.UTC(), ExpiresAt: event.ExpiresAt.UTC(),
+		}
+	}
+	reactions := make([]ParticipantReaction, 0, len(latest))
+	for _, reaction := range latest {
+		reactions = append(reactions, reaction)
+	}
+	sort.Slice(reactions, func(left, right int) bool {
+		if reactions[left].SignalSequence != reactions[right].SignalSequence {
+			return reactions[left].SignalSequence > reactions[right].SignalSequence
+		}
+		return reactions[left].ParticipantKey.String() < reactions[right].ParticipantKey.String()
+	})
+	if len(reactions) > maximumParticipantReactions {
+		reactions = reactions[:maximumParticipantReactions]
+	}
+	return reactions
 }
 
 func normalizeMediaSignalError(err error) error {

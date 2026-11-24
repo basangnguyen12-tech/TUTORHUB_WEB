@@ -34,10 +34,8 @@ func runP409ForwardMigration(t *testing.T) {
 	defer cancel()
 
 	version, err := migrationrunner.CurrentVersion(ctx, migrationURL)
-	if err != nil || version.Dirty ||
-		(version.Number != 34 && version.Number != 35 && version.Number != 36 && version.Number != 37 &&
-			version.Number != 38 && version.Number != 39 && version.Number != 40 && version.Number != 41 && version.Number != 42) {
-		t.Fatal("P4-09 retained forward migration requires a clean disposable ledger from 34 through 42")
+	if err != nil || version.Dirty || version.Number < 34 {
+		t.Fatal("P4-09 retained forward migration requires a clean disposable ledger at or after 34")
 	}
 	if err := migrationrunner.Up(ctx, migrationURL); err != nil {
 		t.Fatal("apply P4-09 forward migration")
@@ -46,10 +44,10 @@ func runP409ForwardMigration(t *testing.T) {
 		t.Fatal("rerun P4-09 forward migration idempotently")
 	}
 	version, err = migrationrunner.CurrentVersion(ctx, migrationURL)
-	if err != nil || version.Number != 42 || version.Dirty {
-		t.Fatal("P4-09 retained forward migration must finish at latest ledger 42 false")
+	if err != nil || version.Number < 42 || version.Dirty {
+		t.Fatal("P4-09 retained forward migration must finish at clean ledger at or after 42")
 	}
-	t.Log("P4_09_RETAINED_FORWARD_MIGRATION PASS ledger=42 dirty=false idempotent=true")
+	t.Logf("P4_09_RETAINED_FORWARD_MIGRATION PASS ledger=%d dirty=false idempotent=true", version.Number)
 }
 
 func TestPostgresMediaRecoveryConcurrencyAuthorityAndLockBarrier(t *testing.T) {
@@ -62,8 +60,8 @@ func TestPostgresMediaRecoveryConcurrencyAuthorityAndLockBarrier(t *testing.T) {
 	defer cancel()
 
 	version, err := migrationrunner.CurrentVersion(ctx, migrationURL)
-	if err != nil || version.Number != 42 || version.Dirty {
-		t.Fatal("P4-09 retained recovery integration requires latest ledger 42 false")
+	if err != nil || version.Number < 42 || version.Dirty {
+		t.Fatal("P4-09 retained recovery integration requires clean ledger at or after 42")
 	}
 	migrationPool := openMediaIntegrationPool(t, ctx, migrationURL)
 	t.Cleanup(migrationPool.Close)

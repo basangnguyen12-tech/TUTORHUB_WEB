@@ -35,6 +35,7 @@ export const MAX_VISIBLE_REACTION_COUNT = 99;
 const MAX_SNAPSHOT_PARTICIPANTS = 50;
 const MAX_SNAPSHOT_HANDS = 50;
 const MAX_SNAPSHOT_REACTION_CLUSTERS = 50;
+const MAX_SNAPSHOT_PARTICIPANT_REACTIONS = 50;
 const MAX_SERVER_REACTION_CLUSTER_COUNT = 100;
 // A cluster starts at its first event but may expire from the last event
 // accepted inside the grouping window. This matches the Core API tolerance.
@@ -74,6 +75,20 @@ export interface ClassroomReactionCluster {
   readonly expires_at: string;
 }
 
+/**
+ * ROOM-STAGE-POLISH-04: the newest unexpired reaction of one active roster
+ * participant, correlated only through the opaque participant key. It feeds a
+ * decorative badge on that participant's own tile; room-level announcements
+ * stay with the grouped reaction clusters.
+ */
+export interface ClassroomParticipantReaction {
+  readonly participant_key: string;
+  readonly reaction: ClassroomReactionType;
+  readonly signal_sequence: number;
+  readonly accepted_at: string;
+  readonly expires_at: string;
+}
+
 /** Raw event model used by the deterministic 750 ms grouping reducer. */
 export interface ClassroomReactionEvent {
   readonly event_id: string;
@@ -106,6 +121,8 @@ export interface ClassroomSignalSnapshot {
   readonly participants: readonly ClassroomRosterParticipant[];
   readonly raised_hands: readonly ClassroomRaisedHand[];
   readonly reaction_clusters: readonly ClassroomReactionCluster[];
+  /** Optional: older Core API builds and fixtures omit it. */
+  readonly participant_reactions?: readonly ClassroomParticipantReaction[];
   readonly server_time: string;
 }
 
@@ -141,7 +158,26 @@ export interface ClassroomSignalProjection {
   readonly roster: readonly ClassroomRosterParticipant[];
   readonly raised_hands: readonly ClassroomRaisedHandProjection[];
   readonly reactions: ClassroomReactionProjection;
+  /**
+   * Unexpired, roster-bound, newest-per-participant reactions ordered by
+   * signal_sequence descending. Optional so hand-built fixtures stay valid;
+   * `projectClassroomSignalSnapshot` always sets it.
+   */
+  readonly participant_reactions?: readonly ClassroomParticipantReaction[];
   readonly server_time: string;
+}
+
+/** ROOM-STAGE-POLISH-04: decorative signal state for one participant tile. */
+export interface ClassroomTileSignal {
+  readonly hand: {
+    readonly queue_position: number;
+    /** The queue number only adds information once two or more hands wait. */
+    readonly show_position: boolean;
+  } | null;
+  readonly reaction: {
+    readonly reaction: ClassroomReactionType;
+    readonly signal_sequence: number;
+  } | null;
 }
 
 export interface ClassroomSignalSequenceGap {
@@ -234,6 +270,10 @@ export function validateClassroomSignalSnapshot(
     input.reaction_clusters,
     issues,
   );
+  const participantReactions = readParticipantReactions(
+    input.participant_reactions,
+    issues,
+  );
   const serverTime = readDateTime(input.server_time, "server_time", issues);
 
   const participantKeys = new Set<string>();
@@ -299,6 +339,31 @@ export function validateClassroomSignalSnapshot(
     reactionKeys.add(clusterKey);
   }
 
+  for (const reaction of participantReactions ?? []) {
+    if (!participantKeys.has(reaction.participant_key)) {
+      issues.push(
+        "participant_reactions contains a participant outside the roster",
+      );
+    }
+    if (
+      lastSignalSequence !== null &&
+      reaction.signal_sequence > lastSignalSequence
+    ) {
+      issues.push(
+        "participant_reactions contains a sequence after last_signal_sequence",
+      );
+    }
+    const reactionTTL =
+      dateTimeMs(reaction.expires_at) - dateTimeMs(reaction.accepted_at);
+    if (reactionTTL <= 0) {
+      issues.push("participant reaction expires_at must be after accepted_at");
+    } else if (reactionTTL > REACTION_TTL_MS) {
+      issues.push(
+        `participant reaction TTL must not exceed ${REACTION_TTL_MS} milliseconds`,
+      );
+    }
+  }
+
   if (
     issues.length > 0 ||
     roomInstanceId === null ||
@@ -327,6 +392,9 @@ export function validateClassroomSignalSnapshot(
       participants,
       raised_hands: raisedHands,
       reaction_clusters: reactionClusters,
+      ...(participantReactions === undefined
+        ? {}
+        : { participant_reactions: participantReactions }),
       server_time: serverTime,
     },
     issues: [],
@@ -402,6 +470,11 @@ export function projectClassroomSignalSnapshot(
     roster,
     raised_hands: projectRaisedHandQueue(snapshot.raised_hands, roster),
     reactions: projectReactionClusters(snapshot.reaction_clusters, serverNowMs),
+    participant_reactions: projectParticipantReactions(
+      snapshot.participant_reactions ?? [],
+      roster,
+      serverNowMs,
+    ),
     server_time: snapshot.server_time,
   };
 }
@@ -448,6 +521,86 @@ export function projectRaisedHandQueue(
         },
       ];
     });
+}
+
+/**
+ * Keep the newest unexpired allowlisted reaction for every participant still
+ * in the roster, newest first. Bounded by the 50-participant roster.
+ */
+export function projectParticipantReactions(
+  reactions: readonly ClassroomParticipantReaction[],
+  roster: readonly ClassroomRosterParticipant[],
+  serverNowMs: number,
+): readonly ClassroomParticipantReaction[] {
+  assertFiniteTime(serverNowMs, "Participant reaction projection time");
+  const rosterKeys = new Set(
+    roster.map(({ participant_key }) => participant_key),
+  );
+  const newest = new Map<string, ClassroomParticipantReaction>();
+  for (const reaction of reactions) {
+    if (
+      !rosterKeys.has(reaction.participant_key) ||
+      !isClassroomReactionType(reaction.reaction) ||
+      !(dateTimeMs(reaction.expires_at) > serverNowMs)
+    ) {
+      continue;
+    }
+    const current = newest.get(reaction.participant_key);
+    if (!current || reaction.signal_sequence > current.signal_sequence) {
+      newest.set(reaction.participant_key, reaction);
+    }
+  }
+  return [...newest.values()]
+    .sort(
+      (left, right) =>
+        right.signal_sequence - left.signal_sequence ||
+        left.participant_key.localeCompare(right.participant_key),
+    )
+    .slice(0, MAX_SNAPSHOT_PARTICIPANT_REACTIONS);
+}
+
+/**
+ * ROOM-STAGE-POLISH-04: index the raised-hand queue and per-participant
+ * reactions by opaque participant key, so each video tile can look up its own
+ * top-right badges in O(1). Media items carry the same key as their id once
+ * the server roster is authoritative.
+ */
+export function projectTileSignals(
+  projection:
+    | Pick<ClassroomSignalProjection, "participant_reactions" | "raised_hands">
+    | null
+    | undefined,
+): ReadonlyMap<string, ClassroomTileSignal> {
+  const tiles = new Map<string, ClassroomTileSignal>();
+  if (!projection) return tiles;
+  const showPosition = projection.raised_hands.length >= 2;
+  for (const hand of projection.raised_hands) {
+    tiles.set(hand.participant_key, {
+      hand: {
+        queue_position: hand.queue_position,
+        show_position: showPosition,
+      },
+      reaction: null,
+    });
+  }
+  for (const reaction of projection.participant_reactions ?? []) {
+    if (!isClassroomReactionType(reaction.reaction)) continue;
+    const current = tiles.get(reaction.participant_key);
+    if (
+      current?.reaction &&
+      current.reaction.signal_sequence >= reaction.signal_sequence
+    ) {
+      continue;
+    }
+    tiles.set(reaction.participant_key, {
+      hand: current?.hand ?? null,
+      reaction: {
+        reaction: reaction.reaction,
+        signal_sequence: reaction.signal_sequence,
+      },
+    });
+  }
+  return tiles;
 }
 
 /**
@@ -946,6 +1099,68 @@ function readReactionClusters(
   });
 }
 
+/** Optional array: `undefined` when the server omitted the field. */
+function readParticipantReactions(
+  input: unknown,
+  issues: string[],
+): readonly ClassroomParticipantReaction[] | undefined {
+  if (input === undefined) return undefined;
+  if (!boundedArray(input, MAX_SNAPSHOT_PARTICIPANT_REACTIONS)) {
+    issues.push(
+      `participant_reactions must be an array with at most ${MAX_SNAPSHOT_PARTICIPANT_REACTIONS} items`,
+    );
+    return [];
+  }
+  return input.flatMap((value, index) => {
+    if (!isRecord(value)) {
+      issues.push(`participant_reactions[${index}] must be an object`);
+      return [];
+    }
+    const participantKey = readParticipantKey(
+      value.participant_key,
+      `participant_reactions[${index}].participant_key`,
+      issues,
+    );
+    const reaction = value.reaction;
+    if (!isClassroomReactionType(reaction)) {
+      issues.push(`participant_reactions[${index}].reaction is not allowed`);
+    }
+    const signalSequence = readPositiveInteger(
+      value.signal_sequence,
+      `participant_reactions[${index}].signal_sequence`,
+      issues,
+    );
+    const acceptedAt = readDateTime(
+      value.accepted_at,
+      `participant_reactions[${index}].accepted_at`,
+      issues,
+    );
+    const expiresAt = readDateTime(
+      value.expires_at,
+      `participant_reactions[${index}].expires_at`,
+      issues,
+    );
+    if (
+      participantKey === null ||
+      !isClassroomReactionType(reaction) ||
+      signalSequence === null ||
+      acceptedAt === null ||
+      expiresAt === null
+    ) {
+      return [];
+    }
+    return [
+      {
+        participant_key: participantKey,
+        reaction,
+        signal_sequence: signalSequence,
+        accepted_at: acceptedAt,
+        expires_at: expiresAt,
+      },
+    ];
+  });
+}
+
 function readParticipantKey(
   input: unknown,
   path: string,
@@ -1082,6 +1297,28 @@ function boundedArray(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** ROOM-STAGE-POLISH-04: eight Meet-style camera-off surfaces (tile + avatar). */
+export const MEDIA_TILE_TONE_COUNT = 8;
+
+/**
+ * Deterministic 0–7 palette slot shared by video tiles and People panel rows
+ * so each participant keeps the exact same Google Meet tone everywhere.
+ */
+export function mediaTileTone(sequence: number, salt: number): number {
+  const slot = (salt + sequence) % MEDIA_TILE_TONE_COUNT;
+  return slot < 0 ? slot + MEDIA_TILE_TONE_COUNT : slot;
+}
+
+/** 32-bit FNV-1a over UTF-16 code units: small, fast and well spread. */
+export function fnv1aHash(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
 }
 
 function invalidSnapshot(issue: string): ClassroomSignalSnapshotValidation {
