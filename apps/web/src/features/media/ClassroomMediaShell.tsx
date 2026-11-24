@@ -28,20 +28,25 @@ import {
   Menu,
   MenuContent,
   MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuTrigger,
 } from "@tutorhub/ui";
 import {
   Camera,
   CameraOff,
+  Check,
   ChevronLeft,
   ChevronRight,
   Grid2X2,
   Hand,
+  LogOut,
   Mic,
   MicOff,
   PhoneOff,
   Pin,
   PinOff,
+  Power,
   Presentation,
   ScreenShare,
   ScreenShareOff,
@@ -63,6 +68,7 @@ import {
   type TrackProcessor,
 } from "livekit-client";
 import {
+  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -73,6 +79,7 @@ import {
   useState,
   useSyncExternalStore,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -114,8 +121,10 @@ import {
   type ClassroomSignalProjection,
 } from "./classroomSignals";
 import {
+  ClassroomEndRoomDialog,
   ClassroomModerationControls,
   ClassroomParticipantModerationMenu,
+  classroomModerationBusy,
   type ClassroomModerationControlsModel,
 } from "./ClassroomModerationControls";
 
@@ -136,6 +145,11 @@ export interface ClassroomMediaShellProps {
    */
   lobbyWaitingCount?: number;
   moderation?: ClassroomModerationControlsModel;
+  /**
+   * ROOM-COMPACT-05: the lesson or class name shown in the Top Bar. Without
+   * it the heading stays for assistive technology only.
+   */
+  roomTitle?: string | null;
   signals?: ClassroomSignalControls;
   tools?: readonly ClassroomToolDefinition[];
   /**
@@ -404,6 +418,21 @@ export interface ClassroomToolDefinition {
   readonly title: string;
 }
 
+/**
+ * ROOM-COMPACT-05: where an open classroom tool puts its compact controls —
+ * the right end of the room's single Top Bar. `null` (the default) means the
+ * content is rendered outside a classroom stage and keeps its own bars;
+ * inside the stage `element` is the slot to portal into (briefly `null`
+ * until the Top Bar has mounted).
+ */
+export interface ClassroomHeaderSlot {
+  readonly element: HTMLElement | null;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- Shared slot contract: tool content (the whiteboard) portals its Top Bar controls through it without a new prop on every tool.
+export const ClassroomHeaderSlotContext =
+  createContext<ClassroomHeaderSlot | null>(null);
+
 export interface ClassroomSignalControls {
   readonly error: boolean;
   readonly loading: boolean;
@@ -458,9 +487,7 @@ type ToolbarControlKey =
   | "chat"
   | "roster"
   | `tool-${ClassroomToolID}`
-  | "layout-grid"
-  | "layout-active-speaker"
-  | "layout-presentation";
+  | "layout";
 
 const initialLayoutState: ClassroomLayoutState = {
   mode: "grid",
@@ -481,6 +508,13 @@ const layoutModes: readonly ClassroomLayoutMode[] = [
   "presentation",
 ];
 
+function isClassroomLayoutMode(value: string): value is ClassroomLayoutMode {
+  return (layoutModes as readonly string[]).includes(value);
+}
+
+/** The Dock key that owns the layout menu (focus fallback after changes). */
+const LAYOUT_CONTROL_ID = "media-p405-control-layout";
+
 export function ClassroomMediaShell({
   canPublishCameraMicrophone,
   canShareScreen,
@@ -491,6 +525,7 @@ export function ClassroomMediaShell({
   lobby,
   lobbyWaitingCount,
   moderation,
+  roomTitle,
   signals,
   tools = [],
   visualEffects: visualEffectsModel,
@@ -520,6 +555,12 @@ export function ClassroomMediaShell({
   const [rosterOpen, setRosterOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [openToolID, setOpenToolID] = useState<ClassroomToolID | null>(null);
+  const [headerSlotElement, setHeaderSlotElement] =
+    useState<HTMLDivElement | null>(null);
+  const headerSlot = useMemo<ClassroomHeaderSlot>(
+    () => ({ element: headerSlotElement }),
+    [headerSlotElement],
+  );
   const [autoOpenedToolID, setAutoOpenedToolID] =
     useState<ClassroomToolID | null>(null);
   const [seenAutoOpenKeys, setSeenAutoOpenKeys] = useState<ReadonlySet<string>>(
@@ -834,10 +875,8 @@ export function ClassroomMediaShell({
         : []),
       ...(chat ? (["chat"] as const) : []),
       ...tools.map(({ id }) => `tool-${id}` as const),
+      "layout",
       ...(signals || lobby ? (["roster"] as const) : []),
-      "layout-grid",
-      "layout-active-speaker",
-      ...(presenterID ? (["layout-presentation"] as const) : []),
     ],
     [
       canPublishCameraMicrophone,
@@ -846,7 +885,6 @@ export function ClassroomMediaShell({
       controlsTerminated,
       lobby,
       pendingControl,
-      presenterID,
       signals,
       tools,
     ],
@@ -911,8 +949,8 @@ export function ClassroomMediaShell({
       const focusTargetId =
         activeElement instanceof HTMLElement &&
         shellRef.current?.contains(activeElement)
-          ? activeElement.id || "media-p405-layout-grid"
-          : "media-p405-layout-grid";
+          ? activeElement.id || LAYOUT_CONTROL_ID
+          : LAYOUT_CONTROL_ID;
       setLayoutState((current) =>
         enterPresentation({ ...current, focusTargetId }, presenterID),
       );
@@ -922,10 +960,7 @@ export function ClassroomMediaShell({
     if (!presenterID && previousPresenter) {
       const restored = restorePresentation(layoutState, cameraItems, width);
       setLayoutState(restored.state);
-      scheduleElementFocus(
-        restored.state.focusTargetId,
-        `media-p405-layout-${restored.state.mode}`,
-      );
+      scheduleElementFocus(restored.state.focusTargetId, LAYOUT_CONTROL_ID);
     }
   }, [cameraItems, layoutState, presenterID, scheduleElementFocus, width]);
 
@@ -1213,7 +1248,7 @@ export function ClassroomMediaShell({
           current.pinnedParticipantId === item.id ? null : item.id,
         focusTargetId: targetID,
       }));
-      scheduleElementFocus(targetID, "media-p405-layout-active-speaker");
+      scheduleElementFocus(targetID, LAYOUT_CONTROL_ID);
     },
     [scheduleElementFocus],
   );
@@ -1303,9 +1338,6 @@ export function ClassroomMediaShell({
 
   const effectsActive = hasActiveVisualEffects(visualEffects);
   const effectsName = t(visualEffectsSummaryKey(visualEffects));
-  const effectsLabel = effectsActive
-    ? t("media.fx.header", { name: effectsName })
-    : t("media.p405.effectsNone");
   const effectsProblem =
     effectsActive &&
     (effectsStatus === "unsupported" ||
@@ -1372,61 +1404,81 @@ export function ClassroomMediaShell({
       }`}
       ref={shellRef}
     >
+      {/*
+        ROOM-COMPACT-05: one slim Top Bar across the room. Left: the live
+        clock capsule, the polite presence status, the host Lock key and the
+        lesson name. Right: the open tool's compact controls (portalled into
+        the slot) and its Close key. Effects and End room live in the Dock.
+      */}
       <header className="media-p405-header">
         <div className="media-p405-header-title">
-          <span
-            aria-hidden="true"
-            className="media-p405-connection-dot"
-            data-connection={connectionStatus}
-          />
-          <h1>{t("media.room.title")}</h1>
-          <span aria-hidden="true" className="media-p405-header-divider" />
-          <SessionClock
-            live={
-              connectionStatus === "connected" ||
-              connectionStatus === "reconnecting"
-            }
-          />
-          <p aria-live="polite" role="status">
-            {t(roomStatusKey(connectionStatus))}
-            {" / "}
-            {t("media.room.participantCount", { count: participantCount })}
+          <span className="media-p405-live-pill">
+            <span
+              aria-hidden="true"
+              className="media-p405-connection-dot"
+              data-connection={connectionStatus}
+            />
+            <SessionClock
+              live={
+                connectionStatus === "connected" ||
+                connectionStatus === "reconnecting"
+              }
+            />
+          </span>
+          <p aria-live="polite" className="media-p405-presence" role="status">
+            <Users aria-hidden="true" className="media-p405-presence-icon" />
+            <span className="media-p405-presence-full">
+              {`${t(roomStatusKey(connectionStatus))} / ${t(
+                "media.room.participantCount",
+                { count: participantCount },
+              )}`}
+            </span>
+            <span aria-hidden="true" className="media-p405-presence-short">
+              {t("media.room.participantCountShort", {
+                count: participantCount,
+              })}
+            </span>
           </p>
-        </div>
-        <div className="media-p405-header-actions">
-          <div className="media-p405-header-badges">
-            {!canPublishCameraMicrophone && (
-              <span>{t("media.room.listenOnly")}</span>
-            )}
-            {canPublishCameraMicrophone ? (
-              // ROOM-MEET-DOCK-04: an icon-only header key; the full state
-              // stays the accessible name and shows in the room tooltip.
-              <button
-                aria-expanded={effectsOpen && effectsAvailable}
-                aria-haspopup="dialog"
-                className={`media-p405-effects-badge${
-                  effectsActive ? " media-p405-effects-badge--on" : ""
-                }`}
-                data-tooltip={effectsLabel}
-                data-tooltip-side="bottom"
-                disabled={controlsTerminated}
-                onClick={(event) => toggleEffectsDrawer(event.currentTarget)}
-                type="button"
-              >
-                <span>
-                  <Sparkles aria-hidden="true" />
-                  <span className="media-p405-sr-only">{effectsLabel}</span>
-                </span>
-              </button>
-            ) : (
-              <span>{effectsLabel}</span>
-            )}
-          </div>
           {moderation && (
             <ClassroomModerationControls
               controls={moderation}
               disabled={controlsTerminated || connectionStatus !== "connected"}
             />
+          )}
+          {roomTitle ? (
+            <>
+              <span aria-hidden="true" className="media-p405-header-divider" />
+              <h1 className="media-p405-room-title" title={roomTitle}>
+                {roomTitle}
+              </h1>
+            </>
+          ) : (
+            <h1 className="media-p405-sr-only">{t("media.room.title")}</h1>
+          )}
+        </div>
+        <div className="media-p405-header-actions">
+          {!canPublishCameraMicrophone && (
+            <div className="media-p405-header-badges">
+              <span>{t("media.room.listenOnly")}</span>
+            </div>
+          )}
+          <div
+            className="media-p405-header-tool-slot"
+            ref={setHeaderSlotElement}
+          />
+          {activeTool && (
+            <IconButton
+              className="media-p405-header-close"
+              data-tooltip={t("media.p405.close")}
+              data-tooltip-side="bottom"
+              id={`media-p506-close-${activeTool.id}`}
+              label={t("media.p405.close")}
+              onClick={closeActiveTool}
+              size="sm"
+              variant="quiet"
+            >
+              <X />
+            </IconButton>
           )}
         </div>
       </header>
@@ -1560,26 +1612,22 @@ export function ClassroomMediaShell({
             className={`media-p506-tool-stage media-p506-tool-${activeTool.id}`}
             id={`media-p506-stage-${activeTool.id}`}
           >
-            <header className="media-p506-tool-stage__header">
-              <h2 id={`media-p506-stage-title-${activeTool.id}`} tabIndex={-1}>
-                {activeTool.title}
-              </h2>
-              <Button
-                className="media-p506-tool-stage__close"
-                data-tooltip={t("media.p405.close")}
-                data-tooltip-side="bottom"
-                leadingIcon={<X />}
-                onClick={closeActiveTool}
-                size="sm"
-                variant="secondary"
-              >
-                <span className="media-p405-button-label">
-                  {t("media.p405.close")}
-                </span>
-              </Button>
-            </header>
+            {/*
+              ROOM-COMPACT-05: no titlebar — the paper fills the card edge to
+              edge. The heading stays for aria-labelledby and receives focus
+              when the stage opens; Close sits in the Top Bar.
+            */}
+            <h2
+              className="media-p405-sr-only"
+              id={`media-p506-stage-title-${activeTool.id}`}
+              tabIndex={-1}
+            >
+              {activeTool.title}
+            </h2>
             <div className="media-p506-tool-stage__body">
-              {activeTool.content}
+              <ClassroomHeaderSlotContext.Provider value={headerSlot}>
+                {activeTool.content}
+              </ClassroomHeaderSlotContext.Provider>
             </div>
           </section>
         )}
@@ -1775,7 +1823,6 @@ export function ClassroomMediaShell({
               >
                 <DockIcon icon={isCameraEnabled ? <Camera /> : <CameraOff />} />
               </IconButton>
-              <DockDivider />
             </>
           )}
           {canShareScreen && (
@@ -1969,6 +2016,71 @@ export function ClassroomMediaShell({
             );
           })}
 
+          {/*
+            ROOM-COMPACT-05: one round layout key opens a small menu (Grid,
+            Active speaker, Presentation) instead of a three-key groove.
+          */}
+          <Menu modal={false}>
+            <MenuTrigger asChild>
+              <IconButton
+                className="media-p405-dock-button media-p405-layout-trigger"
+                data-media-control="layout"
+                data-tooltip={t("media.p405.layoutMenu")}
+                id={LAYOUT_CONTROL_ID}
+                label={t("media.p405.layoutMenu")}
+                onFocus={() => setToolbarFocusKey("layout")}
+                tabIndex={toolbarTabIndex("layout")}
+                variant="secondary"
+              >
+                <DockIcon icon={<Grid2X2 />} />
+              </IconButton>
+            </MenuTrigger>
+            <MenuContent
+              aria-label={t("media.p405.layoutGroup")}
+              className="media-p405-layout-menu"
+              data-theme="dark"
+              side="top"
+              sideOffset={10}
+            >
+              <MenuRadioGroup
+                onValueChange={(value) => {
+                  if (isClassroomLayoutMode(value)) changeLayout(value);
+                }}
+                value={projection.mode}
+              >
+                {layoutModes.map((mode) => (
+                  <MenuRadioItem
+                    className="media-p405-layout-option"
+                    disabled={mode === "presentation" && !presenterID}
+                    id={`media-p405-layout-${mode}`}
+                    key={mode}
+                    value={mode}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="media-p405-layout-option__icon"
+                    >
+                      {mode === "grid" ? (
+                        <Grid2X2 />
+                      ) : mode === "active-speaker" ? (
+                        <UserRound />
+                      ) : (
+                        <Presentation />
+                      )}
+                    </span>
+                    <span className="media-p405-layout-option__label">
+                      {t(layoutModeKey(mode))}
+                    </span>
+                    <Check
+                      aria-hidden="true"
+                      className="media-p405-layout-option__check"
+                    />
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </MenuContent>
+          </Menu>
+
           {(signals || lobby) && (
             <Drawer onOpenChange={setRosterOpen} open={rosterOpen}>
               <DrawerTrigger asChild>
@@ -2027,44 +2139,16 @@ export function ClassroomMediaShell({
               </DrawerContent>
             </Drawer>
           )}
-
-          <DockDivider />
-          <div
-            aria-label={t("media.p405.layoutGroup")}
-            className="media-p405-layout-controls"
-            role="group"
-          >
-            <div className="media-p405-layout-pill">
-              {layoutModes.map((mode) => (
-                <IconButton
-                  aria-pressed={projection.mode === mode}
-                  className="media-p405-layout-button"
-                  data-media-control={`layout-${mode}`}
-                  data-tooltip={t(layoutModeKey(mode))}
-                  disabled={mode === "presentation" && !presenterID}
-                  id={`media-p405-layout-${mode}`}
-                  key={mode}
-                  label={t(layoutModeKey(mode))}
-                  onClick={() => changeLayout(mode)}
-                  onFocus={() => setToolbarFocusKey(`layout-${mode}`)}
-                  tabIndex={toolbarTabIndex(`layout-${mode}`)}
-                  variant={projection.mode === mode ? "primary" : "quiet"}
-                >
-                  {mode === "grid" ? (
-                    <Grid2X2 />
-                  ) : mode === "active-speaker" ? (
-                    <UserRound />
-                  ) : (
-                    <Presentation />
-                  )}
-                </IconButton>
-              ))}
-            </div>
-          </div>
         </div>
 
         <DockDivider />
-        <LeaveRoomDialog onLeave={handleLeave} />
+        <LeaveRoomControl
+          moderation={controlsTerminated ? undefined : moderation}
+          moderationDisabled={
+            controlsTerminated || connectionStatus !== "connected"
+          }
+          onLeave={handleLeave}
+        />
 
         {/*
           Anchored to the Dock (not the shell) so the device popover stays
@@ -2165,7 +2249,7 @@ function DockIcon({ icon }: { icon: ReactNode }) {
 const ROOM_TOOLTIP_TARGET = "[data-tooltip], .whiteboard-paper-trigger";
 /** Regions that act as app bars: their tooltips hang below the control. */
 const ROOM_TOOLTIP_BOTTOM_REGIONS =
-  ".media-p405-header, .media-p506-tool-stage__header, .whiteboard-tool-header, .whiteboard-engine-bar";
+  ".media-p405-header, .whiteboard-tool-header, .whiteboard-engine-bar";
 const ROOM_TOOLTIP_HOVER_DELAY_MS = 140;
 const ROOM_TOOLTIP_WARM_WINDOW_MS = 400;
 const ROOM_TOOLTIP_EDGE_PX = 8;
@@ -2859,41 +2943,297 @@ function DeviceSelect({
   );
 }
 
+/** Grace period before a hover-opened end-call popover closes. */
+const LEAVE_POPOVER_CLOSE_DELAY_MS = 150;
+
 /**
- * ROOM-MEET-DOCK-04: Leave is a Google Meet end-call pill. Its words stay the
- * accessible name (and the tooltip) but are hidden visually by the room's own
+ * ROOM-MEET-DOCK-04 / ROOM-COMPACT-05: the Dock's ruby end-call pill. Its
+ * words stay the accessible name but are hidden visually by the room's own
  * utility, never `.visually-hidden` (Excalidraw restyles that class).
+ *
+ * A participant gets one action: the pill opens "Leave the classroom?". A
+ * host who may end the room (`moderation.canEndRoom`, an exact server
+ * projection) gets a two-choice Liquid Glass popover instead — End room
+ * (ruby) above Leave room (dark glass). Hovering the pill or the popover
+ * keeps it open (a transparent bridge spans the gap; it closes 150ms after
+ * the pointer leaves both); a click pins it; Enter / Space opens it with
+ * focus on the first choice; Escape, an outside press or tabbing away
+ * closes it, Escape returning focus to the pill. Both confirmations hand
+ * focus back to the pill when they close.
  */
-function LeaveRoomDialog({ onLeave }: { onLeave: () => void }) {
+function LeaveRoomControl({
+  moderation,
+  moderationDisabled,
+  onLeave,
+}: {
+  moderation?: ClassroomModerationControlsModel;
+  moderationDisabled: boolean;
+  onLeave: () => void;
+}) {
   const { t } = useI18n();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<number | null>(null);
+  const pinned = useRef(false);
+  const focusFirstOptionOnOpen = useRef(false);
+  const popoverID = useId();
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
+  const endModeration = moderation?.canEndRoom ? moderation : null;
+  const open = endModeration !== null && popoverOpen;
+
+  const clearCloseTimer = useCallback(() => {
+    if (closeTimer.current !== null) {
+      globalThis.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+
+  const closePopover = useCallback(
+    (restoreFocus: boolean) => {
+      clearCloseTimer();
+      pinned.current = false;
+      focusFirstOptionOnOpen.current = false;
+      setPopoverOpen(false);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    [clearCloseTimer],
+  );
+
+  const focusOption = useCallback((index: "first" | "last" | 1 | -1) => {
+    const options = Array.from(
+      rootRef.current?.querySelectorAll<HTMLButtonElement>(
+        ".media-p405-leave-option:not(:disabled)",
+      ) ?? [],
+    );
+    if (options.length === 0) return;
+    if (index === "first") {
+      options[0]?.focus();
+      return;
+    }
+    if (index === "last") {
+      options[options.length - 1]?.focus();
+      return;
+    }
+    const current = options.indexOf(
+      document.activeElement as HTMLButtonElement,
+    );
+    const next =
+      current < 0 ? 0 : (current + index + options.length) % options.length;
+    options[next]?.focus();
+  }, []);
+
+  useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
+
+  useEffect(() => {
+    if (!open || !focusFirstOptionOnOpen.current) return;
+    focusFirstOptionOnOpen.current = false;
+    focusOption("first");
+  }, [focusOption, open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      const root = rootRef.current;
+      if (
+        root &&
+        event.target instanceof Node &&
+        !root.contains(event.target)
+      ) {
+        closePopover(false);
+      }
+    };
+    // A hover-opened popover never received focus, so the root's own Escape
+    // handler cannot see the key: dismiss it here (WCAG 1.4.13) and hand
+    // focus to the pill unless focus already rests on another control.
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const active = document.activeElement;
+      const focusIsIdle =
+        active === null ||
+        active === document.body ||
+        (active instanceof Node && rootRef.current?.contains(active) === true);
+      closePopover(focusIsIdle);
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closePopover, open]);
+
+  const leaveDialogContent = (
+    <DialogContent
+      closeLabel={t("media.p405.leaveCancel")}
+      data-theme="dark"
+      onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        triggerRef.current?.focus();
+      }}
+    >
+      <DialogTitle>{t("media.p405.leaveTitle")}</DialogTitle>
+      <DialogDescription>{t("media.p405.leaveDescription")}</DialogDescription>
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button variant="secondary">{t("media.p405.leaveCancel")}</Button>
+        </DialogClose>
+        <Button onClick={onLeave} variant="danger">
+          {t("media.p405.leaveConfirm")}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+
+  if (endModeration === null) {
+    return (
+      <Dialog onOpenChange={setLeaveOpen} open={leaveOpen}>
+        <DialogTrigger asChild>
+          <Button
+            className="media-p405-dock-leave"
+            data-tooltip={t("media.p405.leave")}
+            id="media-p405-control-leave"
+            leadingIcon={<PhoneOff />}
+            ref={triggerRef}
+            variant="danger"
+          >
+            <span className="media-p405-sr-only">{t("media.p405.leave")}</span>
+          </Button>
+        </DialogTrigger>
+        {leaveDialogContent}
+      </Dialog>
+    );
+  }
+
+  const endDisabled =
+    moderationDisabled || classroomModerationBusy(endModeration);
+
+  const handleTriggerClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    // A keyboard activation (Enter / Space) reports no pointer clicks.
+    const fromKeyboard = event.detail === 0;
+    if (popoverOpen && pinned.current && !fromKeyboard) {
+      closePopover(false);
+      return;
+    }
+    clearCloseTimer();
+    pinned.current = true;
+    if (fromKeyboard) {
+      if (popoverOpen) focusOption("first");
+      else focusFirstOptionOnOpen.current = true;
+    }
+    setPopoverOpen(true);
+  };
+
   return (
-    <Dialog>
-      <DialogTrigger asChild>
+    <>
+      <div
+        className="media-p405-leave"
+        onBlur={(event) => {
+          const next = event.relatedTarget;
+          if (!open || next === null) return;
+          if (next instanceof Node && rootRef.current?.contains(next)) return;
+          closePopover(false);
+        }}
+        onKeyDown={(event) => {
+          if (!open) return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            closePopover(true);
+            return;
+          }
+          const target = event.target;
+          if (
+            !(target instanceof HTMLElement) ||
+            !target.classList.contains("media-p405-leave-option")
+          ) {
+            return;
+          }
+          const moves: Record<string, "first" | "last" | 1 | -1> = {
+            ArrowDown: 1,
+            ArrowUp: -1,
+            End: "last",
+            Home: "first",
+          };
+          const move = moves[event.key];
+          if (move === undefined) return;
+          event.preventDefault();
+          focusOption(move);
+        }}
+        onPointerEnter={(event) => {
+          if (event.pointerType === "touch") return;
+          clearCloseTimer();
+          setPopoverOpen(true);
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "touch" || pinned.current) return;
+          clearCloseTimer();
+          closeTimer.current = globalThis.setTimeout(() => {
+            closeTimer.current = null;
+            if (!pinned.current) setPopoverOpen(false);
+          }, LEAVE_POPOVER_CLOSE_DELAY_MS);
+        }}
+        ref={rootRef}
+      >
         <Button
+          aria-controls={open ? popoverID : undefined}
+          aria-expanded={open}
           className="media-p405-dock-leave"
-          data-tooltip={t("media.p405.leave")}
           id="media-p405-control-leave"
           leadingIcon={<PhoneOff />}
+          onClick={handleTriggerClick}
+          ref={triggerRef}
           variant="danger"
         >
-          <span className="media-p405-sr-only">{t("media.p405.leave")}</span>
+          <span className="media-p405-sr-only">
+            {t("media.p405.leaveOrEnd")}
+          </span>
         </Button>
-      </DialogTrigger>
-      <DialogContent closeLabel={t("media.p405.leaveCancel")} data-theme="dark">
-        <DialogTitle>{t("media.p405.leaveTitle")}</DialogTitle>
-        <DialogDescription>
-          {t("media.p405.leaveDescription")}
-        </DialogDescription>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="secondary">{t("media.p405.leaveCancel")}</Button>
-          </DialogClose>
-          <Button onClick={onLeave} variant="danger">
-            {t("media.p405.leaveConfirm")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {open && (
+          <div
+            aria-label={t("media.p405.leaveOptions")}
+            className="media-p405-leave-popover"
+            data-testid="leave-end-popover"
+            id={popoverID}
+            role="group"
+          >
+            <button
+              className="media-p405-leave-option media-p405-leave-option--end"
+              disabled={endDisabled}
+              onClick={() => {
+                closePopover(false);
+                setEndOpen(true);
+              }}
+              type="button"
+            >
+              <Power aria-hidden="true" />
+              <span>{t("media.p407.endRoom")}</span>
+            </button>
+            <button
+              className="media-p405-leave-option media-p405-leave-option--leave"
+              onClick={() => {
+                closePopover(false);
+                setLeaveOpen(true);
+              }}
+              type="button"
+            >
+              <LogOut aria-hidden="true" />
+              <span>{t("media.p405.leave")}</span>
+            </button>
+          </div>
+        )}
+      </div>
+      <Dialog onOpenChange={setLeaveOpen} open={leaveOpen}>
+        {leaveDialogContent}
+      </Dialog>
+      <ClassroomEndRoomDialog
+        controls={endModeration}
+        onOpenChange={setEndOpen}
+        open={endOpen}
+        returnFocusRef={triggerRef}
+      />
+    </>
   );
 }
 

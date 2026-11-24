@@ -464,6 +464,7 @@ export function MediaSpacePreJoinPage() {
         },
         credential,
         choices: effectiveChoices,
+        classTitle,
       });
       handoffCreated.current = true;
       void navigate(
@@ -471,6 +472,7 @@ export function MediaSpacePreJoinPage() {
       );
     },
     [
+      classTitle,
       controller,
       joinScopeKey,
       navigate,

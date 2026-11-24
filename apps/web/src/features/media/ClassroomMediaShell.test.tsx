@@ -10,15 +10,18 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { useEffect, type ReactNode } from "react";
+import { useContext, useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
 import { MediaLobbyWaitingCountContext } from "../../components/MediaLobbyPanel";
 import {
+  ClassroomHeaderSlotContext,
   ClassroomMediaShell,
   type ClassroomSignalControls,
   type RoomVisualEffectsRuntime,
 } from "./ClassroomMediaShell";
+import type { ClassroomModerationControlsModel } from "./ClassroomModerationControls";
 
 const PARTICIPANT_A = "018f4c7b-9b0a-7a34-8a4c-96d26cb87221";
 const PARTICIPANT_B = "018f4c7b-9b0a-7a34-8a4c-96d26cb87222";
@@ -1024,11 +1027,8 @@ describe("ClassroomMediaShell", () => {
 
   it("bounds the active-speaker rail and restores the prior mode after sharing", async () => {
     const view = renderShell();
-    const activeSpeaker = screen.getByRole("button", {
-      name: "Active speaker",
-    });
-    fireEvent.click(activeSpeaker);
-    expect(activeSpeaker).toHaveAttribute("aria-pressed", "true");
+    chooseLayout("Active speaker");
+    expect(layoutMode(view.container)).toBe("active-speaker");
     expect(
       view.container.querySelectorAll(".media-p405-rail-list > li"),
     ).toHaveLength(6);
@@ -1042,9 +1042,7 @@ describe("ClassroomMediaShell", () => {
     ];
     view.rerender(shellElement());
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Presentation" }),
-      ).toHaveAttribute("aria-pressed", "true"),
+      expect(layoutMode(view.container)).toBe("presentation"),
     );
     const presenterCamera = liveKitState.cameraTrackRefs[4]
       ?.publication as InstanceType<
@@ -1060,9 +1058,7 @@ describe("ClassroomMediaShell", () => {
     liveKitState.screenShareTrackRefs = [];
     view.rerender(shellElement());
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Active speaker" }),
-      ).toHaveAttribute("aria-pressed", "true"),
+      expect(layoutMode(view.container)).toBe("active-speaker"),
     );
   });
 
@@ -1086,9 +1082,7 @@ describe("ClassroomMediaShell", () => {
     ];
     view.rerender(shellElement());
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Presentation" }),
-      ).toHaveAttribute("aria-pressed", "true"),
+      expect(layoutMode(view.container)).toBe("presentation"),
     );
     expect(shareControl).toHaveFocus();
 
@@ -1103,7 +1097,7 @@ describe("ClassroomMediaShell", () => {
       value: 320,
     });
     renderShell();
-    fireEvent.click(screen.getByRole("button", { name: "Active speaker" }));
+    chooseLayout("Active speaker");
     const opener = await screen.findByRole("button", {
       name: "Open participant list",
     });
@@ -1120,7 +1114,7 @@ describe("ClassroomMediaShell", () => {
   });
 
   it("keeps one toolbar tab stop and restores focus after a pin changes layout", async () => {
-    renderShell();
+    const view = renderShell();
     const toolbar = screen.getByRole("toolbar", {
       name: "Classroom controls",
     });
@@ -1128,16 +1122,16 @@ describe("ClassroomMediaShell", () => {
 
     fireEvent.click(pin);
 
-    const activeSpeaker = screen.getByRole("button", {
-      name: "Active speaker",
-    });
-    await waitFor(() => expect(activeSpeaker).toHaveFocus());
-    expect(activeSpeaker).toHaveAttribute("aria-pressed", "true");
+    // The pinned tile remounts on the stage, so focus falls back to the one
+    // Dock key that owns the layout (ROOM-COMPACT-05).
+    const layout = screen.getByRole("button", { name: "Change layout" });
+    await waitFor(() => expect(layout).toHaveFocus());
+    expect(layoutMode(view.container)).toBe("active-speaker");
     expect(
       Array.from(toolbar.querySelectorAll("button")).filter(
         (button) => button.tabIndex === 0,
       ),
-    ).toEqual([activeSpeaker]);
+    ).toEqual([layout]);
   });
 
   it("degrades video one tier at a time while preserving layout, audio and controls", async () => {
@@ -1327,12 +1321,10 @@ describe("ClassroomMediaShell", () => {
     ];
     const view = renderShell();
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Presentation" }),
-      ).toHaveAttribute("aria-pressed", "true"),
+      expect(layoutMode(view.container)).toBe("presentation"),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+    chooseLayout("Grid");
 
     expect(
       view.container.querySelectorAll(".media-p405-grid video"),
@@ -1704,35 +1696,375 @@ describe("ClassroomMediaShell", () => {
       expect(roomTooltip()).toHaveTextContent("Open whiteboard");
     });
 
-    it("turns the header and tool titlebar into named icon keys whose tooltips hang below", () => {
+    it("keeps Effects and End room off the Top Bar whose keys' tooltips hang below", () => {
       studioShell();
-      const effects = screen.getByRole("button", { name: "Effects: None" });
-      expect(effects).toHaveAttribute("data-tooltip", "Effects: None");
-      expect(effects).toHaveAttribute("data-tooltip-side", "bottom");
-      expect(effects.querySelector(".media-p405-sr-only")).toHaveTextContent(
-        "Effects: None",
+      const header = document.querySelector<HTMLElement>(
+        "header.media-p405-header",
+      )!;
+      // ROOM-COMPACT-05: Effects lives only in the Dock; End room only in the
+      // end-call popover.
+      expect(
+        within(header).queryByRole("button", { name: /Effects/ }),
+      ).toBeNull();
+      expect(
+        within(header).queryByRole("button", { name: "End room" }),
+      ).toBeNull();
+      expect(
+        screen.getAllByRole("button", { name: "Backgrounds and effects" }),
+      ).toHaveLength(1);
+      const lock = within(header).getByRole("button", { name: "Lock room" });
+      expect(lock).toHaveAttribute("data-tooltip", "Lock room");
+      expect(lock).toHaveAttribute("data-tooltip-side", "bottom");
+      expect(lock.querySelector(".media-p405-button-label")).toHaveTextContent(
+        "Lock room",
       );
-      for (const name of ["Lock room", "End room"]) {
-        const control = screen.getByRole("button", { name });
-        expect(control).toHaveAttribute("data-tooltip", name);
-        expect(control).toHaveAttribute("data-tooltip-side", "bottom");
-        expect(
-          control.querySelector(".media-p405-button-label"),
-        ).toHaveTextContent(name);
-      }
 
       fireEvent.click(screen.getByRole("button", { name: "Open whiteboard" }));
-      const close = screen
-        .getAllByRole("button", { name: "Close" })
-        .find((button) =>
-          button.classList.contains("media-p506-tool-stage__close"),
-        );
+      const close = within(header).getByRole("button", { name: "Close" });
       expect(close).toHaveAttribute("data-tooltip", "Close");
-      expect(close?.textContent?.trim()).toBe("Close");
-      hover(close as HTMLElement);
+      expect(close).toHaveClass("media-p405-header-close");
+      hover(close);
       advance(140);
       expect(roomTooltip()).toHaveTextContent("Close");
       expect(roomTooltip()).toHaveAttribute("data-side", "bottom");
+    });
+  });
+
+  describe("ROOM-COMPACT-05 Top Bar slot, layout menu and end-call control", () => {
+    const hostModeration = (
+      overrides: Partial<ClassroomModerationControlsModel> = {},
+    ): ClassroomModerationControlsModel => ({
+      canEndRoom: true,
+      canLockRoom: true,
+      mutationState: { status: "idle" },
+      onDemoteCoHost: vi.fn().mockResolvedValue(undefined),
+      onEndRoom: vi.fn().mockResolvedValue(undefined),
+      onPromoteCoHost: vi.fn().mockResolvedValue(undefined),
+      onRemoteMute: vi.fn().mockResolvedValue(undefined),
+      onRemoveParticipant: vi.fn().mockResolvedValue(undefined),
+      onSetRoomLocked: vi.fn().mockResolvedValue(undefined),
+      participantOperations: [],
+      providerEffect: { status: "idle" },
+      roomLocked: false,
+      ...overrides,
+    });
+    const popover = () => screen.queryByTestId("leave-end-popover");
+
+    beforeEach(() => {
+      liveKitState.cameraTrackRefs = createCameraTracks(2);
+      liveKitState.audioTrackRefs = createAudioTracks(2);
+    });
+
+    it("lets an open tool portal its compact controls into the Top Bar slot", async () => {
+      function SlotTool() {
+        const slot = useContext(ClassroomHeaderSlotContext);
+        return (
+          <>
+            <p>Board surface</p>
+            {slot?.element
+              ? createPortal(
+                  <button type="button">Paper picker</button>,
+                  slot.element,
+                )
+              : null}
+          </>
+        );
+      }
+      renderShell({
+        tools: [
+          {
+            content: <SlotTool />,
+            icon: <span aria-hidden="true">W</span>,
+            id: "whiteboard",
+            label: "Open whiteboard",
+            title: "Classroom whiteboard",
+          },
+        ],
+      });
+      const header = document.querySelector<HTMLElement>(
+        "header.media-p405-header",
+      )!;
+      expect(
+        within(header).queryByRole("button", { name: "Close" }),
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Paper picker" })).toBeNull();
+
+      const opener = screen.getByRole("button", { name: "Open whiteboard" });
+      fireEvent.click(opener);
+      const paper = within(header).getByRole("button", {
+        name: "Paper picker",
+      });
+      expect(paper.closest(".media-p405-header-tool-slot")).not.toBeNull();
+      expect(screen.getByText("Board surface")).toBeInTheDocument();
+      // No titlebar inside the stage: the heading only names it for AT.
+      const heading = screen.getByRole("heading", {
+        level: 2,
+        name: "Classroom whiteboard",
+      });
+      expect(heading).toHaveClass("media-p405-sr-only");
+      expect(
+        screen.getByRole("region", { name: "Classroom whiteboard" }),
+      ).toContainElement(heading);
+      await waitFor(() => expect(heading).toHaveFocus());
+
+      fireEvent.click(within(header).getByRole("button", { name: "Close" }));
+      expect(screen.queryByRole("button", { name: "Paper picker" })).toBeNull();
+      await waitFor(() => expect(opener).toHaveFocus());
+    });
+
+    it("turns the layout groove into one key whose menu marks the current mode", async () => {
+      const view = renderShell();
+      const trigger = screen.getByRole("button", { name: "Change layout" });
+      expect(trigger).toHaveAttribute("id", "media-p405-control-layout");
+      expect(trigger).toHaveAttribute("data-media-control", "layout");
+      expect(trigger).toHaveAttribute("data-tooltip", "Change layout");
+
+      const menu = openLayoutMenu();
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(
+        within(menu)
+          .getAllByRole("menuitemradio")
+          .map((item) => item.textContent),
+      ).toEqual(["Grid", "Active speaker", "Presentation"]);
+      expect(
+        within(menu).getByRole("menuitemradio", { name: "Grid" }),
+      ).toHaveAttribute("aria-checked", "true");
+      // Presentation needs someone sharing a screen.
+      expect(
+        within(menu).getByRole("menuitemradio", { name: "Presentation" }),
+      ).toHaveAttribute("aria-disabled", "true");
+
+      fireEvent.click(
+        within(menu).getByRole("menuitemradio", { name: "Active speaker" }),
+      );
+      expect(layoutMode(view.container)).toBe("active-speaker");
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+      expect(
+        within(openLayoutMenu()).getByRole("menuitemradio", {
+          name: "Active speaker",
+        }),
+      ).toHaveAttribute("aria-checked", "true");
+    });
+
+    it("gives a participant only Leave room with its tooltip and confirmation", () => {
+      renderShell({
+        moderation: hostModeration({ canEndRoom: false, canLockRoom: false }),
+      });
+      const leave = screen.getByRole("button", { name: "Leave room" });
+      expect(leave).toHaveAttribute("id", "media-p405-control-leave");
+      expect(leave).toHaveAttribute("data-tooltip", "Leave room");
+      fireEvent.pointerEnter(leave, { pointerType: "mouse" });
+      expect(popover()).toBeNull();
+
+      fireEvent.click(leave);
+      expect(
+        screen.getByRole("heading", { name: "Leave the classroom?" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "End room" })).toBeNull();
+    });
+
+    it("falls back to Leave room once the room's controls are terminated", () => {
+      const controller = new AbortController();
+      controller.abort();
+      renderShell({
+        controlAbortSignal: controller.signal,
+        moderation: hostModeration(),
+      });
+      expect(
+        screen.getByRole("button", { name: "Leave room" }),
+      ).toHaveAttribute("data-tooltip", "Leave room");
+      expect(
+        screen.queryByRole("button", { name: "Leave or end room" }),
+      ).toBeNull();
+    });
+
+    it("opens End room / Leave room on host hover and bridges the gap for 150ms", () => {
+      vi.useFakeTimers();
+      renderShell({ moderation: hostModeration() });
+      const trigger = screen.getByRole("button", { name: "Leave or end room" });
+      const root = trigger.closest<HTMLElement>(".media-p405-leave")!;
+      expect(trigger).toHaveAttribute("id", "media-p405-control-leave");
+      // The popover replaces the single tooltip, so none is declared.
+      expect(trigger).not.toHaveAttribute("data-tooltip");
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.pointerEnter(trigger, { pointerType: "mouse" });
+      const group = popover()!;
+      expect(group).toHaveAttribute("role", "group");
+      expect(group).toHaveAccessibleName("Leave options");
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(trigger).toHaveAttribute("aria-controls", group.id);
+      expect(
+        within(group)
+          .getAllByRole("button")
+          .map((button) => button.textContent),
+      ).toEqual(["End room", "Leave room"]);
+
+      // Sliding out and back within the grace period keeps it open.
+      fireEvent.pointerLeave(root, { pointerType: "mouse" });
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      fireEvent.pointerEnter(
+        within(group).getByRole("button", { name: "End room" }),
+        { pointerType: "mouse" },
+      );
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(popover()).not.toBeNull();
+
+      fireEvent.pointerLeave(root, { pointerType: "mouse" });
+      act(() => {
+        vi.advanceTimersByTime(149);
+      });
+      expect(popover()).not.toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(popover()).toBeNull();
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      // Touch never opens it by hover.
+      fireEvent.pointerEnter(trigger, { pointerType: "touch" });
+      expect(popover()).toBeNull();
+    });
+
+    it("dismisses a hover-opened popover on Escape and only takes idle focus", () => {
+      renderShell({ moderation: hostModeration() });
+      const trigger = screen.getByRole("button", { name: "Leave or end room" });
+
+      // Hovered, never focused: Escape still reaches it (WCAG 1.4.13).
+      (document.activeElement as HTMLElement | null)?.blur();
+      fireEvent.pointerEnter(trigger, { pointerType: "mouse" });
+      expect(popover()).not.toBeNull();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(popover()).toBeNull();
+      expect(trigger).toHaveFocus();
+
+      // Focus resting on another control stays where it is.
+      const microphone = screen.getByRole("button", {
+        name: "Turn microphone on",
+      });
+      microphone.focus();
+      fireEvent.pointerLeave(trigger.closest(".media-p405-leave")!, {
+        pointerType: "mouse",
+      });
+      fireEvent.pointerEnter(trigger, { pointerType: "mouse" });
+      expect(popover()).not.toBeNull();
+      // The focused key's tooltip takes the first Escape (topmost first).
+      fireEvent.keyDown(microphone, { key: "Escape" });
+      fireEvent.keyDown(microphone, { key: "Escape" });
+      expect(popover()).toBeNull();
+      expect(microphone).toHaveFocus();
+    });
+
+    it("opens from the keyboard on End room, roves, and closes on Escape or an outside press", async () => {
+      renderShell({ moderation: hostModeration() });
+      const trigger = screen.getByRole("button", { name: "Leave or end room" });
+      trigger.focus();
+      // Enter / Space report a click without pointer detail.
+      fireEvent.click(trigger, { detail: 0 });
+      const end = screen.getByRole("button", { name: "End room" });
+      await waitFor(() => expect(end).toHaveFocus());
+      fireEvent.keyDown(end, { key: "ArrowDown" });
+      expect(screen.getByRole("button", { name: "Leave room" })).toHaveFocus();
+      fireEvent.keyDown(document.activeElement as HTMLElement, {
+        key: "Home",
+      });
+      expect(end).toHaveFocus();
+
+      fireEvent.keyDown(end, { key: "Escape" });
+      expect(popover()).toBeNull();
+      expect(trigger).toHaveFocus();
+
+      // A mouse click pins it; a second click or an outside press closes it.
+      fireEvent.click(trigger, { detail: 1 });
+      expect(popover()).not.toBeNull();
+      expect(trigger).toHaveFocus();
+      fireEvent.click(trigger, { detail: 1 });
+      expect(popover()).toBeNull();
+      fireEvent.click(trigger, { detail: 1 });
+      fireEvent.pointerDown(document.body);
+      expect(popover()).toBeNull();
+    });
+
+    it("confirms End room from the popover and hands focus back to the pill", async () => {
+      const onEndRoom = vi.fn().mockResolvedValue(undefined);
+      const view = renderShell({ moderation: hostModeration({ onEndRoom }) });
+      const trigger = screen.getByRole("button", { name: "Leave or end room" });
+
+      fireEvent.click(trigger, { detail: 1 });
+      fireEvent.click(screen.getByRole("button", { name: "End room" }));
+      expect(popover()).toBeNull();
+      expect(
+        screen.getByRole("heading", { name: "End this classroom?" }),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole("button", { name: "Cancel" })[0]!);
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("heading", { name: "End this classroom?" }),
+        ).toBeNull(),
+      );
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(onEndRoom).not.toHaveBeenCalled();
+
+      fireEvent.click(trigger, { detail: 0 });
+      fireEvent.click(await screen.findByRole("button", { name: "End room" }));
+      fireEvent.click(screen.getByRole("button", { name: "Confirm end" }));
+      await waitFor(() => expect(onEndRoom).toHaveBeenCalledTimes(1));
+      view.rerender(
+        shellElement({
+          moderation: hostModeration({
+            onEndRoom,
+            providerEffect: { status: "applied", action: "end_room" },
+          }),
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("heading", { name: "End this classroom?" }),
+        ).toBeNull(),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Leave or end room" }),
+        ).toHaveFocus(),
+      );
+    });
+
+    it("disables End room while a moderation command is in flight", () => {
+      renderShell({
+        moderation: hostModeration({
+          mutationState: { status: "submitting", action: "lock_room" },
+        }),
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Leave or end room" }),
+        { detail: 1 },
+      );
+      expect(screen.getByRole("button", { name: "End room" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Leave room" })).toBeEnabled();
+    });
+
+    it("confirms Leave room from the host popover", async () => {
+      const onLeave = vi.fn();
+      renderShell({ moderation: hostModeration(), onLeave });
+      const trigger = screen.getByRole("button", { name: "Leave or end room" });
+
+      fireEvent.click(trigger, { detail: 1 });
+      fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+      expect(
+        screen.getByRole("heading", { name: "Leave the classroom?" }),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole("button", { name: "Stay" })[0]!);
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(onLeave).not.toHaveBeenCalled();
+
+      fireEvent.click(trigger, { detail: 1 });
+      fireEvent.click(screen.getByRole("button", { name: "Leave room" }));
+      fireEvent.click(screen.getByRole("button", { name: "Leave classroom" }));
+      expect(onLeave).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1770,10 +2102,19 @@ describe("ClassroomMediaShell", () => {
 
       expect(clock).toHaveAttribute("aria-hidden", "true");
       expect(clock).toHaveTextContent("00:00");
-      const status = screen.getByText("Connected / 2 participants");
+      expect(clock?.closest(".media-p405-live-pill")).not.toBeNull();
+      // ROOM-COMPACT-05: the polite status keeps the full sentence for AT;
+      // sighted users read the short count beside the people glyph.
+      const status = screen
+        .getByText("Connected / 2 participants")
+        .closest("p") as HTMLElement;
       expect(status).toHaveAttribute("role", "status");
       expect(status).toHaveAttribute("aria-live", "polite");
       expect(status).not.toContainElement(clock as HTMLElement);
+      expect(within(status).getByText("2 joined")).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
 
       act(() => {
         vi.advanceTimersByTime(65_000);
@@ -1783,7 +2124,29 @@ describe("ClassroomMediaShell", () => {
         vi.advanceTimersByTime(3_540_000);
       });
       expect(clock).toHaveTextContent(/^01:00:05$/);
-      expect(screen.getByText("Connected / 2 participants")).toBe(status);
+      expect(screen.getByText("Connected / 2 participants").closest("p")).toBe(
+        status,
+      );
+    });
+
+    it("names the lesson in the Top Bar and keeps the generic heading for AT only", () => {
+      liveKitState.cameraTrackRefs = createCameraTracks(1);
+      liveKitState.audioTrackRefs = createAudioTracks(1);
+      const view = renderShell({ roomTitle: "Math 10 - Quadratics" });
+      const title = screen.getByRole("heading", {
+        level: 1,
+        name: "Math 10 - Quadratics",
+      });
+      expect(title).toHaveClass("media-p405-room-title");
+      expect(screen.queryByText("TutorHub classroom")).toBeNull();
+
+      view.rerender(shellElement({ roomTitle: null }));
+      const fallback = screen.getByRole("heading", { level: 1 });
+      expect(fallback).toHaveTextContent("TutorHub classroom");
+      expect(fallback).toHaveClass("media-p405-sr-only");
+      expect(
+        view.container.querySelector(".media-p405-header-divider"),
+      ).toBeNull();
     });
 
     it("keeps the clock at 00:00 until the room connects", () => {
@@ -1839,10 +2202,8 @@ describe("ClassroomMediaShell", () => {
         "reaction",
         "chat",
         "tool-whiteboard",
+        "layout",
         "roster",
-        "layout-grid",
-        "layout-active-speaker",
-        "layout-presentation",
       ]);
       // ROOM-MEET-DOCK-04: no caption under any icon; each key carries its
       // full accessible name as the room tooltip instead.
@@ -1857,10 +2218,8 @@ describe("ClassroomMediaShell", () => {
         "Send a reaction",
         "Open in-room chat",
         "Open whiteboard",
+        "Change layout",
         "Open classroom roster",
-        "Grid",
-        "Active speaker",
-        "Presentation",
       ]) {
         const button = within(toolbar).getByRole("button", { name });
         expect(button).toHaveAttribute("data-tooltip", name);
@@ -1870,8 +2229,10 @@ describe("ClassroomMediaShell", () => {
       expect(leave.querySelector(".media-p405-sr-only")).toHaveTextContent(
         "Leave room",
       );
+      // ROOM-COMPACT-05: one divider, before the end-call pill.
       const dividers = document.querySelectorAll(".media-p405-dock-divider");
-      expect(dividers).toHaveLength(3);
+      expect(dividers).toHaveLength(1);
+      expect(dividers[0]?.nextElementSibling).toBe(leave);
       dividers.forEach((divider) => {
         expect(divider).toHaveAttribute("aria-hidden", "true");
         expect(divider).not.toHaveAttribute("data-media-control");
@@ -1893,7 +2254,7 @@ describe("ClassroomMediaShell", () => {
         key: "End",
       });
       expect(
-        within(toolbar).getByRole("button", { name: "Active speaker" }),
+        within(toolbar).getByRole("button", { name: "Open classroom roster" }),
       ).toHaveFocus();
       fireEvent.keyDown(document.activeElement as HTMLElement, {
         key: "Home",
@@ -1951,9 +2312,7 @@ describe("ClassroomMediaShell", () => {
       ];
       view.rerender(shellElement());
       await waitFor(() =>
-        expect(
-          screen.getByRole("button", { name: "Presentation" }),
-        ).toHaveAttribute("aria-pressed", "true"),
+        expect(layoutMode(view.container)).toBe("presentation"),
       );
       const shared = view.container.querySelector<HTMLVideoElement>(
         ".media-p405-stage .media-p405-tile--stage video",
@@ -2086,12 +2445,14 @@ describe("ClassroomMediaShell visual effects (ADR-0041)", () => {
     expect(
       screen.queryByRole("button", { name: "Backgrounds and effects" }),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Effects: None" })).toBeNull();
-    expect(screen.getByText("Effects: None")).toBeInTheDocument();
+    // ROOM-COMPACT-05: no effects summary in the Top Bar any more; the
+    // listen-only badge stays.
+    expect(screen.queryByText(/^Effects:/)).toBeNull();
+    expect(screen.getByText("Listen-only mode")).toBeInTheDocument();
     expect(toolbarOrder()).not.toContain("effects");
   });
 
-  it("labels the active effect and opens a non-modal right drawer from the header", async () => {
+  it("describes the active effect on the Dock key and opens a non-modal right drawer", async () => {
     const { runtime, loadRuntime } = fakeRuntime();
     const { container } = renderShell({
       visualEffects: {
@@ -2102,7 +2463,10 @@ describe("ClassroomMediaShell visual effects (ADR-0041)", () => {
         loadRuntime,
       },
     });
-    const badge = screen.getByRole("button", { name: "Effects: Library" });
+    const badge = screen.getByRole("button", {
+      name: "Backgrounds and effects",
+    });
+    expect(badge).toHaveAccessibleDescription("On: Library");
     expect(badge).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(badge);
 
@@ -2163,9 +2527,9 @@ describe("ClassroomMediaShell visual effects (ADR-0041)", () => {
       },
       expect.objectContaining({ onOverload: expect.any(Function) }),
     );
-    expect(
-      screen.getByRole("button", { name: "Effects: Slight blur" }),
-    ).toBeVisible();
+    const effectsKey = () =>
+      screen.getByRole("button", { name: "Backgrounds and effects" });
+    expect(effectsKey()).toHaveAccessibleDescription("On: Slight blur");
 
     // Same mode: updated in place without flicker.
     fireEvent.click(
@@ -2177,7 +2541,7 @@ describe("ClassroomMediaShell visual effects (ADR-0041)", () => {
     // Off: the processor is removed and the raw camera restored.
     fireEvent.click(within(drawer).getByRole("button", { name: "None" }));
     await waitFor(() => expect(track.stopProcessor).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Effects: None" })).toBeVisible();
+    expect(effectsKey()).not.toHaveAttribute("aria-describedby");
 
     // Lighting only: a lighting processor, no background pipeline.
     fireEvent.mouseDown(within(drawer).getByRole("tab", { name: "Lighting" }), {
@@ -2188,9 +2552,7 @@ describe("ClassroomMediaShell visual effects (ADR-0041)", () => {
     );
     await waitFor(() => expect(track.setProcessor).toHaveBeenCalledTimes(2));
     expect(processors[1]?.visualEffectsMode).toBe("lighting");
-    expect(
-      screen.getByRole("button", { name: "Effects: Low-light boost" }),
-    ).toBeVisible();
+    expect(effectsKey()).toHaveAccessibleDescription("On: Low-light boost");
 
     unmount();
     await waitFor(() => expect(track.stopProcessor).toHaveBeenCalledTimes(2));
@@ -2254,6 +2616,29 @@ function renderShell(
   overrides: Partial<Parameters<typeof ClassroomMediaShell>[0]> = {},
 ) {
   return render(shellElement(overrides));
+}
+
+/** ROOM-COMPACT-05: the Dock's single layout key opens a radio menu. */
+function openLayoutMenu() {
+  fireEvent.pointerDown(screen.getByRole("button", { name: "Change layout" }), {
+    button: 0,
+    ctrlKey: false,
+  });
+  return screen.getByRole("menu", { name: "Layout mode" });
+}
+
+function chooseLayout(name: "Grid" | "Active speaker" | "Presentation") {
+  const menu = openLayoutMenu();
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+}
+
+function layoutMode(container: HTMLElement) {
+  const classroom = container.querySelector(".media-p405-classroom");
+  return (
+    (["grid", "active-speaker", "presentation"] as const).find((mode) =>
+      classroom?.classList.contains(`media-p405-classroom--${mode}`),
+    ) ?? null
+  );
 }
 
 function shellElement(

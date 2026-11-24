@@ -64,6 +64,7 @@ export function MediaSpaceRoomPage() {
       spaceId={spaceId}
       tenantId={tenantId}
       userId={userId}
+      workspaceName={session.currentUser?.active_tenant?.name ?? null}
     />
   );
 }
@@ -73,11 +74,13 @@ function MediaSpaceRoomSession({
   spaceId,
   tenantId,
   userId,
+  workspaceName,
 }: {
   roomInstanceId: string | undefined;
   spaceId: string | undefined;
   tenantId: string;
   userId: string;
+  workspaceName: string | null;
 }) {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -460,6 +463,11 @@ function MediaSpaceRoomSession({
     <MediaLobbyPanel {...lobbyScope} />
   ) : undefined;
 
+  // ROOM-COMPACT-05: the Top Bar names the lesson — the launcher's class name,
+  // else the active workspace; with neither, only assistive technology hears
+  // the generic room heading.
+  const roomTitle = handoff.classTitle?.trim() || workspaceName?.trim() || null;
+
   const roomProps: ClassroomLiveKitRoomProps = {
     choices: handoff.choices,
     chat: (
@@ -479,6 +487,7 @@ function MediaSpaceRoomSession({
     onDisconnected: handleDisconnected,
     onLeave: handleLeave,
     onProviderError: handleProviderError,
+    roomTitle,
     signals: signalControls,
     tools: [
       {

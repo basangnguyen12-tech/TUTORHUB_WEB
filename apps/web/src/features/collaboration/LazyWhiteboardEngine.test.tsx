@@ -717,4 +717,98 @@ describe("LazyWhiteboardEngine", () => {
     expect(authority.replaceScene).not.toHaveBeenCalled();
     expect(strokeUpdates(api)).toEqual([]);
   });
+  it("drops the engine bar in the classroom and portals the paper picker into the Top Bar slot", () => {
+    const slot = globalThis.document.createElement("div");
+    globalThis.document.body.append(slot);
+    const view = render(
+      <I18nProvider initialLanguage="en">
+        <CanonicalExcalidrawCanvas
+          authority={semanticAuthority}
+          classroom
+          connectionStatus="connected"
+          readOnly={false}
+          toolbarSlot={slot}
+        />
+      </I18nProvider>,
+    );
+
+    // ROOM-COMPACT-05: no bar, no "read as text" key, no visible status line.
+    expect(view.container.querySelector(".whiteboard-engine-bar")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Read whiteboard as text" }),
+    ).toBeNull();
+    const status = screen.getByText("Whiteboard connected.");
+    expect(status).toHaveAttribute("role", "status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveClass("whiteboard-sr-only");
+    expect(view.container.querySelector(".whiteboard-engine")).toHaveClass(
+      "whiteboard-engine--classroom",
+    );
+
+    const trigger = within(slot).getByTestId("whiteboard-paper-trigger");
+    expect(trigger).toHaveAccessibleName("Paper: Plain Whiteboard");
+    expect(view.container).not.toContainElement(trigger);
+
+    // The text alternative stays reachable: keyboard focus opens it and
+    // closing hands focus to the canvas (there is no trigger key).
+    const fallback = screen.getByTestId("whiteboard-semantic-fallback");
+    expect(fallback).toHaveClass("whiteboard-semantic-fallback--collapsed");
+    act(() => screen.getByRole("button", { name: "Next page" }).focus());
+    expect(fallback).toHaveClass("whiteboard-semantic-fallback--open");
+    fireEvent.click(screen.getByRole("button", { name: "Close text view" }));
+    expect(fallback).toHaveClass("whiteboard-semantic-fallback--collapsed");
+    expect(
+      screen.getByRole("region", { name: "Interactive whiteboard canvas" }),
+    ).toHaveFocus();
+    view.unmount();
+    expect(slot).toBeEmptyDOMElement();
+    slot.remove();
+  });
+
+  it("waits for the Top Bar slot before showing the classroom paper picker", () => {
+    const view = render(
+      <I18nProvider initialLanguage="en">
+        <CanonicalExcalidrawCanvas
+          authority={semanticAuthority}
+          classroom
+          connectionStatus="connecting"
+          readOnly={false}
+        />
+      </I18nProvider>,
+    );
+    expect(screen.queryByTestId("whiteboard-paper-trigger")).toBeNull();
+    expect(screen.getByText("Connecting to the whiteboard…")).toHaveClass(
+      "whiteboard-sr-only",
+    );
+    expect(view.container.querySelector(".whiteboard-engine-bar")).toBeNull();
+  });
+
+  it("passes classroom mode through the lazy engine to a student's read-only badge", async () => {
+    const slot = globalThis.document.createElement("div");
+    globalThis.document.body.append(slot);
+    render(
+      <I18nProvider initialLanguage="en">
+        <LazyWhiteboardEngine
+          actorID="b0f39fdb-0789-454d-8517-ae313dd81ca9"
+          capability="view"
+          classroom
+          document={document}
+          tenantID="2a388dc1-e3a5-4888-8d65-d9bd57fd4fc7"
+          toolbarSlot={slot}
+        />
+      </I18nProvider>,
+    );
+
+    expect(
+      await screen.findByText("Whiteboard connected. · View only"),
+    ).toHaveClass("whiteboard-sr-only");
+    const badge = within(slot).getByTestId("whiteboard-paper-readonly");
+    expect(badge).toHaveTextContent("Paper: Plain Whiteboard");
+    expect(within(slot).queryByTestId("whiteboard-paper-trigger")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Read whiteboard as text" }),
+    ).toBeNull();
+    cleanup();
+    slot.remove();
+  });
 });

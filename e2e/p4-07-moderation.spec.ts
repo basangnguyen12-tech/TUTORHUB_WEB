@@ -558,17 +558,28 @@ test("P4-07 confirms destructive commands and restores keyboard focus", async ({
   await expect(participantTrigger).toBeFocused();
 
   await page.getByRole("button", { name: "Close" }).last().click();
-  const endRoom = page.getByRole("button", { name: "End room" });
-  await endRoom.focus();
+  // ROOM-COMPACT-05: End room lives in the Dock's end-call popover. The ruby
+  // pill is a disclosure for a host; Enter opens it on the first choice.
+  const endCall = page.locator("#media-p405-control-leave");
+  await expect(endCall).toHaveAccessibleName("Leave or end room");
+  await expect(endCall).toHaveAttribute("aria-expanded", "false");
+  await endCall.focus();
+  await page.keyboard.press("Enter");
+  await expect(endCall).toHaveAttribute("aria-expanded", "true");
+  const endPopover = page.getByTestId("leave-end-popover");
+  await expect(endPopover).toBeVisible();
+  const endRoom = endPopover.getByRole("button", { name: "End room" });
+  await expect(endRoom).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "End this classroom?" }),
   ).toBeVisible();
+  await expect(endPopover).toHaveCount(0);
   await page.getByRole("button", { name: "Confirm end" }).click();
   await expect(
     page.getByRole("heading", { name: "End this classroom?" }),
   ).toHaveCount(0);
-  await expect(endRoom).toBeFocused();
+  await expect(endCall).toBeFocused();
 
   expect((await readFixtureState(page))?.calls).toEqual([
     {

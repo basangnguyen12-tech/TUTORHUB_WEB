@@ -14,7 +14,6 @@ import {
 } from "@tutorhub/ui";
 import {
   Lock,
-  LogOut,
   MicOff,
   MoreHorizontal,
   Unlock,
@@ -22,7 +21,7 @@ import {
   UserPlus,
   UserRoundX,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 
 export type ClassroomModerationAction =
@@ -112,34 +111,24 @@ interface ClassroomParticipantModerationMenuProps extends ClassroomModerationCon
   readonly participantKey: string;
 }
 
+/**
+ * ROOM-COMPACT-05 Top Bar slice: the 28px Lock key and the server-owned
+ * moderation status. Ending the room moved to the Dock's end-call control
+ * (`ClassroomEndRoomDialog`), so this region only renders while the viewer
+ * may lock the room or a moderation outcome needs announcing.
+ */
 export function ClassroomModerationControls({
   controls,
   disabled = false,
 }: ClassroomModerationControlsProps) {
   const { t } = useI18n();
-  const [endDialogOpen, setEndDialogOpen] = useState(false);
-  const endTrigger = useRef<HTMLButtonElement>(null);
   const busy = moderationBusy(controls);
   const status = moderationStatus(controls);
   const lockLabel = t(
     controls.roomLocked ? "media.p407.unlockRoom" : "media.p407.lockRoom",
   );
 
-  useEffect(() => {
-    if (
-      endDialogOpen &&
-      controls.providerEffect.status === "applied" &&
-      controls.providerEffect.action === "end_room"
-    ) {
-      const frame = globalThis.requestAnimationFrame(() => {
-        setEndDialogOpen(false);
-      });
-      return () => globalThis.cancelAnimationFrame(frame);
-    }
-    return undefined;
-  }, [controls.providerEffect, endDialogOpen]);
-
-  if (!controls.canLockRoom && !controls.canEndRoom && status === null) {
+  if (!controls.canLockRoom && status === null) {
     return null;
   }
 
@@ -148,14 +137,14 @@ export function ClassroomModerationControls({
       aria-label={t("media.p407.roomControls")}
       className="media-p407-room-controls"
     >
-      <div className="media-p407-room-actions" role="group">
-        {/*
-          ROOM-MEET-DOCK-04: inside the classroom stylesheet the label span
-          is hidden visually (36px round icon keys) and the room tooltip shows
-          it; every other host keeps the visible text. The label always stays
-          the accessible name.
-        */}
-        {controls.canLockRoom && (
+      {controls.canLockRoom && (
+        <div className="media-p407-room-actions" role="group">
+          {/*
+            Inside the classroom stylesheet the label span is hidden visually
+            (a round glass key) and the room tooltip shows it below; every
+            other host keeps the visible text. The label always stays the
+            accessible name.
+          */}
           <Button
             aria-pressed={controls.roomLocked}
             data-tooltip={lockLabel}
@@ -172,25 +161,8 @@ export function ClassroomModerationControls({
           >
             <span className="media-p405-button-label">{lockLabel}</span>
           </Button>
-        )}
-
-        {controls.canEndRoom && (
-          <Button
-            data-tooltip={t("media.p407.endRoom")}
-            data-tooltip-side="bottom"
-            disabled={disabled || busy}
-            leadingIcon={<LogOut />}
-            onClick={() => setEndDialogOpen(true)}
-            ref={endTrigger}
-            size="sm"
-            variant="danger"
-          >
-            <span className="media-p405-button-label">
-              {t("media.p407.endRoom")}
-            </span>
-          </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {status && (
         <p
@@ -202,53 +174,93 @@ export function ClassroomModerationControls({
           {t(status.key)}
         </p>
       )}
-
-      <Dialog
-        onOpenChange={(open) => {
-          if (open) {
-            setEndDialogOpen(true);
-          } else if (!busy) {
-            setEndDialogOpen(false);
-            globalThis.requestAnimationFrame(() => endTrigger.current?.focus());
-          }
-        }}
-        open={endDialogOpen}
-      >
-        <DialogContent
-          closeLabel={t("media.p407.cancel")}
-          data-theme="dark"
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            endTrigger.current?.focus();
-          }}
-        >
-          <DialogTitle>{t("media.p407.endTitle")}</DialogTitle>
-          <DialogDescription>
-            {t("media.p407.endDescription")}
-          </DialogDescription>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button disabled={busy} variant="secondary">
-                {t("media.p407.cancel")}
-              </Button>
-            </DialogClose>
-            <Button
-              disabled={busy}
-              loading={
-                controls.mutationState.status === "submitting" &&
-                controls.mutationState.action === "end_room"
-              }
-              loadingLabel={t("media.p407.submitting")}
-              onClick={() => runModerationCommand(controls.onEndRoom)}
-              variant="danger"
-            >
-              {t("media.p407.confirmEnd")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </section>
   );
+}
+
+/**
+ * ROOM-COMPACT-05: the "End this classroom?" confirmation, opened from the
+ * Dock's end-call popover. It stays open (and blocks dismissal) while the
+ * command or its provider effect is in flight, closes once the server
+ * reports the room ended, and always hands focus back to `returnFocusRef`.
+ */
+export function ClassroomEndRoomDialog({
+  controls,
+  open,
+  onOpenChange,
+  returnFocusRef,
+}: {
+  readonly controls: ClassroomModerationControlsModel;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly returnFocusRef: RefObject<HTMLElement | null>;
+}) {
+  const { t } = useI18n();
+  const busy = moderationBusy(controls);
+  const endApplied =
+    controls.providerEffect.status === "applied" &&
+    controls.providerEffect.action === "end_room";
+
+  useEffect(() => {
+    if (!open || !endApplied) return undefined;
+    const frame = globalThis.requestAnimationFrame(() => onOpenChange(false));
+    return () => globalThis.cancelAnimationFrame(frame);
+  }, [endApplied, onOpenChange, open]);
+
+  return (
+    <Dialog
+      onOpenChange={(next) => {
+        if (next) {
+          onOpenChange(true);
+        } else if (!busy) {
+          onOpenChange(false);
+          globalThis.requestAnimationFrame(() =>
+            returnFocusRef.current?.focus(),
+          );
+        }
+      }}
+      open={open}
+    >
+      <DialogContent
+        closeLabel={t("media.p407.cancel")}
+        data-theme="dark"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          returnFocusRef.current?.focus();
+        }}
+      >
+        <DialogTitle>{t("media.p407.endTitle")}</DialogTitle>
+        <DialogDescription>{t("media.p407.endDescription")}</DialogDescription>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button disabled={busy} variant="secondary">
+              {t("media.p407.cancel")}
+            </Button>
+          </DialogClose>
+          <Button
+            disabled={busy}
+            loading={
+              controls.mutationState.status === "submitting" &&
+              controls.mutationState.action === "end_room"
+            }
+            loadingLabel={t("media.p407.submitting")}
+            onClick={() => runModerationCommand(controls.onEndRoom)}
+            variant="danger"
+          >
+            {t("media.p407.confirmEnd")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** True while a moderation command or its provider effect is in flight. */
+// eslint-disable-next-line react-refresh/only-export-components -- Shared fail-closed busy rule; the Dock's End room option must disable exactly when the dialog does.
+export function classroomModerationBusy(
+  controls: ClassroomModerationControlsModel,
+): boolean {
+  return moderationBusy(controls);
 }
 
 export function ClassroomParticipantModerationMenu({

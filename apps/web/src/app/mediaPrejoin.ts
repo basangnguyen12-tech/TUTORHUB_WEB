@@ -199,6 +199,12 @@ export interface MediaRoomEscrowValue {
   scope: MediaRoomEscrowScope;
   credential: MediaInstanceCredentialProjection;
   choices: MediaJoinChoices;
+  /**
+   * ROOM-COMPACT-05: the launcher's class name, already reduced to short plain
+   * text by the Pre-Join page. Display only — it never grants or scopes access
+   * and, like the credential, stays in process memory.
+   */
+  classTitle?: string | null;
 }
 
 interface MediaRoomEscrowEntry {

@@ -28,6 +28,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "../../app/i18n";
 import { requestWhiteboardGrant } from "../../app/whiteboards";
 import {
@@ -55,15 +56,20 @@ const EXCALIDRAW_UI_OPTIONS = {
 export default function LazyWhiteboardEngine({
   actorID,
   capability,
+  classroom = false,
   document,
   onRecoveryRequired,
   tenantID,
+  toolbarSlot = null,
 }: {
   actorID: string;
   capability: WhiteboardCapability;
+  /** ROOM-COMPACT-05: see `CanonicalExcalidrawCanvas`. */
+  classroom?: boolean;
   document: WhiteboardDocument;
   onRecoveryRequired?: () => void;
   tenantID: string;
+  toolbarSlot?: HTMLElement | null;
 }) {
   const { t } = useI18n();
   const [attempt, setAttempt] = useState(0);
@@ -178,8 +184,10 @@ export default function LazyWhiteboardEngine({
   return (
     <CanonicalExcalidrawCanvas
       authority={session.authority}
+      classroom={classroom}
       connectionStatus={connectionStatus}
       readOnly={session.capability === "view"}
+      toolbarSlot={toolbarSlot}
     />
   );
 }
@@ -197,14 +205,26 @@ export type WhiteboardCanvasAuthority = Pick<
   | "undo"
 >;
 
+/**
+ * `classroom` (ROOM-COMPACT-05): inside the classroom stage the canvas drops
+ * its own bar — no visible connection line and no "read as text" key — so
+ * the paper fills the stage. The paper picker is portalled into
+ * `toolbarSlot` (the room Top Bar) once it exists; the connection state stays
+ * a polite live region for assistive technology, and the text alternative
+ * stays in the DOM (keyboard focus entering it still opens it).
+ */
 export function CanonicalExcalidrawCanvas({
   authority,
+  classroom = false,
   connectionStatus,
   readOnly,
+  toolbarSlot = null,
 }: {
   authority: WhiteboardCanvasAuthority;
+  classroom?: boolean;
   connectionStatus: CollaborationConnectionStatus;
   readOnly: boolean;
+  toolbarSlot?: HTMLElement | null;
 }) {
   const { t } = useI18n();
   const [api, setAPI] = useState<ExcalidrawImperativeAPI | null>(null);
@@ -367,47 +387,69 @@ export function CanonicalExcalidrawCanvas({
   }, [authority, readOnly]);
 
   const semanticScene = authority.getScene();
+  const connectionText = `${t(`whiteboard.connection.${connectionStatus}`)}${
+    readOnly ? ` · ${t("whiteboard.readOnly")}` : ""
+  }`;
+  const paperPicker = (
+    <WhiteboardPaperPicker
+      onChange={changePaper}
+      paper={paper}
+      readOnly={readOnly}
+    />
+  );
   return (
-    <div className="whiteboard-engine">
-      <div className="whiteboard-engine-bar">
-        <p
-          aria-live="polite"
-          className="whiteboard-connection-status"
-          role="status"
-        >
-          {t(`whiteboard.connection.${connectionStatus}`)}
-          {readOnly ? ` · ${t("whiteboard.readOnly")}` : ""}
-        </p>
-        <div className="whiteboard-semantic-actions">
-          <WhiteboardPaperPicker
-            onChange={changePaper}
-            paper={paper}
-            readOnly={readOnly}
-          />
-          {/*
-            ROOM-MEET-DOCK-04: inside the classroom stylesheet this becomes a
-            32px icon key; the label stays its name and its room tooltip.
-          */}
-          <Button
-            aria-controls={semanticPanelID}
-            aria-expanded={semanticOpen}
-            className="whiteboard-action"
-            data-tooltip={t("whiteboard.readSemantic")}
-            leadingIcon={<FileText />}
-            onClick={() => {
-              setSemanticOpen(true);
-              semanticHeadingRef.current?.focus();
-            }}
-            ref={semanticTriggerRef}
-            size="sm"
-            variant="secondary"
+    <div
+      className={`whiteboard-engine${
+        classroom ? " whiteboard-engine--classroom" : ""
+      }`}
+    >
+      {classroom ? (
+        <>
+          <p
+            aria-live="polite"
+            className="whiteboard-connection-status whiteboard-sr-only"
+            role="status"
           >
-            <span className="whiteboard-action-label">
-              {t("whiteboard.readSemantic")}
-            </span>
-          </Button>
+            {connectionText}
+          </p>
+          {toolbarSlot ? createPortal(paperPicker, toolbarSlot) : null}
+        </>
+      ) : (
+        <div className="whiteboard-engine-bar">
+          <p
+            aria-live="polite"
+            className="whiteboard-connection-status"
+            role="status"
+          >
+            {connectionText}
+          </p>
+          <div className="whiteboard-semantic-actions">
+            {paperPicker}
+            {/*
+              ROOM-MEET-DOCK-04: inside the classroom stylesheet this becomes
+              a 32px icon key; the label stays its name and its room tooltip.
+            */}
+            <Button
+              aria-controls={semanticPanelID}
+              aria-expanded={semanticOpen}
+              className="whiteboard-action"
+              data-tooltip={t("whiteboard.readSemantic")}
+              leadingIcon={<FileText />}
+              onClick={() => {
+                setSemanticOpen(true);
+                semanticHeadingRef.current?.focus();
+              }}
+              ref={semanticTriggerRef}
+              size="sm"
+              variant="secondary"
+            >
+              <span className="whiteboard-action-label">
+                {t("whiteboard.readSemantic")}
+              </span>
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
       <div
         aria-describedby={semanticDescriptionID}
         aria-label={t("whiteboard.canvasLabel")}
@@ -482,7 +524,8 @@ export function CanonicalExcalidrawCanvas({
         id={semanticPanelID}
         onClose={() => {
           setSemanticOpen(false);
-          semanticTriggerRef.current?.focus();
+          // Classroom mode has no trigger key: hand focus back to the canvas.
+          (semanticTriggerRef.current ?? canvasRef.current)?.focus();
         }}
         onFocusCanvas={() => setSemanticOpen(false)}
         onOpen={() => setSemanticOpen(true)}

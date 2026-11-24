@@ -19,7 +19,16 @@ interface FixtureOptions {
    * with cameras off so the avatars show. Defaults keep the P4-05 fixture.
    */
   studio?: {
+    /** ROOM-COMPACT-05: the paper fixture's heading (scene text). */
+    boardTitle?: string;
     language: "en" | "vi";
+    /**
+     * ROOM-COMPACT-05: `student` projects no Lock / End room authority, so
+     * the Dock's end-call pill is a plain Leave key. Defaults to `host`.
+     */
+    role?: "host" | "student";
+    /** ROOM-COMPACT-05: the lesson name shown in the Top Bar. */
+    roomTitle?: string;
     /**
      * WHITEBOARD-PAPER-01: mount the production `CanonicalExcalidrawCanvas`
      * over a real local `CanonicalExcalidrawAuthority` (Y.Doc, no grant, no
@@ -70,6 +79,7 @@ interface BrowserReactModule {
     props?: Record<string, unknown> | null,
     ...children: unknown[]
   ): unknown;
+  useContext<Value>(context: unknown): Value;
 }
 
 interface BrowserReactDOMModule {
@@ -109,6 +119,7 @@ interface BrowserLiveKitModule {
 }
 
 interface BrowserShellModule {
+  ClassroomHeaderSlotContext: unknown;
   ClassroomMediaShell: unknown;
 }
 
@@ -351,7 +362,7 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
           viewer_operations: {
             can_raise_hand: true,
             can_send_reaction: true,
-            can_moderate_hands: true,
+            can_moderate_hands: studio.role !== "student",
           },
           roster: Array.from(
             { length: fixtureOptions.participantCount },
@@ -375,10 +386,12 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
         onSendReaction: noop,
         onToggleHand: noop,
       };
+      if (studio.roomTitle) studioProps.roomTitle = studio.roomTitle;
+      const host = studio.role !== "student";
       studioProps.moderation = {
         roomLocked: false,
-        canLockRoom: true,
-        canEndRoom: true,
+        canLockRoom: host,
+        canEndRoom: host,
         participantOperations: [],
         mutationState: { status: "idle" },
         providerEffect: { status: "idle" },
@@ -463,7 +476,9 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
           versionNonce: 8_400 + sequence,
           ...element,
         });
-        const title = vietnamese ? "Bài 3 · Phân số" : "Lesson 3 · Fractions";
+        const title =
+          studio.boardTitle ??
+          (vietnamese ? "Bài 3 · Phân số" : "Lesson 3 · Fractions");
         authority.initialize({
           elements: [
             ink(1, {
@@ -480,7 +495,8 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
               textAlign: "left",
               type: "text",
               verticalAlign: "top",
-              width: 280,
+              // Room for a longer ROOM-COMPACT-05 lesson heading.
+              width: studio.boardTitle ? 640 : 280,
               x: 110,
               y: 40,
             }),
@@ -535,10 +551,22 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
           schemaVersion: 1,
         });
         window.__paperFixtureAuthority = authority;
-        whiteboardContent = React.createElement(
-          engine.CanonicalExcalidrawCanvas,
-          { authority, connectionStatus: "connected", readOnly: false },
-        );
+        // ROOM-COMPACT-05: like the production `ClassroomWhiteboardTool`, read
+        // the room's Top Bar slot and hand it to the canvas in classroom mode,
+        // so the paper picker is portalled into the Top Bar.
+        const ClassroomPaperCanvas = () => {
+          const slot = React.useContext<{ element: HTMLElement | null } | null>(
+            shell.ClassroomHeaderSlotContext,
+          );
+          return React.createElement(engine.CanonicalExcalidrawCanvas, {
+            authority,
+            classroom: slot !== null,
+            connectionStatus: "connected",
+            readOnly: false,
+            toolbarSlot: slot?.element ?? null,
+          });
+        };
+        whiteboardContent = React.createElement(ClassroomPaperCanvas);
       }
       studioProps.tools = [
         {
@@ -599,6 +627,41 @@ async function readMediaProbe(page: Page) {
   return page.evaluate(() => window.__p405MediaProbe);
 }
 
+/**
+ * ROOM-COMPACT-05: the Dock's one round layout key opens a menu of
+ * `menuitemradio` choices; picking one closes it and returns focus to the key.
+ */
+async function chooseLayout(
+  page: Page,
+  optionName: string,
+  { keyboard = false }: { keyboard?: boolean } = {},
+) {
+  const layoutKey = page.locator("#media-p405-control-layout");
+  const option = page.getByRole("menuitemradio", {
+    name: optionName,
+    exact: true,
+  });
+  if (keyboard) {
+    // Enter opens the menu on its first choice; arrows rove to the target.
+    await layoutKey.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitemradio").first()).toBeFocused();
+    for (let step = 0; step < 3; step += 1) {
+      if (await option.evaluate((item) => item === document.activeElement)) {
+        break;
+      }
+      await page.keyboard.press("ArrowDown");
+    }
+    await expect(option).toBeFocused();
+    await page.keyboard.press("Enter");
+  } else {
+    await layoutKey.click();
+    await option.click();
+  }
+  await expect(page.getByRole("menuitemradio")).toHaveCount(0);
+  await expect(layoutKey).toBeFocused();
+}
+
 for (const participantCount of [2, 5, 25, 50]) {
   test(`P4-05 bounds the ${participantCount}-participant desktop fixture`, async ({
     page,
@@ -641,9 +704,11 @@ test("P4-05 keeps pagination focus and toolbar roving deterministic", async ({
   await toolbar.press("ArrowRight");
   await expect(camera).toBeFocused();
   await toolbar.press("End");
-  await expect(
-    page.getByRole("button", { name: "Active speaker" }),
-  ).toBeFocused();
+  // ROOM-COMPACT-05: one round layout key ends the roving row.
+  const layoutKey = page.locator("#media-p405-control-layout");
+  await expect(layoutKey).toBeFocused();
+  await expect(layoutKey).toHaveAccessibleName("Change layout");
+  await expect(layoutKey).toHaveAttribute("aria-haspopup", "menu");
   await toolbar.press("Home");
   await expect(microphone).toBeFocused();
 
@@ -708,7 +773,12 @@ test("P4-05 reflows at 320 CSS pixels and 200% without accessibility violations"
     ),
   ).toBeLessThanOrEqual(1);
 
-  await page.getByRole("button", { name: "Active speaker" }).click();
+  // `zoom` on the root (this fixture's 200% emulation) doubles the floating
+  // menu's offset in Radix positioning, which real browser zoom does not;
+  // choose from the keyboard here. ROOM-COMPACT-05 checks the menu's pointer
+  // placement at a real 320px viewport.
+  await chooseLayout(page, "Active speaker", { keyboard: true });
+  await expect(page.locator(".media-p405-tile--stage")).toBeVisible();
   const participantDrawerTrigger = page
     .locator("button")
     .filter({ hasText: "Open participant list" });
@@ -827,9 +897,14 @@ test("VIDEO-FX-01 opens a right effects drawer without remounting camera tiles",
   // Wide rooms give the drawer its width: the stage reflows beside it.
   const stageBox = await page.locator(".media-p405-stage").boundingBox();
   expect(stageBox!.x + stageBox!.width).toBeLessThanOrEqual(drawerBox!.x + 1);
+  // ROOM-COMPACT-05: the Dock key is the only effects control (no header pill).
+  await expect(effects).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".media-p405-effects-badge")).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Effects: None" }),
-  ).toHaveAttribute("aria-expanded", "true");
+    page.locator(".media-p405-header").getByRole("button", {
+      name: /effects/i,
+    }),
+  ).toHaveCount(0);
   // Non-modal: no overlay and the classroom stays interactive behind it.
   await expect(page.locator(".th-dialog-overlay")).toHaveCount(0);
   await expect(drawer.getByLabel("Your camera")).toBeVisible();
@@ -837,9 +912,7 @@ test("VIDEO-FX-01 opens a right effects drawer without remounting camera tiles",
   const library = drawer.getByRole("button", { name: "Library" });
   await library.click();
   await expect(library).toHaveAttribute("aria-pressed", "true");
-  await expect(
-    page.getByRole("button", { name: "Effects: Library" }),
-  ).toBeVisible();
+  await expect(effects).toHaveAccessibleDescription("On: Library");
   await drawer.getByRole("tab", { name: "Lighting" }).click();
   await drawer.getByText("Studio bright").click();
   await expect(
@@ -997,23 +1070,28 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
   expect(Math.abs(tile!.x + tile!.width / 2 - 720)).toBeLessThanOrEqual(16);
   expect(await stageOverflow(page)).toBeLessThanOrEqual(1);
 
-  // Header: a live clock hidden from AT beside the unchanged status line.
+  // Top Bar: a live clock hidden from AT; the polite status keeps the full
+  // sentence for AT while sighted users read the short count.
   const clock = page.locator(".media-p405-session-clock");
   await expect(clock).toHaveAttribute("aria-hidden", "true");
   await expect(clock).toHaveText(/^\d{2}:\d{2}$/);
-  await expect(
-    page.getByText("Đã kết nối / 1 người tham gia", { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".media-p405-presence-full")).toHaveText(
+    "Đã kết nối / 1 người tham gia",
+  );
+  await expect(page.locator(".media-p405-presence-short")).toBeVisible();
+  await expect(page.locator(".media-p405-presence-short")).toHaveText(
+    "1 người",
+  );
 
-  // Dock (ROOM-MEET-DOCK-04): centred, icon-only Google Meet keys split into
-  // four clusters, no caption under any icon, nothing overflows.
+  // Dock (ROOM-MEET-DOCK-04 / ROOM-COMPACT-05): a centred 56px pill of
+  // icon-only 42px round keys, no caption under any icon, nothing overflows.
   const footer = page.locator(".media-p405-footer");
   const footerBox = await footer.boundingBox();
   expect(
     Math.abs(footerBox!.x + footerBox!.width / 2 - 720),
   ).toBeLessThanOrEqual(2);
-  expect(footerBox!.height).toBeGreaterThanOrEqual(56);
-  expect(footerBox!.height).toBeLessThanOrEqual(58.5);
+  expect(Math.round(footerBox!.height)).toBe(56);
+  await expect(footer).toHaveCSS("border-top-left-radius", "999px");
   const toolbar = page.getByRole("toolbar", { name: "Điều khiển phòng học" });
   await expect(page.locator(".media-p405-dock-caption")).toHaveCount(0);
   const dockNames = [
@@ -1026,6 +1104,7 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
     "Gửi reaction",
     "Mở trò chuyện trong phòng",
     "Mở bảng trắng",
+    "Bố cục",
     "Mở danh sách lớp học",
   ];
   for (const name of dockNames) {
@@ -1033,27 +1112,24 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
     await expect(key).toBeVisible();
     await expect(key).toHaveAttribute("data-tooltip", name);
     const box = await key.boundingBox();
-    expect(Math.round(box!.width)).toBe(44);
-    expect(Math.round(box!.height)).toBe(44);
+    expect(Math.round(box!.width)).toBe(42);
+    expect(Math.round(box!.height)).toBe(42);
     await expect(key).toHaveCSS("border-top-left-radius", "999px");
   }
-  // Layout: a 44px stadium groove of three 38px round keys, no caption.
-  const layoutPillBox = await toolbar
-    .locator(".media-p405-layout-pill")
-    .boundingBox();
-  expect(Math.round(layoutPillBox!.height)).toBe(44);
-  for (const name of ["Lưới", "Người đang nói", "Trình bày"]) {
-    const box = await toolbar
-      .getByRole("button", { name, exact: true })
-      .boundingBox();
-    expect(Math.round(box!.width)).toBe(38);
-    expect(Math.round(box!.height)).toBe(38);
-  }
+  // Layout: one round key that opens a menu, no three-key groove.
+  const layoutKey = toolbar.locator("#media-p405-control-layout");
+  await expect(layoutKey).toHaveAttribute("data-media-control", "layout");
+  await expect(layoutKey).toHaveAttribute("aria-haspopup", "menu");
+  await expect(toolbar.locator(".media-p405-layout-pill")).toHaveCount(0);
+  await expect(
+    toolbar.getByRole("button", { name: "Người đang nói", exact: true }),
+  ).toHaveCount(0);
   const micButton = toolbar.getByRole("button", {
     name: "Tắt micro",
     exact: true,
   });
-  await expect(page.locator(".media-p405-dock-divider:visible")).toHaveCount(3);
+  // One divider only, setting the ruby end-call pill apart.
+  await expect(page.locator(".media-p405-dock-divider:visible")).toHaveCount(1);
   const dividerBox = await page
     .locator(".media-p405-dock-divider:visible")
     .first()
@@ -1065,26 +1141,33 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
     ),
   ).toBeLessThanOrEqual(1);
 
-  // Leave: a ruby end-call pill, icon only, still named "Rời phòng".
-  const leave = page.getByRole("button", { name: "Rời phòng", exact: true });
+  // Leave: a ruby end-call pill, icon only. For a host it is the disclosure
+  // of the End room / Leave room popover, named for both.
+  const leave = page.locator("#media-p405-control-leave");
+  await expect(leave).toHaveAccessibleName("Rời hoặc kết thúc phòng");
+  await expect(leave).toHaveAttribute("aria-expanded", "false");
   await expect(leave).toHaveCSS("background-color", "rgb(220, 38, 38)");
   await expect(leave).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(leave).toHaveCSS("border-top-left-radius", "999px");
-  await expect(leave.locator(".media-p405-sr-only")).toHaveText("Rời phòng");
+  await expect(leave.locator(".media-p405-sr-only")).toHaveText(
+    "Rời hoặc kết thúc phòng",
+  );
   await expect(leave.locator(".media-p405-sr-only")).toHaveCSS(
     "position",
     "absolute",
   );
   const leaveBox = await leave.boundingBox();
-  expect(Math.round(leaveBox!.height)).toBe(44);
-  expect(leaveBox!.width).toBeGreaterThanOrEqual(58);
+  expect(Math.round(leaveBox!.height)).toBe(42);
+  expect(leaveBox!.width).toBeGreaterThanOrEqual(56);
   expect(leaveBox!.width).toBeGreaterThan(leaveBox!.height);
+  expect(dividerBox!.x).toBeLessThan(leaveBox!.x);
   expect(leaveBox!.x + leaveBox!.width).toBeLessThanOrEqual(
     footerBox!.x + footerBox!.width,
   );
+  // End room moved off the Top Bar into the (closed) end-call popover.
   await expect(
     page.getByRole("button", { name: "Kết thúc phòng", exact: true }),
-  ).toHaveCSS("background-color", "rgb(220, 38, 38)");
+  ).toHaveCount(0);
 
   // ROOM-MACOS-03: the Dock is Liquid Glass. The material sits on ::before so
   // the footer never becomes the Backdrop Root of the device popover.
@@ -1122,10 +1205,13 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
     "transition-timing-function",
     /cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
   );
-  // The header keys share the thin glass and its specular rim.
-  const effectsPill = page.locator(".media-p405-effects-badge > span");
-  expect((await readGlass(effectsPill)).backdropFilter).toMatch(/blur\(18px\)/);
-  expect((await readGlass(effectsPill)).boxShadow).toMatch(/inset/);
+  // ROOM-COMPACT-05: the Top Bar keeps no effects key; its Lock key is a
+  // 28px round glass key with a specular rim.
+  await expect(page.locator(".media-p405-effects-badge")).toHaveCount(0);
+  const lockKey = page
+    .locator(".media-p405-header")
+    .getByRole("button", { name: "Khóa phòng", exact: true });
+  expect((await readGlass(lockKey)).boxShadow).toMatch(/inset/);
   expect(
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
@@ -1149,7 +1235,7 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
   await page.mouse.up();
   await expect(micButton).toHaveAccessibleName("Tắt micro");
 
-  // The icon-only Dock fits one 58px row on a 1024px laptop, still captionless.
+  // The icon-only Dock fits one 56px row on a 1024px laptop, still captionless.
   await page.setViewportSize({ width: 1_024, height: 768 });
   await expect(page.locator(".media-p405-dock-caption")).toHaveCount(0);
   await expect(
@@ -1302,22 +1388,43 @@ test("ROOM-STUDIO-02 opens the whiteboard stage beside a 256px camera strip with
         document.querySelectorAll(".media-p405-tile[data-studio-probe]").length,
     ),
   ).toBe(4);
-  // ROOM-MACOS-03: a Keynote-style window with a translucent titlebar.
+  // ROOM-COMPACT-05: an edge-to-edge paper card (16px corners) with no
+  // titlebar; its Close key is a 28px round key in the Top Bar.
   const toolStage = page.locator(".media-p506-tool-stage");
   await expect(toolStage).toHaveCSS(
     "border-top-left-radius",
-    await expectedCornerRadius(page, 20),
+    await expectedCornerRadius(page, 16),
   );
-  const titlebar = await readGlass(
-    page.locator(".media-p506-tool-stage__header"),
-  );
-  expect(titlebar.backdropFilter).toMatch(/blur\(20px\)/);
-  expect(titlebar.boxShadow).toMatch(/inset/);
+  await expect(page.locator(".media-p506-tool-stage__header")).toHaveCount(0);
+  const close = page
+    .locator(".media-p405-header")
+    .getByRole("button", { name: "Đóng", exact: true });
+  await expect(close).toHaveAttribute("id", "media-p506-close-whiteboard");
+  const closeBox = await close.boundingBox();
+  expect(Math.round(closeBox!.width)).toBe(28);
+  expect(Math.round(closeBox!.height)).toBe(28);
+  // A pointer open shows no ring on the visually hidden heading's card.
+  await expect(toolStage).toHaveCSS("outline-style", "none");
   expect(
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
   ).toEqual([]);
   await saveRoomStudioScreenshot(page, "04-macos-whiteboard-vi-1440x900.png");
+
+  // Close (Top Bar) returns focus to the Dock key; reopening it from the
+  // keyboard rings the whole paper card around the focused, hidden heading.
+  await close.click();
+  await expect(toolStage).toHaveCount(0);
+  await expect(board).toBeFocused();
+  await expect(board).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: "Bảng trắng", level: 2 }),
+  ).toBeFocused();
+  await expect(toolStage).toHaveCSS("outline-style", "solid");
+  await expect(toolStage).toHaveCSS("outline-width", "2px");
+  await expect(toolStage).toHaveCSS("outline-color", "rgb(147, 197, 253)");
+  await expect(toolStage).toHaveCSS("outline-offset", "2px");
 });
 
 test("ROOM-STUDIO-02 centres the device popover over the Dock beside the effects drawer", async ({
@@ -1421,7 +1528,9 @@ test("ROOM-STUDIO-02 reflows the studio room at 320 CSS pixels with forced color
         document.documentElement.clientWidth,
     );
   expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
-  // Icon-only keys at every width, each a 44px touch target.
+  // Icon-only keys at every width: 42px round keys with a fine pointer
+  // (ROOM-COMPACT-05; the stylesheet raises them to 44px on coarse pointers),
+  // well above the 24px WCAG 2.5.8 minimum.
   await expect(page.locator(".media-p405-dock-caption")).toHaveCount(0);
   const controlHeights = await page
     .locator(".media-p405-footer .media-p405-dock-button")
@@ -1429,7 +1538,7 @@ test("ROOM-STUDIO-02 reflows the studio room at 320 CSS pixels with forced color
       buttons.map((button) => button.getBoundingClientRect().height),
     );
   expect(controlHeights.length).toBeGreaterThan(8);
-  expect(Math.min(...controlHeights)).toBeGreaterThanOrEqual(44);
+  expect(Math.min(...controlHeights)).toBeGreaterThanOrEqual(42);
   const [teacher, student] = await gridTileBoxes(page);
   expect(student!.y).toBeGreaterThan(teacher!.y);
   expect(
@@ -1590,8 +1699,14 @@ test("WHITEBOARD-PAPER-01 picks classroom paper from a Liquid Glass popover and 
   await expect(backdrop).toHaveAttribute("data-paper-mode", "plain");
   await expect(page.getByRole("radio", { name: "Selection" })).toHaveCount(1);
 
-  // Teacher trigger: a glass pill naming the current paper.
+  // Teacher trigger: a glass pill naming the current paper, portalled into
+  // the room's Top Bar slot (ROOM-COMPACT-05).
   const trigger = page.getByTestId("whiteboard-paper-trigger");
+  await expect(
+    page
+      .locator(".media-p405-header .media-p405-header-tool-slot")
+      .getByTestId("whiteboard-paper-trigger"),
+  ).toHaveCount(1);
   await expect(trigger).toHaveAccessibleName("Giấy: Bảng trắng (Trơn)");
   await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
   expect((await readGlass(trigger)).backdropFilter).toMatch(/blur\(18px\)/);
@@ -1812,7 +1927,12 @@ test("ROOM-MEET-DOCK-04 shows a Meet tooltip above Dock keys and hands it off al
     name: "Mở bảng trắng",
     exact: true,
   });
-  const leave = page.getByRole("button", { name: "Rời phòng", exact: true });
+  const layoutKey = toolbar.getByRole("button", {
+    name: "Bố cục",
+    exact: true,
+  });
+  // ROOM-COMPACT-05: the host's end-call pill opens a popover instead.
+  const leave = page.locator("#media-p405-control-leave");
 
   // First hover: shown after the 140ms intent delay, above the key.
   await share.hover();
@@ -1862,17 +1982,25 @@ test("ROOM-MEET-DOCK-04 shows a Meet tooltip above Dock keys and hands it off al
   await expect(tooltip).toHaveText("Mở bảng trắng");
   await expect(tooltip).toHaveAttribute("data-instant", "true");
   await expectTooltipBeside(page, board, "above");
-  await leave.hover();
-  await expect(tooltip).toHaveText("Rời phòng");
+  await layoutKey.hover();
+  await expect(tooltip).toHaveText("Bố cục");
   await expect(tooltip).toHaveAttribute("data-instant", "true");
-  await expectTooltipBeside(page, leave, "above");
-  await saveRoomMeetDockScreenshot(page, "02-dock-hover-leave-vi-1440x900.png");
+  await expectTooltipBeside(page, layoutKey, "above");
 
   // Escape hides it at once (WCAG 1.4.13) and it stays down on that key.
   await page.keyboard.press("Escape");
   await expect(tooltip).toBeHidden();
   await page.waitForTimeout(300);
   await expect(tooltip).toBeHidden();
+
+  // The host's end-call pill names no tooltip: hovering it opens the End
+  // room / Leave room popover, and the tooltip never covers it.
+  await leave.hover();
+  await expect(page.getByTestId("leave-end-popover")).toBeVisible();
+  await expect(tooltip).toBeHidden();
+  await saveRoomMeetDockScreenshot(page, "02-dock-hover-leave-vi-1440x900.png");
+  await page.mouse.move(720, 300);
+  await expect(page.getByTestId("leave-end-popover")).toHaveCount(0);
 
   // Keyboard roving shows each control's live name with no delay.
   await page.mouse.move(720, 300);
@@ -1924,7 +2052,7 @@ test("ROOM-MEET-DOCK-04 shows a Meet tooltip above Dock keys and hands it off al
   await expect(tooltip).toBeHidden();
 });
 
-test("ROOM-MEET-DOCK-04 turns the header into 36px icon keys whose tooltips hang below inside the viewport", async ({
+test("ROOM-MEET-DOCK-04 / ROOM-COMPACT-05 keeps one 28px Lock key in the Top Bar whose tooltip hangs below inside the viewport", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1_440, height: 900 });
@@ -1935,59 +2063,63 @@ test("ROOM-MEET-DOCK-04 turns the header into 36px icon keys whose tooltips hang
   await loadRoomStudioStyles(page);
 
   const tooltip = page.getByTestId("room-tooltip");
-  const effects = page.getByRole("button", {
-    name: "Hiệu ứng: Không dùng",
-    exact: true,
-  });
-  const lock = page.getByRole("button", { name: "Khóa phòng", exact: true });
-  const endRoom = page.getByRole("button", {
-    name: "Kết thúc phòng",
-    exact: true,
-  });
-  for (const key of [
-    page.locator(".media-p405-effects-badge > span"),
-    lock,
-    endRoom,
-  ]) {
-    const box = await key.boundingBox();
-    expect(Math.round(box!.width)).toBe(36);
-    expect(Math.round(box!.height)).toBe(36);
-  }
-  // The text is gone visually but stays each control's accessible name.
+  const header = page.locator(".media-p405-header");
+  // Effects and End room moved to the Dock: the Top Bar keeps only Lock.
+  await expect(page.locator(".media-p405-effects-badge")).toHaveCount(0);
+  await expect(
+    header.getByRole("button", { name: /Hiệu ứng|Nền và hiệu ứng/ }),
+  ).toHaveCount(0);
+  await expect(
+    header.getByRole("button", { name: "Kết thúc phòng", exact: true }),
+  ).toHaveCount(0);
+  await expect(header.getByRole("button")).toHaveCount(1);
+  const lock = header.getByRole("button", { name: "Khóa phòng", exact: true });
+  const lockBox = await lock.boundingBox();
+  expect(Math.round(lockBox!.width)).toBe(28);
+  expect(Math.round(lockBox!.height)).toBe(28);
+  await expect(lock).toHaveCSS("border-top-left-radius", "999px");
+  // The text is gone visually but stays the control's accessible name.
   await expect(lock.locator(".media-p405-button-label")).toHaveCSS(
     "position",
     "absolute",
   );
-  await expect(endRoom).toHaveCSS("background-color", "rgb(220, 38, 38)");
+  // Left side, right after the participant count, vertically centred.
+  const presenceBox = await page
+    .locator(".media-p405-presence-short")
+    .boundingBox();
+  const headerBox = await header.boundingBox();
+  expect(lockBox!.x).toBeGreaterThan(presenceBox!.x + presenceBox!.width);
+  expect(lockBox!.x - (presenceBox!.x + presenceBox!.width)).toBeLessThan(24);
+  expect(lockBox!.x + lockBox!.width).toBeLessThan(720);
+  expect(
+    Math.abs(
+      lockBox!.y + lockBox!.height / 2 - (headerBox!.y + headerBox!.height / 2),
+    ),
+  ).toBeLessThanOrEqual(1.5);
+  // No open tool: the right side of the bar is empty.
   const actionsBox = await page
     .locator(".media-p405-header-actions")
     .boundingBox();
-  expect(actionsBox!.width).toBeLessThanOrEqual(140);
+  expect(actionsBox?.width ?? 0).toBeLessThanOrEqual(1);
 
-  await endRoom.hover();
-  await expect(tooltip).toHaveText("Kết thúc phòng");
+  await lock.hover();
+  await expect(tooltip).toHaveText("Khóa phòng");
   await expect(tooltip).toHaveAttribute("data-side", "bottom");
   await page.waitForTimeout(200);
-  await expectTooltipBeside(page, endRoom, "below");
+  await expectTooltipBeside(page, lock, "below");
   const tipBox = await tooltip.boundingBox();
-  expect(tipBox!.x + tipBox!.width).toBeLessThanOrEqual(1_432);
-  await saveRoomMeetDockScreenshot(
-    page,
-    "03-header-hover-end-room-vi-1440x900.png",
-  );
-
-  await effects.hover();
-  await expect(tooltip).toHaveText("Hiệu ứng: Không dùng");
-  await expect(tooltip).toHaveAttribute("data-instant", "true");
-  await expectTooltipBeside(page, effects, "below");
+  expect(tipBox!.y + tipBox!.height).toBeLessThanOrEqual(900);
   expect(
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
   ).toEqual([]);
+  await saveRoomMeetDockScreenshot(
+    page,
+    "03-header-hover-lock-vi-1440x900.png",
+  );
 
-  // Opening the effects drawer from the header key hides its tooltip.
-  await effects.click();
-  await expect(effects).toHaveAttribute("aria-expanded", "true");
+  // Escape hides it without moving focus elsewhere.
+  await page.keyboard.press("Escape");
   await expect(tooltip).toBeHidden();
 });
 
@@ -2001,9 +2133,7 @@ test("ROOM-MEET-DOCK-04 keeps a one-person speaker view free of the empty rail t
   });
   await loadRoomStudioStyles(page);
 
-  await page
-    .getByRole("button", { name: "Người đang nói", exact: true })
-    .click();
+  await chooseLayout(page, "Người đang nói");
   await expect(page.locator(".media-p405-tile--stage")).toBeVisible();
   await expect(
     page.getByText("Chưa có video người tham gia để hiển thị.", {
@@ -2043,9 +2173,7 @@ test("ROOM-MEET-DOCK-04 compacts the whiteboard keys and never covers the paper 
   });
   await loadRoomStudioStyles(page);
   // The reference scene: one person, speaker view, whiteboard on stage.
-  await page
-    .getByRole("button", { name: "Người đang nói", exact: true })
-    .click();
+  await chooseLayout(page, "Người đang nói");
   await page
     .getByRole("button", { name: "Mở bảng trắng", exact: true })
     .click();
@@ -2059,36 +2187,45 @@ test("ROOM-MEET-DOCK-04 compacts the whiteboard keys and never covers the paper 
   ).toBeHidden();
 
   const tooltip = page.getByTestId("room-tooltip");
-  // Close: a 30px round X key still named "Đóng".
-  const close = page
-    .locator(".media-p506-tool-stage__header")
-    .getByRole("button", { name: "Đóng", exact: true });
+  const header = page.locator(".media-p405-header");
+  // ROOM-COMPACT-05: Close is a 28px round X key in the Top Bar, still
+  // named "Đóng"; the paper card has no titlebar of its own.
+  await expect(page.locator(".media-p506-tool-stage__header")).toHaveCount(0);
+  const close = header.getByRole("button", { name: "Đóng", exact: true });
   const closeBox = await close.boundingBox();
-  expect(Math.round(closeBox!.width)).toBe(30);
-  expect(Math.round(closeBox!.height)).toBe(30);
+  expect(Math.round(closeBox!.width)).toBe(28);
+  expect(Math.round(closeBox!.height)).toBe(28);
   await expect(close).toHaveAttribute("data-tooltip", "Đóng");
   await close.hover();
   await expect(tooltip).toHaveText("Đóng");
   await page.waitForTimeout(200);
   await expectTooltipBeside(page, close, "below");
 
-  // The text view is a 32px icon key with its name as tooltip.
-  const textView = page.getByRole("button", {
-    name: "Đọc bảng trắng dạng văn bản",
-    exact: true,
-  });
-  const textViewBox = await textView.boundingBox();
-  expect(Math.round(textViewBox!.width)).toBe(32);
-  expect(Math.round(textViewBox!.height)).toBe(32);
-  await textView.hover();
-  await expect(tooltip).toHaveText("Đọc bảng trắng dạng văn bản");
-  await expectTooltipBeside(page, textView, "below");
+  // No engine bar in the classroom: no text-view key and no visible
+  // connection line. The status stays a 1px polite live region for AT and
+  // the text alternative stays in the DOM for the canvas description.
+  await expect(page.locator(".whiteboard-engine-bar")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: "Đọc bảng trắng dạng văn bản",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  const connection = page.locator(".whiteboard-connection-status");
+  await expect(connection).toHaveAttribute("aria-live", "polite");
+  await expect(connection).toHaveText("Bảng trắng đã kết nối.");
+  const connectionBox = await connection.boundingBox();
+  expect(connectionBox!.width).toBeLessThanOrEqual(1);
+  expect(connectionBox!.height).toBeLessThanOrEqual(1);
 
-  // Paper: swatch + caret only; the full paper name is the tooltip.
-  const trigger = page.getByTestId("whiteboard-paper-trigger");
+  // Paper: swatch + caret only, in the Top Bar beside Close; the full paper
+  // name is the tooltip.
+  const trigger = header.getByTestId("whiteboard-paper-trigger");
   await expect(trigger).toHaveAccessibleName("Giấy: Bảng trắng (Trơn)");
   const triggerBox = await trigger.boundingBox();
   expect(triggerBox!.width).toBeLessThanOrEqual(60);
+  expect(Math.round(triggerBox!.height)).toBe(28);
+  expect(triggerBox!.x + triggerBox!.width).toBeLessThan(closeBox!.x);
   const swatchBox = await trigger
     .locator(".whiteboard-paper-swatch")
     .boundingBox();
@@ -2124,4 +2261,402 @@ test("ROOM-MEET-DOCK-04 compacts the whiteboard keys and never covers the paper 
     page,
     "06-whiteboard-hover-notebook-vi-1440x900.png",
   );
+});
+
+// ROOM-COMPACT-05: one full-bleed 40px Top Bar (clock, presence, Lock, lesson
+// name, paper picker, Close), an edge-to-edge paper card level with the camera
+// column, a 56px pill Dock with one layout key, and End room / Leave room
+// merged into the ruby end-call pill. Set ROOM_COMPACT_SCREENSHOT_DIR (for
+// example `.tmp/room-compact-05`) to save the acceptance screenshots.
+const roomCompactScreenshotDir =
+  process.env.ROOM_COMPACT_SCREENSHOT_DIR?.trim() || "";
+const roomCompactTitle = "Lớp Toán 10 – Phương trình bậc hai";
+
+async function saveRoomCompactScreenshot(page: Page, name: string) {
+  if (!roomCompactScreenshotDir) return;
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${roomCompactScreenshotDir}/${name}` });
+}
+
+async function boxOf(locator: Locator) {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error("Expected a rendered box.");
+  return box;
+}
+
+test("ROOM-COMPACT-05 frees the board under one full-bleed Top Bar and merges End room / Leave room into the end-call pill", async ({
+  page,
+}) => {
+  // Hermetic: Excalidraw may ask a CDN for optional fonts; stay on localhost.
+  await page.route(
+    /^https?:\/\/(?!127\.0\.0\.1[:/]|localhost[:/])[^/]+\//,
+    (route) => route.abort(),
+  );
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 1,
+    studio: {
+      boardTitle: "Bài 3 · Phương trình bậc hai & Đồ thị hàm số",
+      language: "vi",
+      roomTitle: roomCompactTitle,
+      whiteboard: "paper",
+    },
+  });
+  await loadRoomStudioStyles(page);
+  await page
+    .getByRole("button", { name: "Mở bảng trắng", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Bề mặt bảng trắng tương tác" }),
+  ).toBeVisible();
+
+  // "Vở học sinh" from the Top Bar paper picker.
+  const header = page.locator(".media-p405-header");
+  const trigger = header.getByTestId("whiteboard-paper-trigger");
+  await trigger.click();
+  const paperPopover = page.getByRole("dialog", { name: "Chọn chế độ giấy" });
+  await paperPopover
+    .getByRole("button", { name: "Vở học sinh", exact: true })
+    .click();
+  await expect(page.getByTestId("whiteboard-paper-backdrop")).toHaveAttribute(
+    "data-paper-mode",
+    "notebook",
+  );
+  await page.keyboard.press("Escape");
+  await expect(paperPopover).toHaveCount(0);
+  await expect(trigger).toHaveAccessibleName("Giấy: Vở học sinh");
+
+  // ---- Top Bar: one full-bleed row, at most 44px tall. ----
+  const headerBox = await boxOf(header);
+  expect(Math.round(headerBox.x)).toBe(0);
+  expect(Math.round(headerBox.width)).toBe(1_440);
+  expect(headerBox.y).toBeLessThanOrEqual(0.5);
+  expect(headerBox.height).toBeLessThanOrEqual(44);
+  const clock = header.locator(".media-p405-session-clock");
+  await expect(clock).toHaveText(/^\d{2}:\d{2}$/);
+  const presence = header.locator(".media-p405-presence-short");
+  await expect(presence).toBeVisible();
+  await expect(presence).toHaveText("1 người");
+  await expect(header.locator(".media-p405-presence-full")).toHaveText(
+    "Đã kết nối / 1 người tham gia",
+  );
+  const lock = header.getByRole("button", { name: "Khóa phòng", exact: true });
+  const title = header.getByRole("heading", {
+    level: 1,
+    name: roomCompactTitle,
+  });
+  await expect(title).toBeVisible();
+  const close = header.getByRole("button", { name: "Đóng", exact: true });
+  const clockBox = await boxOf(clock);
+  const presenceBox = await boxOf(presence);
+  const lockBox = await boxOf(lock);
+  const titleBox = await boxOf(title);
+  const triggerBox = await boxOf(trigger);
+  const closeBox = await boxOf(close);
+  for (const key of [lockBox, closeBox]) {
+    expect(Math.round(key.width)).toBe(28);
+    expect(Math.round(key.height)).toBe(28);
+  }
+  expect(Math.round(triggerBox.height)).toBe(28);
+  // Left to right: clock, people, Lock, lesson name | paper picker, Close.
+  expect(clockBox.x + clockBox.width).toBeLessThan(presenceBox.x);
+  expect(presenceBox.x + presenceBox.width).toBeLessThan(lockBox.x);
+  expect(lockBox.x + lockBox.width).toBeLessThan(titleBox.x);
+  expect(titleBox.x + titleBox.width).toBeLessThan(triggerBox.x);
+  expect(triggerBox.x + triggerBox.width).toBeLessThan(closeBox.x);
+  expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(1_440 - 8);
+  for (const box of [clockBox, presenceBox, lockBox, titleBox, closeBox]) {
+    expect(box.y).toBeGreaterThanOrEqual(headerBox.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(
+      headerBox.y + headerBox.height,
+    );
+  }
+  // The old chrome is gone: generic heading, trial notice, text-view key.
+  await expect(page.getByText("Phòng học TutorHub")).toHaveCount(0);
+  await expect(page.getByText("Thông tin phiên bản")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Đọc bảng trắng dạng văn bản" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".media-p506-tool-stage__header")).toHaveCount(0);
+
+  // ---- The paper card is level with the camera column and taller. ----
+  const canvasBox = await boxOf(page.locator(".whiteboard-engine-canvas"));
+  const toolBox = await boxOf(page.locator(".media-p506-tool-stage"));
+  const tileBox = await boxOf(page.locator(".media-p405-tile").first());
+  const footer = page.locator(".media-p405-footer");
+  const footerBox = await boxOf(footer);
+  expect(Math.abs(canvasBox.y - tileBox.y)).toBeLessThanOrEqual(2);
+  expect(canvasBox.height).toBeGreaterThanOrEqual(740);
+  expect(canvasBox.x + canvasBox.width).toBeLessThanOrEqual(tileBox.x);
+  expect(toolBox.y + toolBox.height).toBeLessThanOrEqual(footerBox.y);
+  expect(Math.round(footerBox.height)).toBe(56);
+  console.log(
+    `[ROOM-COMPACT-05 metrics] ${JSON.stringify({
+      canvas: canvasBox,
+      dock: footerBox,
+      header: headerBox,
+      tile: tileBox,
+      toolStage: toolBox,
+      topEdgeDelta: Math.abs(canvasBox.y - tileBox.y),
+    })}`,
+  );
+
+  // ---- Host end-call pill: hover opens End room / Leave room. ----
+  // A pointer user with nothing focused: clicking the plain title text
+  // releases the paper trigger's focus.
+  await title.click();
+  await expect(trigger).not.toBeFocused();
+  const tooltip = page.getByTestId("room-tooltip");
+  const leave = page.locator("#media-p405-control-leave");
+  const endPopover = page.getByTestId("leave-end-popover");
+  await expect(leave).toHaveAccessibleName("Rời hoặc kết thúc phòng");
+  await expect(leave).not.toHaveAttribute("data-tooltip");
+  await expect(endPopover).toHaveCount(0);
+  await leave.hover();
+  await expect(endPopover).toBeVisible();
+  await expect(leave).toHaveAttribute("aria-expanded", "true");
+  await expect(leave).toHaveAttribute(
+    "aria-controls",
+    (await endPopover.getAttribute("id"))!,
+  );
+  await expect(endPopover).toHaveAttribute("role", "group");
+  await expect(endPopover).toHaveAccessibleName("Tùy chọn rời phòng");
+  await expect(endPopover.getByRole("button")).toHaveText([
+    "Kết thúc phòng",
+    "Rời phòng",
+  ]);
+  const endRoom = endPopover.getByRole("button", {
+    name: "Kết thúc phòng",
+    exact: true,
+  });
+  await expect(endRoom).toHaveCSS("background-color", "rgb(220, 38, 38)");
+  await expect(endRoom).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(tooltip).toBeHidden();
+  // Settled 10px above the pill, right-aligned with it.
+  await page.waitForTimeout(250);
+  const leaveBox = await boxOf(leave);
+  const popoverBox = await boxOf(endPopover);
+  expect(Math.round(popoverBox.width)).toBe(216);
+  expect(
+    Math.abs(leaveBox.y - (popoverBox.y + popoverBox.height) - 10),
+  ).toBeLessThanOrEqual(1.5);
+  expect(
+    Math.abs(popoverBox.x + popoverBox.width - (leaveBox.x + leaveBox.width)),
+  ).toBeLessThanOrEqual(1.5);
+
+  // Hover bridge: slide from the pill straight up across the 10px gap onto
+  // End room; the popover never closes on the way or after the grace period.
+  const endBox = await boxOf(endRoom);
+  const startX = leaveBox.x + leaveBox.width / 2;
+  await page.mouse.move(startX, leaveBox.y + leaveBox.height / 2);
+  await page.mouse.move(startX, endBox.y + endBox.height / 2, { steps: 16 });
+  await expect(endPopover).toBeVisible();
+  await page.mouse.move(
+    endBox.x + endBox.width / 2,
+    endBox.y + endBox.height / 2,
+    { steps: 6 },
+  );
+  await page.waitForTimeout(400);
+  await expect(endPopover).toBeVisible();
+  await expect(endRoom).toHaveCSS("background-color", "rgb(185, 28, 28)");
+  await expect(tooltip).toBeHidden();
+
+  // Axe: whiteboard open and the popover open.
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomCompactScreenshot(
+    page,
+    "01-compact-whiteboard-host-end-popover-vi-1440x900.png",
+  );
+
+  // Escape closes it and hands focus to the end-call pill.
+  await page.keyboard.press("Escape");
+  await expect(endPopover).toHaveCount(0);
+  await expect(leave).toBeFocused();
+  await expect(leave).toHaveAttribute("aria-expanded", "false");
+});
+
+test("ROOM-COMPACT-05 keeps a student's end-call pill a plain Leave key and opens the layout menu from one round Dock key", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 2,
+    studio: { language: "vi", role: "student", roomTitle: roomCompactTitle },
+  });
+  await loadRoomStudioStyles(page);
+
+  // No moderation authority: no Lock key, the lesson name still shows.
+  const header = page.locator(".media-p405-header");
+  await expect(header.getByRole("button")).toHaveCount(0);
+  await expect(
+    header.getByRole("heading", { level: 1, name: roomCompactTitle }),
+  ).toBeVisible();
+  await expect(header.locator(".media-p405-presence-short")).toHaveText(
+    "2 người",
+  );
+  const headerBox = await boxOf(header);
+  expect(headerBox.height).toBeLessThanOrEqual(44);
+
+  // The expanded video stage starts right under the slim Top Bar.
+  const stageBox = await boxOf(page.locator(".media-p405-stage"));
+  const footerBox = await boxOf(page.locator(".media-p405-footer"));
+  expect(stageBox.y - (headerBox.y + headerBox.height)).toBeLessThanOrEqual(10);
+  expect(stageBox.y + stageBox.height).toBeLessThanOrEqual(footerBox.y);
+  console.log(
+    `[ROOM-COMPACT-05 metrics] ${JSON.stringify({
+      studentVideoStage: stageBox,
+    })}`,
+  );
+
+  // Student: hovering the ruby pill shows the "Rời phòng" tooltip only.
+  const tooltip = page.getByTestId("room-tooltip");
+  const leave = page.locator("#media-p405-control-leave");
+  await expect(leave).toHaveAccessibleName("Rời phòng");
+  await expect(leave).toHaveAttribute("data-tooltip", "Rời phòng");
+  await leave.hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText("Rời phòng");
+  await page.waitForTimeout(200);
+  await expectTooltipBeside(page, leave, "above");
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId("leave-end-popover")).toHaveCount(0);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomCompactScreenshot(
+    page,
+    "02-compact-video-student-leave-tooltip-vi-1440x900.png",
+  );
+
+  // Layout: one round key opens Grid / Active speaker / Presentation.
+  await page.mouse.move(720, 300);
+  await page.waitForTimeout(450);
+  const layoutKey = page.locator("#media-p405-control-layout");
+  await expect(layoutKey).toHaveAccessibleName("Bố cục");
+  const layoutBox = await boxOf(layoutKey);
+  expect(Math.round(layoutBox.width)).toBe(42);
+  expect(Math.round(layoutBox.height)).toBe(42);
+  await layoutKey.click();
+  const menu = page.getByRole("menu", { name: "Chế độ bố cục" });
+  await expect(menu).toBeVisible();
+  await expect(layoutKey).toHaveAttribute("aria-expanded", "true");
+  await expect(tooltip).toBeHidden();
+  const options = menu.getByRole("menuitemradio");
+  await expect(options).toHaveText(["Lưới", "Người đang nói", "Trình bày"]);
+  await expect(options.nth(0)).toHaveAttribute("aria-checked", "true");
+  await expect(options.nth(1)).toHaveAttribute("aria-checked", "false");
+  // Nobody presents, so Presentation is unavailable.
+  await expect(options.nth(2)).toHaveAttribute("aria-disabled", "true");
+  await page.waitForTimeout(250);
+  const menuBox = await boxOf(menu);
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(layoutBox.y);
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(1_440);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p405-layout-menu")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await saveRoomCompactScreenshot(
+    page,
+    "03-compact-layout-menu-vi-1440x900.png",
+  );
+
+  await options.nth(1).click();
+  await expect(menu).toHaveCount(0);
+  await expect(layoutKey).toBeFocused();
+  await expect(page.locator(".media-p405-tile--stage")).toBeVisible();
+  await layoutKey.press("Enter");
+  await expect(
+    page.getByRole("menuitemradio", { name: "Người đang nói", exact: true }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(layoutKey).toBeFocused();
+});
+
+test("ROOM-COMPACT-05 reflows the Top Bar and the end-call popover at 320 CSS pixels with forced colors and no violations", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await mountClassroomFixture(page, {
+    participantCount: 2,
+    studio: { language: "vi", roomTitle: roomCompactTitle },
+  });
+  await loadRoomStudioStyles(page);
+
+  const horizontalOverflow = () =>
+    page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+  expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
+  const header = page.locator(".media-p405-header");
+  await expect(
+    header.getByRole("heading", { level: 1, name: roomCompactTitle }),
+  ).toBeVisible();
+
+  // The layout menu opens from the round key and stays on screen.
+  const layoutKey = page.locator("#media-p405-control-layout");
+  await layoutKey.click();
+  const layoutMenu = page.getByRole("menu", { name: "Chế độ bố cục" });
+  await expect(layoutMenu).toBeVisible();
+  const layoutMenuBox = await boxOf(layoutMenu);
+  expect(layoutMenuBox.x).toBeGreaterThanOrEqual(0);
+  expect(layoutMenuBox.x + layoutMenuBox.width).toBeLessThanOrEqual(320);
+  expect(layoutMenuBox.y).toBeGreaterThanOrEqual(0);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p405-layout-menu")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(layoutMenu).toHaveCount(0);
+  await expect(layoutKey).toBeFocused();
+
+  // Whiteboard open: Close joins the Top Bar and nothing overflows.
+  await page
+    .getByRole("button", { name: "Mở bảng trắng", exact: true })
+    .click();
+  await expect(
+    header.getByRole("button", { name: "Đóng", exact: true }),
+  ).toBeVisible();
+  expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
+
+  // Keyboard: Enter on the end-call pill opens the popover on End room.
+  const leave = page.locator("#media-p405-control-leave");
+  await leave.focus();
+  await page.keyboard.press("Enter");
+  const endPopover = page.getByTestId("leave-end-popover");
+  await expect(endPopover).toBeVisible();
+  await expect(
+    endPopover.getByRole("button", { name: "Kết thúc phòng", exact: true }),
+  ).toBeFocused();
+  const popoverBox = await boxOf(endPopover);
+  expect(popoverBox.x).toBeGreaterThanOrEqual(0);
+  expect(popoverBox.x + popoverBox.width).toBeLessThanOrEqual(320);
+  expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
+  await expect(endPopover).toHaveCSS("border-top-style", "solid");
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    endPopover.getByRole("button", { name: "Rời phòng", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(endPopover).toHaveCount(0);
+  await expect(leave).toBeFocused();
 });

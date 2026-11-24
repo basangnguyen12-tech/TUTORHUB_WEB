@@ -48,6 +48,8 @@ export interface ClassroomLiveKitRoomProps {
   credential: MediaInstanceCredentialProjection;
   lobby?: ReactNode;
   moderation?: ClassroomModerationControlsModel;
+  /** ROOM-COMPACT-05: lesson or class name shown in the Top Bar. */
+  roomTitle?: string | null;
   signals?: ClassroomSignalControls;
   tools?: ClassroomMediaShellProps["tools"];
   videoCaptureOverride?: VideoCaptureOptions;
@@ -117,6 +119,7 @@ function ConnectedClassroomLiveKitRoom({
   lifecycle,
   lobby,
   moderation,
+  roomTitle,
   signals,
   tools,
   videoCaptureOverride,
@@ -382,6 +385,7 @@ function ConnectedClassroomLiveKitRoom({
           controlAbortSignal={controlAbortController.signal}
           lobby={lobby}
           moderation={moderation}
+          roomTitle={roomTitle}
           signals={signals}
           tools={tools}
           visualEffects={visualEffects}

@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { APIRequestError, type WhiteboardDocument } from "@tutorhub/api-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
+import { ClassroomHeaderSlotContext } from "../media/ClassroomMediaShell";
 import { ClassroomWhiteboardTool } from "./ClassroomWhiteboardTool";
 
 const whiteboardMocks = vi.hoisted(() => ({
@@ -22,13 +30,23 @@ vi.mock("../../app/whiteboards", () => ({
 vi.mock("./LazyWhiteboardEngine", () => ({
   default: ({
     capability,
+    classroom,
     onRecoveryRequired,
+    toolbarSlot,
   }: {
     capability: string;
+    classroom?: boolean;
     onRecoveryRequired: () => void;
+    toolbarSlot?: HTMLElement | null;
   }) => (
     <div>
       <p>Canonical engine capability: {capability}</p>
+      <p>
+        Engine classroom: {classroom ? "yes" : "no"}; paper slot:{" "}
+        {toolbarSlot?.classList.contains("whiteboard-topbar-paper")
+          ? "top bar"
+          : "none"}
+      </p>
       <button onClick={onRecoveryRequired}>Simulate authority fence</button>
     </div>
   ),
@@ -415,6 +433,155 @@ describe("ClassroomWhiteboardTool", () => {
     ).toBeInTheDocument();
   });
 
+  describe("inside the classroom stage (ROOM-COMPACT-05)", () => {
+    let slot: HTMLDivElement;
+
+    beforeEach(() => {
+      slot = globalThis.document.createElement("div");
+      slot.className = "media-p405-header-tool-slot";
+      globalThis.document.body.append(slot);
+    });
+
+    afterEach(() => {
+      cleanup();
+      slot.remove();
+    });
+
+    const presenting = (
+      overrides: Partial<WhiteboardDocument["viewer_capabilities"]> = {},
+      status: WhiteboardDocument["status"] = "open",
+    ): WhiteboardDocument => ({
+      ...document,
+      status,
+      viewer_capabilities: {
+        ...document.viewer_capabilities,
+        capability: "edit",
+        ...overrides,
+      },
+    });
+
+    it("drops its header, status and trial key and moves ⋯ into the Top Bar", async () => {
+      const transition = vi.fn();
+      whiteboardMocks.transition.mockReturnValue({
+        isError: false,
+        isPending: false,
+        mutate: transition,
+      });
+      const board = presenting({ can_close: true, can_suspend: true });
+      whiteboardMocks.tool.mockReturnValue({
+        data: { can_create: false, document: board },
+        isError: false,
+        isPending: false,
+        refetch: vi.fn(),
+      });
+      const view = renderClassroomTool(slot);
+
+      expect(
+        await screen.findByText("Engine classroom: yes; paper slot: top bar"),
+      ).toBeInTheDocument();
+      expect(
+        view.container.querySelector(".whiteboard-tool-header"),
+      ).toBeNull();
+      expect(screen.queryByText("Classroom whiteboard")).toBeNull();
+      expect(screen.queryByText("Presenting")).toBeNull();
+      expect(screen.queryByText("Trial info")).toBeNull();
+      expect(
+        view.container.querySelector(".whiteboard-trial-disclosure"),
+      ).toBeNull();
+      // The compact controls live in the Top Bar, not on the board.
+      expect(
+        within(view.container).queryByRole("button", {
+          name: "Whiteboard options",
+        }),
+      ).toBeNull();
+      const more = within(slot).getByRole("button", {
+        name: "Whiteboard options",
+      });
+      expect(more).toHaveAttribute("data-tooltip", "Whiteboard options");
+      expect(more).toHaveAttribute("data-tooltip-side", "bottom");
+      expect(
+        slot.querySelector(".whiteboard-topbar > .whiteboard-topbar-paper"),
+      ).not.toBeNull();
+
+      fireEvent.pointerDown(more, { button: 0, ctrlKey: false });
+      const menu = await screen.findByRole("menu", {
+        name: "Whiteboard options",
+      });
+      expect(
+        within(menu)
+          .getAllByRole("menuitem")
+          .map((item) => item.textContent),
+      ).toEqual(["Suspend", "End whiteboard"]);
+      fireEvent.click(within(menu).getByRole("menuitem", { name: "Suspend" }));
+      expect(transition).toHaveBeenCalledWith({
+        document: board,
+        operation: "suspend",
+      });
+
+      view.unmount();
+      expect(slot).toBeEmptyDOMElement();
+    });
+
+    it("keeps a centred Resume call to action while the board is suspended", () => {
+      const transition = vi.fn();
+      whiteboardMocks.transition.mockReturnValue({
+        isError: false,
+        isPending: false,
+        mutate: transition,
+      });
+      const board = presenting(
+        { can_close: true, can_exchange_grant: false, can_resume: true },
+        "suspended",
+      );
+      whiteboardMocks.tool.mockReturnValue({
+        data: { can_create: false, document: board },
+        isError: false,
+        isPending: false,
+        refetch: vi.fn(),
+      });
+      const view = renderClassroomTool(slot);
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "The whiteboard is suspended.",
+      );
+      fireEvent.click(
+        within(view.container).getByRole("button", { name: "Resume" }),
+      );
+      expect(transition).toHaveBeenCalledWith({
+        document: board,
+        operation: "resume",
+      });
+      expect(
+        within(slot).getByRole("button", { name: "Whiteboard options" }),
+      ).toBeInTheDocument();
+    });
+
+    it("gives a student no Top Bar menu and no trial key while loading", async () => {
+      whiteboardMocks.tool.mockReturnValue({ isError: false, isPending: true });
+      const view = renderClassroomTool(slot, { autoStart: true });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Checking whiteboard access",
+      );
+      expect(screen.queryByText("Trial info")).toBeNull();
+
+      whiteboardMocks.tool.mockReturnValue({
+        data: { can_create: false, document },
+        isError: false,
+        isPending: false,
+        refetch: vi.fn(),
+      });
+      view.rerender(classroomToolElement(slot, { autoStart: true }));
+      await waitFor(() =>
+        expect(
+          screen.getByText("Canonical engine capability: view"),
+        ).toBeInTheDocument(),
+      );
+      expect(
+        within(slot).queryByRole("button", { name: "Whiteboard options" }),
+      ).toBeNull();
+    });
+  });
+
   it("never re-opens a whiteboard the teacher deliberately paused", () => {
     const transition = vi.fn();
     whiteboardMocks.transition.mockReturnValue({
@@ -476,6 +643,24 @@ function createdDocument(): WhiteboardDocument {
       capability: "edit",
     },
   };
+}
+
+function renderClassroomTool(
+  slot: HTMLElement,
+  options: { autoStart?: boolean } = {},
+) {
+  return render(classroomToolElement(slot, options));
+}
+
+function classroomToolElement(
+  slot: HTMLElement,
+  { autoStart }: { autoStart?: boolean } = {},
+) {
+  return (
+    <ClassroomHeaderSlotContext.Provider value={{ element: slot }}>
+      {toolElement({ autoStart })}
+    </ClassroomHeaderSlotContext.Provider>
+  );
 }
 
 function renderTool(options: { autoStart?: boolean } = {}) {

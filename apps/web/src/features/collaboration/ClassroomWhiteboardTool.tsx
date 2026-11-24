@@ -1,15 +1,26 @@
 import { APIRequestError, type WhiteboardDocument } from "@tutorhub/api-client";
-import { Button } from "@tutorhub/ui";
-import { Info, Pause, Play, Square } from "lucide-react";
+import {
+  Button,
+  IconButton,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+} from "@tutorhub/ui";
+import { Info, MoreHorizontal, Pause, Play, Square } from "lucide-react";
 import {
   lazy,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "../../app/i18n";
+import { ClassroomHeaderSlotContext } from "../media/ClassroomMediaShell";
 import {
   usePrepareWhiteboard,
   useTransitionWhiteboard,
@@ -43,6 +54,10 @@ export function ClassroomWhiteboardTool({
   tenantID,
 }: ClassroomWhiteboardToolProps) {
   const { t } = useI18n();
+  // ROOM-COMPACT-05: inside the classroom stage the board drops its own bars
+  // and puts its compact controls in the room's Top Bar slot.
+  const headerSlot = useContext(ClassroomHeaderSlotContext);
+  const classroom = headerSlot !== null;
   const tool = useWhiteboardTool(tenantID, mediaSpaceID, enabled);
   const prepare = usePrepareWhiteboard(tenantID, mediaSpaceID);
   const transition = useTransitionWhiteboard(tenantID, mediaSpaceID);
@@ -96,9 +111,9 @@ export function ClassroomWhiteboardTool({
   if (tool.isPending) {
     return (
       <WhiteboardState
-        compactPrivateAlphaNotice={autoStart}
+        compactPrivateAlphaNotice={autoStart && !classroom}
         message={t("whiteboard.loading")}
-        showPrivateAlphaNotice={!autoStart}
+        showPrivateAlphaNotice={!autoStart && !classroom}
       />
     );
   }
@@ -123,9 +138,9 @@ export function ClassroomWhiteboardTool({
   if (resolved.document === null) {
     return (
       <WhiteboardState
-        compactPrivateAlphaNotice={autoStart}
+        compactPrivateAlphaNotice={autoStart && !classroom}
         message={t("whiteboard.empty")}
-        showPrivateAlphaNotice={!autoStart}
+        showPrivateAlphaNotice={!autoStart && !classroom}
       >
         {resolved.can_create ? (
           <Button
@@ -150,6 +165,7 @@ export function ClassroomWhiteboardTool({
   return (
     <WhiteboardDocumentView
       actorID={actorID}
+      classroomSlot={classroom ? headerSlot.element : undefined}
       document={document}
       mutationPending={transition.isPending}
       onRecoveryRequired={handleRecoveryRequired}
@@ -169,6 +185,7 @@ export function ClassroomWhiteboardTool({
 
 function WhiteboardDocumentView({
   actorID,
+  classroomSlot,
   document,
   mutationPending,
   onRecoveryRequired,
@@ -177,6 +194,11 @@ function WhiteboardDocumentView({
   transitionError,
 }: {
   actorID: string;
+  /**
+   * Classroom stage only: the room Top Bar slot (`null` until it mounts).
+   * `undefined` keeps the standalone header with labelled actions.
+   */
+  classroomSlot?: HTMLElement | null;
   document: WhiteboardDocument;
   mutationPending: boolean;
   onRecoveryRequired: () => void;
@@ -186,6 +208,20 @@ function WhiteboardDocumentView({
 }) {
   const { t } = useI18n();
   const capabilities = document.viewer_capabilities;
+  if (classroomSlot !== undefined) {
+    return (
+      <ClassroomWhiteboardDocumentView
+        actorID={actorID}
+        document={document}
+        mutationPending={mutationPending}
+        onRecoveryRequired={onRecoveryRequired}
+        onTransition={onTransition}
+        slot={classroomSlot}
+        tenantID={tenantID}
+        transitionError={transitionError}
+      />
+    );
+  }
   return (
     <section
       aria-labelledby="whiteboard-tool-title"
@@ -284,6 +320,145 @@ function WhiteboardDocumentView({
         <WhiteboardState message={t(`whiteboard.state.${document.status}`)} />
       )}
     </section>
+  );
+}
+
+/**
+ * ROOM-COMPACT-05 classroom document view: no header, no status line and no
+ * trial key — the paper fills the stage. The Top Bar slot receives the paper
+ * picker (portalled by the engine into its own sub-slot, so it always sits
+ * first) and a `⋯` menu with the server-allowed Suspend / Resume / End
+ * actions. While the board waits to be opened or is suspended, the centred
+ * state keeps a clear Open / Resume call to action for the teacher.
+ */
+function ClassroomWhiteboardDocumentView({
+  actorID,
+  document,
+  mutationPending,
+  onRecoveryRequired,
+  onTransition,
+  slot,
+  tenantID,
+  transitionError,
+}: {
+  actorID: string;
+  document: WhiteboardDocument;
+  mutationPending: boolean;
+  onRecoveryRequired: () => void;
+  onTransition: (operation: WhiteboardOperation) => void;
+  slot: HTMLElement | null;
+  tenantID: string;
+  transitionError: boolean;
+}) {
+  const { t } = useI18n();
+  const [paperSlot, setPaperSlot] = useState<HTMLSpanElement | null>(null);
+  const capabilities = document.viewer_capabilities;
+  const hasMenuActions =
+    capabilities.can_suspend ||
+    capabilities.can_resume ||
+    capabilities.can_close;
+  const live = document.status === "open" && capabilities.can_exchange_grant;
+
+  // A plain container: the classroom stage section already names the board.
+  return (
+    <div className="whiteboard-tool whiteboard-tool--classroom">
+      {slot
+        ? createPortal(
+            <div className="whiteboard-topbar">
+              <span className="whiteboard-topbar-paper" ref={setPaperSlot} />
+              {hasMenuActions ? (
+                <Menu modal={false}>
+                  <MenuTrigger asChild>
+                    <IconButton
+                      className="whiteboard-topbar-menu-trigger"
+                      data-tooltip={t("whiteboard.moreActions")}
+                      data-tooltip-side="bottom"
+                      disabled={mutationPending}
+                      label={t("whiteboard.moreActions")}
+                      size="sm"
+                      variant="quiet"
+                    >
+                      <MoreHorizontal />
+                    </IconButton>
+                  </MenuTrigger>
+                  <MenuContent
+                    align="end"
+                    aria-label={t("whiteboard.moreActions")}
+                    className="whiteboard-topbar-menu"
+                    data-theme="dark"
+                    sideOffset={8}
+                  >
+                    {capabilities.can_suspend ? (
+                      <MenuItem onSelect={() => onTransition("suspend")}>
+                        <Pause aria-hidden="true" />
+                        {t("whiteboard.suspend")}
+                      </MenuItem>
+                    ) : null}
+                    {capabilities.can_resume ? (
+                      <MenuItem onSelect={() => onTransition("resume")}>
+                        <Play aria-hidden="true" />
+                        {t("whiteboard.resume")}
+                      </MenuItem>
+                    ) : null}
+                    {capabilities.can_close ? (
+                      <MenuItem
+                        onSelect={() => onTransition("close")}
+                        tone="danger"
+                      >
+                        <Square aria-hidden="true" />
+                        {t("whiteboard.close")}
+                      </MenuItem>
+                    ) : null}
+                  </MenuContent>
+                </Menu>
+              ) : null}
+            </div>,
+            slot,
+          )
+        : null}
+      {transitionError ? (
+        <p className="whiteboard-tool-error" role="alert">
+          {t("whiteboard.mutationError")}
+        </p>
+      ) : null}
+      {live ? (
+        <Suspense
+          fallback={<WhiteboardState message={t("whiteboard.engineLoading")} />}
+        >
+          <LazyWhiteboardEngine
+            actorID={actorID}
+            capability={capabilities.capability}
+            classroom
+            document={document}
+            key={`${document.id}:${document.current_generation}:${document.revoke_generation}:${capabilities.capability}`}
+            onRecoveryRequired={onRecoveryRequired}
+            tenantID={tenantID}
+            toolbarSlot={paperSlot}
+          />
+        </Suspense>
+      ) : (
+        <WhiteboardState message={t(`whiteboard.state.${document.status}`)}>
+          {capabilities.can_open ? (
+            <Button
+              disabled={mutationPending}
+              leadingIcon={<Play />}
+              onClick={() => onTransition("open")}
+            >
+              {t("whiteboard.open")}
+            </Button>
+          ) : null}
+          {capabilities.can_resume ? (
+            <Button
+              disabled={mutationPending}
+              leadingIcon={<Play />}
+              onClick={() => onTransition("resume")}
+            >
+              {t("whiteboard.resume")}
+            </Button>
+          ) : null}
+        </WhiteboardState>
+      )}
+    </div>
   );
 }
 

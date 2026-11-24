@@ -8,11 +8,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
 import {
+  ClassroomEndRoomDialog,
   ClassroomModerationControls,
   ClassroomParticipantModerationMenu,
+  classroomModerationBusy,
   type ClassroomModerationControlsModel,
 } from "./ClassroomModerationControls";
 
@@ -93,13 +96,34 @@ describe("ClassroomModerationControls", () => {
     ).toHaveAttribute("role", "status");
   });
 
-  it("requires confirmation for end and keeps the dialog until external apply", async () => {
-    const controls = createControls({ canEndRoom: true });
-    const view = renderModeration(
-      <ClassroomModerationControls controls={controls} />,
+  it("keeps End room out of the Top Bar slice (ROOM-COMPACT-05)", () => {
+    const endOnly = renderModeration(
+      <ClassroomModerationControls
+        controls={createControls({ canEndRoom: true })}
+      />,
     );
+    // Ending moved to the Dock's end-call popover: nothing renders here.
+    expect(endOnly.container).toBeEmptyDOMElement();
+    endOnly.unmount();
 
-    fireEvent.click(screen.getByRole("button", { name: "End room" }));
+    renderModeration(
+      <ClassroomModerationControls
+        controls={createControls({ canEndRoom: true, canLockRoom: true })}
+      />,
+    );
+    expect(
+      screen.getByRole("region", { name: "Classroom moderation controls" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lock room" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "End room" })).toBeNull();
+  });
+
+  it("requires confirmation for end, keeps the dialog until external apply and restores focus", async () => {
+    const controls = createControls({ canEndRoom: true });
+    const view = renderModeration(<EndRoomHarness controls={controls} />);
+
+    const opener = screen.getByRole("button", { name: "Open end dialog" });
+    fireEvent.click(opener);
     expect(
       screen.getByRole("heading", { name: "End this classroom?" }),
     ).toBeInTheDocument();
@@ -111,7 +135,7 @@ describe("ClassroomModerationControls", () => {
 
     view.rerender(
       moderationElement(
-        <ClassroomModerationControls
+        <EndRoomHarness
           controls={createControls({
             canEndRoom: true,
             providerEffect: { status: "applied", action: "end_room" },
@@ -124,6 +148,40 @@ describe("ClassroomModerationControls", () => {
         screen.queryByRole("heading", { name: "End this classroom?" }),
       ).not.toBeInTheDocument(),
     );
+    await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it("cancels the end dialog back to its opener and reports busy exactly", async () => {
+    const controls = createControls({ canEndRoom: true });
+    renderModeration(<EndRoomHarness controls={controls} />);
+
+    const opener = screen.getByRole("button", { name: "Open end dialog" });
+    fireEvent.click(opener);
+    // Either Cancel (footer or corner) dismisses without ending the room.
+    fireEvent.click(screen.getAllByRole("button", { name: "Cancel" })[0]!);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "End this classroom?" }),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(controls.onEndRoom).not.toHaveBeenCalled();
+
+    expect(classroomModerationBusy(controls)).toBe(false);
+    expect(
+      classroomModerationBusy(
+        createControls({
+          mutationState: { status: "submitting", action: "end_room" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      classroomModerationBusy(
+        createControls({
+          providerEffect: { status: "pending", action: "lock_room" },
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("offers exact row actions, remote mute only, and confirms removal", async () => {
@@ -246,6 +304,29 @@ function createControls(
     onRemoveParticipant: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
+}
+
+/** The Dock owns the dialog's open state; this harness stands in for it. */
+function EndRoomHarness({
+  controls,
+}: {
+  controls: ClassroomModerationControlsModel;
+}) {
+  const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button onClick={() => setOpen(true)} ref={opener} type="button">
+        Open end dialog
+      </button>
+      <ClassroomEndRoomDialog
+        controls={controls}
+        onOpenChange={setOpen}
+        open={open}
+        returnFocusRef={opener}
+      />
+    </>
+  );
 }
 
 function renderModeration(node: React.ReactNode) {

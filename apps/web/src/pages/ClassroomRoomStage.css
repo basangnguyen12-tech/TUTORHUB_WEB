@@ -18,6 +18,11 @@
  * on every floating surface and springy, reduced-motion-aware key presses.
  * The material tokens below are local to the room and its dark portals; the
  * global design tokens are not touched.
+ *
+ * ROOM-COMPACT-05 — one 40px Top Bar across the room (clock, presence, Lock,
+ * lesson name; the open tool's controls on the right), an edge-to-edge
+ * whiteboard card level with the 256px camera column, and a pill Dock whose
+ * end-call key holds End room / Leave room for hosts.
  */
 
 .media-p403-room.media-p405-room,
@@ -26,7 +31,9 @@
 .media-p408-chat-drawer,
 .media-p405-drawer,
 .media-p406-reaction-menu,
-.media-p407-participant-menu {
+.media-p407-participant-menu,
+.media-p405-layout-menu,
+.whiteboard-topbar-menu {
   /* Apple HIG type first; buttons read the stack through the token. */
   --font-family-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter",
@@ -171,8 +178,8 @@
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 16px 12px;
+  gap: 8px;
+  padding: 0 12px 10px;
   overflow: hidden;
   /* FaceTime-studio floor: a faint overhead glow the glass can refract. */
   background: radial-gradient(
@@ -194,13 +201,27 @@
   transform: scaleX(-1);
 }
 
-/* ---- Minimal header (Meet-style) ------------------------------------ */
+/* ---- ROOM-COMPACT-05: one 40px Top Bar ------------------------------- */
 
+/* Full-bleed across the room (it cancels the shell's side padding) and
+   stacked above the stage so the paper popover can hang over the board. */
 .media-p405-room .media-p405-header {
+  position: relative;
+  z-index: 20;
+  box-sizing: border-box;
+  height: 40px;
   min-height: 40px;
   flex-wrap: nowrap;
-  gap: 16px;
-  padding: 0 2px;
+  gap: 12px;
+  margin: 0 -12px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgb(255 255 255 / 6%);
+  background: linear-gradient(
+    180deg,
+    rgb(22 26 36 / 94%) 0%,
+    rgb(15 18 26 / 90%) 100%
+  );
+  box-shadow: 0 1px 0 rgb(0 0 0 / 28%);
 }
 
 .media-p405-room .media-p405-header-title {
@@ -208,7 +229,22 @@
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+/* Live capsule: connection dot + elapsed time. */
+.media-p405-room .media-p405-live-pill {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 0 9px;
+  border: 1px solid rgb(255 255 255 / 11%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 6%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .media-p405-connection-dot {
@@ -221,8 +257,8 @@
 }
 
 .media-p405-connection-dot[data-connection="connected"] {
-  background: #34d399;
-  box-shadow: 0 0 0 3px rgb(52 211 153 / 18%);
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgb(34 197 94 / 20%);
 }
 
 .media-p405-connection-dot:is(
@@ -233,53 +269,75 @@
   box-shadow: 0 0 0 3px rgb(248 113 113 / 18%);
 }
 
-.media-p405-room .media-p405-header h1 {
-  overflow: hidden;
+.media-p405-room .media-p405-session-clock {
+  flex: 0 0 auto;
   color: #f3f4f6;
-  font-size: 15px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
-  letter-spacing: -0.012em;
-  line-height: 1.3;
-  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* Presence: the polite status keeps "Connected / N participants" for AT;
+   sighted users read the short count beside the people glyph. */
+.media-p405-room .media-p405-header .media-p405-presence {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0 4px;
+  color: #d1d5db;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.003em;
+  line-height: 1;
   white-space: nowrap;
+}
+
+.media-p405-room .media-p405-presence-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: #cbd5e1;
+}
+
+.media-p405-room .media-p405-presence-full {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.media-p405-room .media-p405-presence-short {
+  display: inline;
 }
 
 .media-p405-header-divider {
   width: 1px;
   height: 16px;
   flex: 0 0 auto;
-  background: linear-gradient(
-    180deg,
-    rgb(255 255 255 / 0%),
-    rgb(255 255 255 / 20%),
-    rgb(255 255 255 / 0%)
-  );
+  margin: 0 4px;
+  background: rgb(255 255 255 / 16%);
 }
 
-/* The live clock reads like a Control Center capsule. */
-.media-p405-session-clock {
-  flex: 0 0 auto;
-  padding: 3px 9px;
-  border: 1px solid rgb(255 255 255 / 9%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 7%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
-  color: #e5e7eb;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.25;
-}
-
-.media-p405-room .media-p405-header p {
+.media-p405-room .media-p405-header .media-p405-room-title {
   min-width: 0;
-  margin-top: 0;
-  margin-left: 4px;
+  flex: 0 1 auto;
+  margin: 0;
   overflow: hidden;
-  color: #9ca3af;
-  font-size: 12.5px;
-  letter-spacing: -0.003em;
+  color: #f3f4f6;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -287,25 +345,36 @@
 .media-p405-header-actions {
   display: flex;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+}
+
+/* The open tool's controls (paper picker, ⋯) arrive through this slot. */
+.media-p405-room .media-p405-header-tool-slot {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-p405-room .media-p405-header-tool-slot:empty {
+  display: none;
 }
 
 .media-p405-room .media-p405-header-badges {
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: 6px;
 }
 
-/* Effects badge and listen-only badge: thin-vibrancy glass pills. */
-.media-p405-room .media-p405-header-badges > span,
-.media-p405-room .media-p405-effects-badge > span {
+/* Listen-only badge: a thin-vibrancy glass pill. */
+.media-p405-room .media-p405-header-badges > span {
   display: inline-flex;
-  min-height: 32px;
+  box-sizing: border-box;
+  height: 28px;
   align-items: center;
-  gap: 6px;
-  padding: 0 12px;
+  padding: 0 11px;
   border: 1px solid var(--room-rim);
   border-radius: 999px;
   background: var(--room-glass-thin);
@@ -313,88 +382,15 @@
   backdrop-filter: var(--room-blur-thin);
   box-shadow: var(--room-shadow-pill);
   color: #e5e7eb;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: -0.003em;
   white-space: nowrap;
-  transition:
-    background-color 160ms var(--room-ease-spring),
-    border-color 160ms var(--room-ease-spring),
-    box-shadow 160ms var(--room-ease-spring),
-    color 160ms var(--room-ease-spring);
 }
 
-/*
- * ROOM-MEET-DOCK-04: header keys are 36px icon-only circles (Google Meet's
- * top-right cluster). The full name is visually hidden inside each key and
- * shown by the room tooltip below it.
- */
-.media-p405-room .media-p405-effects-badge {
-  position: relative;
-  display: inline-flex;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.media-p405-room .media-p405-effects-badge > span {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  justify-content: center;
-  padding: 0;
-}
-
-.media-p405-room .media-p405-effects-badge svg {
-  width: 18px;
-  height: 18px;
-}
-
-/* An effect is on: a small lit dot on the sapphire key. */
-.media-p405-room .media-p405-effects-badge--on > span::after {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #93c5fd;
-  box-shadow:
-    0 0 0 2px rgb(22 25 34 / 90%),
-    0 0 6px rgb(147 197 253 / 70%);
-  content: "";
-}
-
-.media-p405-room .media-p405-effects-badge:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.media-p405-room .media-p405-effects-badge:hover:not(:disabled) > span {
-  border-color: rgb(255 255 255 / 20%);
-  background: var(--room-keycap-hover);
-  color: #f9fafb;
-}
-
-.media-p405-room .media-p405-effects-badge--on > span,
-.media-p405-room .media-p405-effects-badge[aria-expanded="true"] > span {
-  border-color: var(--room-sapphire-rim);
-  background: var(--room-sapphire);
-  box-shadow: var(--room-sapphire-shadow);
-  color: #dbeafe;
-}
-
-.media-p405-room .media-p405-effects-badge:focus-visible {
-  outline: 2px solid var(--room-focus-ring);
-  outline-offset: 2px;
-}
-
-/* Moderation (Lock room / End room) as matching 32px glass pills. */
+/* 28px round glass keys: Lock, the tool menu (⋯) and Close (✕). */
 .media-p405-room .media-p407-room-controls {
+  flex: 0 1 auto;
   gap: 8px;
   padding: 0;
   border: 0;
@@ -405,25 +401,112 @@
   flex-wrap: nowrap;
 }
 
-.media-p405-room .media-p407-room-actions .th-button {
+.media-p405-room .media-p407-room-actions .th-button,
+.media-p405-room .media-p405-header-close.th-icon-button,
+.media-p405-room .whiteboard-topbar-menu-trigger.th-icon-button {
   position: relative;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
+  box-sizing: border-box;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
   justify-content: center;
   gap: 0;
   padding: 0;
+  border: 1px solid rgb(255 255 255 / 11%);
   border-radius: 999px;
-  box-shadow: var(--room-shadow-pill);
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: -0.003em;
+  background: rgb(255 255 255 / 6%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  color: #e5e7eb;
 }
 
-.media-p405-room .media-p407-room-actions .th-button__icon svg {
-  width: 17px;
-  height: 17px;
+.media-p405-room .media-p407-room-actions .th-button__icon svg,
+.media-p405-room .media-p405-header-close svg,
+.media-p405-room .whiteboard-topbar-menu-trigger svg {
+  width: 15px;
+  height: 15px;
+}
+
+.media-p405-room
+  :is(
+    .media-p407-room-actions .th-button,
+    .media-p405-header-close.th-icon-button,
+    .whiteboard-topbar-menu-trigger.th-icon-button
+  ):hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 20%);
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-topbar-menu-trigger[aria-expanded="true"] {
+  border-color: #3b82f6;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+}
+
+.media-p405-room .media-p407-room-actions .th-button--primary,
+.media-p405-room
+  .media-p407-room-actions
+  .th-button--primary:hover:not(:disabled) {
+  border-color: #3b82f6;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+}
+
+.media-p405-room
+  :is(
+    .media-p407-room-actions .th-button,
+    .media-p405-header-close,
+    .whiteboard-topbar-menu-trigger
+  ):focus-visible {
+  outline: 2px solid var(--room-focus-ring);
+  outline-offset: 2px;
+}
+
+.media-p405-room .media-p407-status {
+  max-width: 24ch;
+  margin: 0;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-p405-room .media-p407-status[role="alert"] {
+  color: #fca5a5;
+}
+
+/* Paper picker in the Top Bar: a 28px glass pill (swatch + caret). */
+.media-p405-room .media-p405-header .whiteboard-paper-picker {
+  flex: 0 0 auto;
+}
+
+.media-p405-room .media-p405-header .whiteboard-paper-trigger,
+.media-p405-room .media-p405-header .whiteboard-paper-readonly {
+  box-sizing: border-box;
+  height: 28px;
+  min-height: 28px;
+}
+
+.media-p405-room .media-p405-header .whiteboard-paper-readonly {
+  max-width: 22ch;
+  gap: 6px;
+  padding: 0 10px 0 7px;
+  border-style: solid;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.media-p405-room .whiteboard-topbar,
+.media-p405-room .whiteboard-topbar-paper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-p405-room .whiteboard-topbar-paper:empty {
+  display: none;
 }
 
 /*
@@ -448,60 +531,6 @@
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-.media-p405-room .media-p407-room-actions .th-button--secondary {
-  border-color: var(--room-rim);
-  background: var(--room-glass-thin);
-  -webkit-backdrop-filter: var(--room-blur-thin);
-  backdrop-filter: var(--room-blur-thin);
-  color: #e5e7eb;
-}
-
-.media-p405-room
-  .media-p407-room-actions
-  .th-button--secondary:hover:not(:disabled) {
-  border-color: rgb(255 255 255 / 20%);
-  background: var(--room-keycap-hover);
-  color: #f9fafb;
-}
-
-.media-p405-room .media-p407-room-actions .th-button--primary,
-.media-p405-room
-  .media-p407-room-actions
-  .th-button--primary:hover:not(:disabled) {
-  border-color: var(--room-sapphire-rim);
-  background: var(--room-sapphire);
-  box-shadow: var(--room-sapphire-shadow);
-  color: #dbeafe;
-}
-
-.media-p405-room .media-p407-room-actions .th-button--danger,
-.media-p405-room
-  .media-p407-room-actions
-  .th-button--danger:hover:not(:disabled) {
-  border-color: #dc2626;
-  background-color: #dc2626;
-  background-image: var(--room-ruby-sheen);
-  box-shadow: var(--room-ruby-shadow-sm);
-  color: #fff;
-}
-
-.media-p405-room
-  .media-p407-room-actions
-  .th-button--danger:hover:not(:disabled) {
-  border-color: #b91c1c;
-  background-color: #b91c1c;
-}
-
-.media-p405-room .media-p407-status {
-  max-width: 28ch;
-  color: #9ca3af;
-  font-size: 12px;
-}
-
-.media-p405-room .media-p407-status[role="alert"] {
-  color: #fca5a5;
 }
 
 /* ---- Compact notices ------------------------------------------------ */
@@ -998,10 +1027,10 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  /* 44px keys + 6px padding + 1px rim: a 58px Meet-height Dock. */
-  --room-dock-radius: 29px;
-  padding: 6px 8px;
+  gap: 8px;
+  /* ROOM-COMPACT-05: 42px keys + 6px padding + 1px rim: a 56px pill. */
+  --room-dock-radius: 999px;
+  padding: 6px 10px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: var(--room-dock-radius);
   background: transparent;
@@ -1028,14 +1057,19 @@
 .media-p405-room .media-p405-toolbar {
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+/* The microphone and camera stay a pair, a little apart from the rest. */
+.media-p405-room .media-p405-toolbar > #media-p405-control-camera {
+  margin-inline-end: 6px;
 }
 
 /*
- * ROOM-MEET-DOCK-04 — Google Meet icon-only Dock in Liquid Glass. No caption
- * sits under any icon at any width: every key is a 44px circle, the layout
- * switch a 44px stadium groove, Leave a ruby end-call pill, and each name
- * shows in the room tooltip on hover or keyboard focus.
+ * ROOM-MEET-DOCK-04 / ROOM-COMPACT-05 — Google Meet icon-only Dock in Liquid
+ * Glass. No caption sits under any icon at any width: every key is a 42px
+ * circle (the layout switch included), one divider sets the ruby end-call
+ * pill apart, and each name shows in the room tooltip on hover or focus.
  */
 .media-p405-room .media-p405-dock-divider {
   display: none;
@@ -1052,13 +1086,13 @@
   }
 }
 
-/* Every Dock control: a 44px circular key (touch-size). */
+/* Every Dock control: a 42px circular key (44px on touch screens). */
 .media-p405-room .media-p405-dock-button.th-icon-button {
   position: relative;
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
-  min-height: 44px;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
   padding: 0;
   border: 1px solid rgb(255 255 255 / 6%);
   border-radius: 999px;
@@ -1122,17 +1156,23 @@
   background-color: #b91c1c;
 }
 
-/* Cluster 2: on (pressed / expanded / active) glows as sapphire glass. */
+/*
+ * On (pressed / expanded / active, e.g. the open whiteboard): bright solid
+ * sapphire. White reads 5.17:1 on #2563eb; the lighter top only carries the
+ * icon (graphics need 3:1).
+ */
 .media-p405-room
   .media-p405-dock-button:is(
     .th-button--primary,
     [aria-pressed="true"],
     [aria-expanded="true"]
   ):not(.th-button--danger) {
-  border-color: var(--room-sapphire-rim);
-  background: var(--room-sapphire);
-  box-shadow: var(--room-sapphire-shadow);
-  color: #dbeafe;
+  border-color: #3b82f6;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 22%),
+    0 6px 16px -4px rgb(37 99 235 / 55%);
+  color: #fff;
 }
 
 .media-p405-room
@@ -1141,14 +1181,15 @@
     [aria-pressed="true"],
     [aria-expanded="true"]
   ):not(.th-button--danger):hover:not(:disabled) {
-  border-color: rgb(147 197 253 / 58%);
-  background: var(--room-sapphire-hover);
-  box-shadow: var(--room-sapphire-shadow);
-  color: #eff6ff;
+  border-color: #60a5fa;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 22%),
+    0 6px 16px -4px rgb(37 99 235 / 60%);
+  color: #fff;
 }
 
 .media-p405-room .media-p405-dock-button:focus-visible,
-.media-p405-room .media-p405-layout-button:focus-visible,
 .media-p405-room .media-p405-dock-leave:focus-visible {
   outline: 2px solid var(--room-focus-ring);
   outline-offset: 2px;
@@ -1182,71 +1223,54 @@
   place-items: center;
 }
 
-/* Cluster 3: layout as a recessed stadium groove of 38px round keys. */
-.media-p405-room .media-p405-layout-controls {
+/* Layout menu (portal): Grid / Active speaker / Presentation, ✓ on the
+   current mode. Radix's radio dot is replaced by the trailing check. */
+.th-menu-content.media-p405-layout-menu {
+  min-width: 216px;
+  padding: 6px;
+}
+
+.media-p405-layout-menu .th-menu-item.media-p405-layout-option {
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.media-p405-layout-menu .th-menu-item__indicator {
+  display: none;
+}
+
+.media-p405-layout-option__icon {
   display: inline-flex;
-  align-items: center;
-  padding-left: 0;
-  border-left: 0;
+  flex: 0 0 auto;
 }
 
-.media-p405-room .media-p405-layout-pill {
-  display: inline-flex;
-  box-sizing: border-box;
-  min-height: 44px;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--room-groove-track);
-  box-shadow:
-    inset 0 0 0 1px rgb(0 0 0 / 18%),
-    var(--room-groove-track-shadow);
+.media-p405-layout-option__icon svg {
+  width: 17px;
+  height: 17px;
 }
 
-.media-p405-room .media-p405-layout-button.th-icon-button {
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
-  min-height: 38px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  box-shadow: none;
-  color: #cbd5e1;
+.media-p405-layout-option__label {
+  flex: 1 1 auto;
 }
 
-.media-p405-room .media-p405-layout-button svg {
-  width: 18px;
-  height: 18px;
+.media-p405-layout-menu .media-p405-layout-option__check {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: #93c5fd;
 }
 
-.media-p405-room .media-p405-layout-button.th-icon-button:hover:not(:disabled) {
-  background: rgb(255 255 255 / 8%);
-  color: #fff;
-}
-
-.media-p405-room .media-p405-layout-button.th-icon-button[aria-pressed="true"],
-.media-p405-room
-  .media-p405-layout-button.th-icon-button[aria-pressed="true"]:hover:not(
-    :disabled
-  ) {
-  background: var(--room-groove-knob);
-  box-shadow: var(--room-groove-knob-shadow);
-  color: #fff;
-}
-
-/* Cluster 4: Leave, a Google Meet end-call pill in anodized ruby. */
+/* The end-call pill: 56 × 42 anodized ruby. */
 .media-p405-room .media-p405-dock-leave.th-button {
   position: relative;
-  min-width: 58px;
-  height: 44px;
-  min-height: 44px;
+  box-sizing: border-box;
+  width: 56px;
+  min-width: 56px;
+  height: 42px;
+  min-height: 42px;
   justify-content: center;
   gap: 0;
-  padding: 0 18px;
+  padding: 0;
   border: 1px solid #dc2626;
   border-radius: 999px;
   background-color: #dc2626;
@@ -1255,7 +1279,8 @@
   color: #fff;
 }
 
-.media-p405-room .media-p405-dock-leave.th-button:hover:not(:disabled) {
+.media-p405-room .media-p405-dock-leave.th-button:hover:not(:disabled),
+.media-p405-room .media-p405-dock-leave.th-button[aria-expanded="true"] {
   border-color: #b91c1c;
   background-color: #b91c1c;
   background-image: var(--room-ruby-sheen);
@@ -1265,6 +1290,81 @@
   width: 20px;
   height: 20px;
   stroke-width: 2;
+}
+
+/*
+ * Host end-call popover: two Liquid Glass choices 10px above the pill, right
+ * aligned. Its ::after is a transparent 12px bridge over the gap, so the
+ * pointer slides from the pill to a choice without leaving the control.
+ */
+.media-p405-room .media-p405-leave-popover {
+  bottom: calc(100% + 10px);
+  width: 216px;
+  padding: 8px;
+  border: 1px solid var(--room-rim-strong);
+  border-radius: 16px;
+  background: var(--room-glass-popover);
+  -webkit-backdrop-filter: var(--room-blur-popover);
+  backdrop-filter: var(--room-blur-popover);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 20%),
+    0 2px 6px rgb(0 0 0 / 28%),
+    0 28px 60px -12px rgb(0 0 0 / 66%);
+  animation: room-leave-popover-in 140ms var(--room-ease-spring) both;
+}
+
+@keyframes room-leave-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.media-p405-room .media-p405-leave-option {
+  min-height: 40px;
+  border-radius: 11px;
+  font-family: var(--font-family-sans);
+  font-size: 13.5px;
+  letter-spacing: -0.003em;
+  transition:
+    background-color 160ms var(--room-ease-spring),
+    border-color 160ms var(--room-ease-spring);
+}
+
+/* Ruby keeps #dc2626 under the label (white 4.83:1). */
+.media-p405-room .media-p405-leave-option--end {
+  border-color: #dc2626;
+  background-color: #dc2626;
+  background-image: var(--room-ruby-sheen);
+  box-shadow: var(--room-ruby-shadow-sm);
+  color: #fff;
+}
+
+.media-p405-room .media-p405-leave-option--end:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background-color: #b91c1c;
+}
+
+.media-p405-room .media-p405-leave-option--leave {
+  border-color: rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 7%);
+  color: #f3f4f6;
+}
+
+.media-p405-room .media-p405-leave-option--leave:hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 20%);
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+}
+
+.media-p405-room .media-p405-leave-option:focus-visible {
+  outline: 2px solid var(--room-focus-ring);
+  outline-offset: 2px;
 }
 
 /*
@@ -1370,7 +1470,12 @@
 
 /* ---- Reaction & participant menus (portals) ------------------------- */
 
-.th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu) {
+.th-menu-content:is(
+  .media-p406-reaction-menu,
+  .media-p407-participant-menu,
+  .media-p405-layout-menu,
+  .whiteboard-topbar-menu
+) {
   border: 1px solid var(--room-rim-strong);
   border-radius: 20px;
   background: var(--room-glass-popover);
@@ -1389,12 +1494,36 @@
   padding: 6px;
 }
 
-.th-menu-content.media-p407-participant-menu {
+.th-menu-content:is(
+  .media-p407-participant-menu,
+  .media-p405-layout-menu,
+  .whiteboard-topbar-menu
+) {
   padding: 6px;
   border-radius: 16px;
 }
 
-:is(.media-p406-reaction-menu, .media-p407-participant-menu) .th-menu-item {
+.th-menu-content.whiteboard-topbar-menu {
+  min-width: 216px;
+}
+
+.whiteboard-topbar-menu .th-menu-item svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.whiteboard-topbar-menu .th-menu-item--danger {
+  color: #fca5a5;
+}
+
+:is(
+    .media-p406-reaction-menu,
+    .media-p407-participant-menu,
+    .media-p405-layout-menu,
+    .whiteboard-topbar-menu
+  )
+  .th-menu-item {
   gap: 8px;
   min-height: 40px;
   border-radius: 11px;
@@ -1404,7 +1533,12 @@
   transition: background-color 140ms var(--room-ease-spring);
 }
 
-:is(.media-p406-reaction-menu, .media-p407-participant-menu)
+:is(
+    .media-p406-reaction-menu,
+    .media-p407-participant-menu,
+    .media-p405-layout-menu,
+    .whiteboard-topbar-menu
+  )
   .th-menu-item[data-highlighted] {
   background: rgb(255 255 255 / 10%);
   color: #fff;
@@ -1585,83 +1719,30 @@
   color: #fcd34d;
 }
 
-/* ---- Tool stage: a Keynote / Freeform window ------------------------ */
+/* ---- Tool stage: an edge-to-edge paper card (ROOM-COMPACT-05) ------- */
 
 .media-p506-tool-stage {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+  padding: 0;
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 20px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 16px;
   background: #151922;
   box-shadow:
     0 2px 6px rgb(0 0 0 / 28%),
     0 28px 64px -16px rgb(0 0 0 / 66%);
 }
 
-/* Translucent titlebar with a specular top edge. */
-.media-p506-tool-stage__header {
-  display: flex;
-  min-height: 40px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 8px 4px 16px;
-  border-bottom: 1px solid rgb(255 255 255 / 8%);
-  background: linear-gradient(
-    180deg,
-    rgb(34 39 50 / 88%) 0%,
-    rgb(24 28 37 / 88%) 100%
-  );
-  -webkit-backdrop-filter: blur(20px) saturate(170%);
-  backdrop-filter: blur(20px) saturate(170%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%);
-}
-
-.media-p506-tool-stage__header h2 {
-  margin: 0;
-  overflow: hidden;
-  color: #e5e7eb;
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: -0.006em;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.media-p506-tool-stage__header h2:focus-visible {
-  outline: 2px solid #93c5fd;
+/*
+ * ROOM-COMPACT-05B: the stage heading is visually hidden but takes focus when
+ * a tool opens; keyboard users see the ring on the whole paper card instead.
+ */
+.media-p405-room .media-p506-tool-stage:has(> h2:focus-visible) {
+  outline: 2px solid var(--room-focus-ring);
   outline-offset: 2px;
-}
-
-.media-p506-tool-stage__header .th-button {
-  min-height: 30px;
-  padding: 0 12px;
-  border-color: rgb(255 255 255 / 13%);
-  border-radius: 999px;
-  background: linear-gradient(
-    180deg,
-    rgb(255 255 255 / 11%) 0%,
-    rgb(255 255 255 / 5.5%) 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 16%),
-    0 1px 3px rgb(0 0 0 / 24%);
-  color: #e5e7eb;
-}
-
-.media-p506-tool-stage__header .th-button:hover:not(:disabled) {
-  border-color: rgb(255 255 255 / 20%);
-  background: linear-gradient(
-    180deg,
-    rgb(255 255 255 / 16%) 0%,
-    rgb(255 255 255 / 9%) 100%
-  );
-  color: #fff;
 }
 
 .media-p506-tool-stage__body {
@@ -1670,9 +1751,8 @@
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 8px;
-  padding: 6px;
-  overflow: auto;
+  padding: 0;
+  overflow: hidden;
 }
 
 .media-p506-tool-stage .whiteboard-tool,
@@ -1680,10 +1760,7 @@
   width: 100%;
   min-height: 0;
   flex: 1 1 auto;
-}
-
-.media-p506-tool-stage .whiteboard-tool {
-  gap: 8px;
+  gap: 0;
 }
 
 .media-p506-tool-stage .whiteboard-engine-canvas {
@@ -1691,14 +1768,27 @@
   height: auto;
   min-height: 0;
   flex: 1 1 auto;
+  border-radius: 0;
 }
 
 .media-p506-tool-stage .whiteboard-tool-state {
   min-height: 0;
   flex: 1 1 auto;
+  border: 0;
+  border-radius: 0;
+  color: #e5e7eb;
 }
 
-/* The stage header already names the tool; keep the inner title for AT. */
+.media-p506-tool-stage .whiteboard-tool-error {
+  margin: 0;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgb(248 113 113 / 45%);
+  background: rgb(127 29 29 / 55%);
+  color: #fecaca;
+  font-size: 13px;
+}
+
+/* A standalone board (not the classroom slot) keeps its inner title for AT. */
 .media-p506-tool-stage .whiteboard-tool-title {
   position: absolute;
   width: 1px;
@@ -1754,7 +1844,7 @@
     0 1px 2px rgb(0 0 0 / 32%);
 }
 
-/* A Control Center module hanging from the tool titlebar. */
+/* A Control Center module hanging below the Top Bar, right aligned. */
 .media-p405-room .whiteboard-paper-popover {
   gap: 12px;
   padding: 14px;
@@ -1848,104 +1938,7 @@
   outline-offset: 2px;
 }
 
-/* ---- ROOM-MEET-DOCK-04: compact whiteboard keys ----------------------
- * Close (30px), the whiteboard actions and the text view (32px) become
- * round icon keys; the paper picker shrinks to its paper swatch and caret.
- * Every name stays the accessible name and shows in the room tooltip.
- */
-.media-p405-room .media-p506-tool-stage__close.th-button {
-  position: relative;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
-  min-height: 30px;
-  gap: 0;
-  padding: 0;
-}
-
-.media-p405-room .media-p506-tool-stage__close .th-button__icon svg {
-  width: 16px;
-  height: 16px;
-}
-
-.media-p405-room .whiteboard-action.th-button,
-.media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
-  position: relative;
-  display: inline-flex;
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  padding: 0;
-  border-radius: 999px;
-}
-
-.media-p405-room .whiteboard-action .th-button__icon svg,
-.media-p405-room .whiteboard-action-icon {
-  width: 16px;
-  height: 16px;
-}
-
-.media-p405-room .whiteboard-action.th-button--secondary,
-.media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
-  border: 1px solid rgb(255 255 255 / 13%);
-  background: var(--room-glass-thin);
-  box-shadow: var(--room-shadow-pill);
-  color: #e5e7eb;
-}
-
-/* The trial notice keeps its amber hint on the glass key. */
-.media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
-  color: #fcd34d;
-  cursor: pointer;
-}
-
-.media-p405-room .whiteboard-action.th-button--secondary:hover:not(:disabled),
-.media-p405-room
-  .whiteboard-trial-disclosure
-  > summary.whiteboard-action:hover {
-  border-color: rgb(255 255 255 / 20%);
-  background: var(--room-keycap-hover);
-}
-
-.media-p405-room
-  .whiteboard-trial-disclosure[open]
-  > summary.whiteboard-action {
-  border-color: var(--room-sapphire-rim);
-  background: var(--room-sapphire);
-  box-shadow: var(--room-sapphire-shadow);
-}
-
-.media-p405-room .whiteboard-action.th-button--primary,
-.media-p405-room .whiteboard-action.th-button--primary:hover:not(:disabled) {
-  border-color: var(--room-sapphire-rim);
-  background: var(--room-sapphire);
-  box-shadow: var(--room-sapphire-shadow);
-  color: #eff6ff;
-}
-
-.media-p405-room .whiteboard-action.th-button--danger,
-.media-p405-room .whiteboard-action.th-button--danger:hover:not(:disabled) {
-  border-color: #dc2626;
-  background-color: #dc2626;
-  background-image: var(--room-ruby-sheen);
-  box-shadow: var(--room-ruby-shadow-sm);
-  color: #fff;
-}
-
-.media-p405-room .whiteboard-action.th-button--danger:hover:not(:disabled) {
-  border-color: #b91c1c;
-  background-color: #b91c1c;
-}
-
-.media-p405-room .whiteboard-action:focus-visible {
-  outline: 2px solid var(--room-focus-ring);
-  outline-offset: 2px;
-}
-
+/* The paper trigger shrinks to its swatch and caret (label kept for AT). */
 .media-p405-room .whiteboard-paper-trigger {
   position: relative;
   gap: 5px;
@@ -2064,8 +2057,25 @@
 }
 
 .media-p405-room .media-p405-classroom--tool-stage .media-p405-tile {
-  border-radius: 12px;
+  border-color: rgb(147 197 253 / 22%);
+  border-radius: 14px;
   aspect-ratio: 16 / 9;
+}
+
+/* A small live dot before each name in the camera column. */
+.media-p405-room
+  .media-p405-classroom--tool-stage
+  .media-p405-tile-meta
+  > span::before {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgb(34 197 94 / 22%);
+  content: "";
+  vertical-align: 1px;
 }
 
 .media-p405-classroom--tool-stage .media-p405-tile--rail {
@@ -2093,6 +2103,10 @@
 
 @media (max-width: 959px) {
   .media-p405-room .media-p405-header-badges {
+    display: none;
+  }
+
+  .media-p405-room .media-p407-status {
     display: none;
   }
 
@@ -2142,55 +2156,34 @@
 @media (max-width: 767px) {
   .media-p405-room .media-p405-shell {
     gap: 8px;
-    padding: 8px 8px 10px;
+    padding: 0 8px 10px;
   }
 
+  /* Phones: the Top Bar may grow to a second row instead of overflowing. */
   .media-p405-room .media-p405-header {
+    height: auto;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
     row-gap: 6px;
+    margin: 0 -8px;
+    padding: 6px 8px;
   }
 
   .media-p405-room .media-p405-header-title {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-
-  .media-p405-room .media-p405-header p {
-    flex: 1 1 100%;
-    margin-left: 18px;
-    white-space: normal;
+    flex-wrap: nowrap;
   }
 
   .media-p405-room .media-p405-header-actions {
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    margin-left: auto;
   }
 
   .media-p405-room .media-p407-room-controls {
     flex-direction: row;
-    flex-wrap: wrap;
-  }
-
-  .media-p405-room .media-p407-room-actions {
-    flex-wrap: wrap;
-  }
-
-  .media-p405-room .media-p407-room-actions .th-button {
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
-  }
-
-  .media-p405-room .media-p405-effects-badge > span {
-    width: 44px;
-    height: 44px;
   }
 
   .media-p405-room .media-p405-footer {
-    --room-dock-radius: 18px;
+    --room-dock-radius: 24px;
     flex-direction: row;
     padding: 6px;
   }
@@ -2198,12 +2191,32 @@
   .media-p405-room .media-p405-toolbar {
     gap: 2px;
   }
+
+  .media-p405-room .media-p405-toolbar > #media-p405-control-camera {
+    margin-inline-end: 0;
+  }
+
+  /* The Dock may wrap: hang the end-call popover from the Dock's right edge
+     so it always stays on screen. */
+  .media-p405-room .media-p405-leave {
+    position: static;
+  }
+
+  .media-p405-room .media-p405-leave-popover {
+    right: 6px;
+  }
 }
 
+/* Touch screens: 44px targets for the Dock and the Top Bar keys. */
 @media (pointer: coarse) {
-  .media-p405-room .media-p405-layout-button.th-icon-button {
+  .media-p405-room .media-p405-dock-button.th-icon-button {
     width: 44px;
     min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .media-p405-room .media-p405-dock-leave.th-button {
     height: 44px;
     min-height: 44px;
   }
@@ -2216,14 +2229,13 @@
 .media-p405-room
   :is(
     .media-p405-dock-button,
-    .media-p405-layout-button,
     .media-p405-dock-leave,
-    .media-p405-effects-badge,
+    .media-p405-leave-option,
     .media-p405-tile-meta .th-button,
     .media-p407-room-actions .th-button,
-    .media-p405-shell > .th-button,
-    .media-p506-tool-stage__header .th-button,
-    .whiteboard-action
+    .media-p405-header-close,
+    .whiteboard-topbar-menu-trigger,
+    .media-p405-shell > .th-button
   ) {
   transition:
     background-color 180ms var(--room-ease-spring),
@@ -2237,14 +2249,13 @@
 .media-p405-room
   :is(
     .media-p405-dock-button,
-    .media-p405-layout-button,
     .media-p405-dock-leave,
-    .media-p405-effects-badge,
+    .media-p405-leave-option,
     .media-p405-tile-meta .th-button,
     .media-p407-room-actions .th-button,
-    .media-p405-shell > .th-button,
-    .media-p506-tool-stage__header .th-button,
-    .whiteboard-action
+    .media-p405-header-close,
+    .whiteboard-topbar-menu-trigger,
+    .media-p405-shell > .th-button
   ):hover:not(:disabled) {
   transform: none;
 }
@@ -2252,14 +2263,13 @@
 .media-p405-room
   :is(
     .media-p405-dock-button,
-    .media-p405-layout-button,
     .media-p405-dock-leave,
-    .media-p405-effects-badge,
+    .media-p405-leave-option,
     .media-p405-tile-meta .th-button,
     .media-p407-room-actions .th-button,
-    .media-p405-shell > .th-button,
-    .media-p506-tool-stage__header .th-button,
-    .whiteboard-action
+    .media-p405-header-close,
+    .whiteboard-topbar-menu-trigger,
+    .media-p405-shell > .th-button
   ):active:not(:disabled) {
   transform: scale(var(--room-press-scale));
 }
@@ -2274,11 +2284,15 @@
 @supports (corner-shape: squircle) {
   .media-p405-room .media-p405-tile,
   .media-p405-room .media-p405-tile::after,
-  .media-p405-room .media-p405-footer,
-  .media-p405-room .media-p405-footer::before,
   .media-p405-room .media-p405-device-panel,
+  .media-p405-room .media-p405-leave-popover,
   .media-p506-tool-stage,
-  .th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu) {
+  .th-menu-content:is(
+    .media-p406-reaction-menu,
+    .media-p407-participant-menu,
+    .media-p405-layout-menu,
+    .whiteboard-topbar-menu
+  ) {
     corner-shape: squircle;
   }
 
@@ -2294,29 +2308,22 @@
   }
 
   .media-p405-room .media-p405-classroom--tool-stage .media-p405-tile {
-    border-radius: 21.6px;
-  }
-
-  .media-p405-room .media-p405-footer {
-    --room-dock-radius: 39.6px;
+    border-radius: 25.2px;
   }
 
   .media-p405-room .media-p405-device-panel,
-  .media-p506-tool-stage,
   .th-menu-content.media-p406-reaction-menu {
     border-radius: 36px;
   }
 
-  .th-menu-content.media-p407-participant-menu {
+  .media-p506-tool-stage,
+  .media-p405-room .media-p405-leave-popover,
+  .th-menu-content:is(
+    .media-p407-participant-menu,
+    .media-p405-layout-menu,
+    .whiteboard-topbar-menu
+  ) {
     border-radius: 28.8px;
-  }
-}
-
-@supports (corner-shape: squircle) {
-  @media (max-width: 767px) {
-    .media-p405-room .media-p405-footer {
-      --room-dock-radius: 32.4px;
-    }
   }
 }
 
@@ -2328,9 +2335,13 @@
   .media-p405-room .media-p405-footer,
   .media-p405-room .media-p405-tile,
   .media-p405-room .media-p405-device-panel,
-  .media-p405-room .media-p405-layout-pill {
+  .media-p405-room .media-p405-leave-popover {
     border: 1px solid CanvasText;
     forced-color-adjust: auto;
+  }
+
+  .media-p405-room .media-p405-header {
+    border-bottom: 1px solid CanvasText;
   }
 
   /*
@@ -2343,13 +2354,19 @@
   }
 
   .media-p405-room .media-p405-shell,
+  .media-p405-room .media-p405-header,
   .media-p405-room .media-p405-footer,
   .media-p405-room .media-p405-tile,
   .media-p405-room .media-p405-device-panel,
+  .media-p405-room .media-p405-leave-popover,
   .media-p405-room .media-p405-notice,
   .media-p405-room .media-p405-error,
-  .media-p506-tool-stage__header,
-  .th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu),
+  .th-menu-content:is(
+    .media-p406-reaction-menu,
+    .media-p407-participant-menu,
+    .media-p405-layout-menu,
+    .whiteboard-topbar-menu
+  ),
   .th-dialog-content.th-drawer-content:is(
       .media-p405-effects-drawer,
       .media-p406-roster-drawer,
@@ -2368,7 +2385,12 @@
       .media-p408-chat-drawer,
       .media-p405-drawer
     )[data-theme="dark"],
-  .th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu) {
+  .th-menu-content:is(
+    .media-p406-reaction-menu,
+    .media-p407-participant-menu,
+    .media-p405-layout-menu,
+    .whiteboard-topbar-menu
+  ) {
     border-color: CanvasText;
     color: CanvasText;
   }
@@ -2379,14 +2401,13 @@
    * states its own system colour pair (gradients and blur drop out anyway).
    */
   .media-p405-room .media-p405-dock-button.th-icon-button,
-  .media-p405-room .media-p405-layout-button.th-icon-button,
   .media-p405-room .media-p405-dock-leave.th-button,
+  .media-p405-room .media-p405-leave-option,
   .media-p405-room .media-p407-room-actions .th-button,
+  .media-p405-room .media-p405-header-close.th-icon-button,
+  .media-p405-room .whiteboard-topbar-menu-trigger.th-icon-button,
   .media-p405-room .media-p405-shell > .th-button,
-  .media-p405-room .media-p405-tile-meta .th-button,
-  .media-p506-tool-stage__header .th-button,
-  .media-p405-room .whiteboard-action.th-button,
-  .media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
+  .media-p405-room .media-p405-tile-meta .th-button {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     border: 1px solid ButtonText;
@@ -2395,6 +2416,11 @@
     color: ButtonText;
     forced-color-adjust: none;
     opacity: 1;
+  }
+
+  /* End room keeps a heavier rim so it never reads like Leave room. */
+  .media-p405-room .media-p405-leave-option--end {
+    border-width: 2px;
   }
 
   /* The room tooltip: an opaque system pill with a solid rim. */
@@ -2408,19 +2434,15 @@
     forced-color-adjust: none;
   }
 
-  .media-p405-room .media-p405-effects-badge--on > span::after {
-    background: Highlight;
-    box-shadow: none;
-  }
-
   .media-p405-room
     .media-p405-dock-button.th-icon-button:is(
       .th-button--primary,
       [aria-pressed="true"],
       [aria-expanded="true"]
     ),
+  .media-p405-room .media-p405-dock-leave.th-button[aria-expanded="true"],
   .media-p405-room
-    .media-p405-layout-button.th-icon-button[aria-pressed="true"],
+    .whiteboard-topbar-menu-trigger.th-icon-button[aria-expanded="true"],
   .media-p405-room .media-p407-room-actions .th-button[aria-pressed="true"] {
     border-color: Highlight;
     background: Highlight;
@@ -2432,13 +2454,13 @@
   .media-p403-room.media-p405-room
     :is(
       .media-p405-dock-button.th-icon-button,
-      .media-p405-layout-button.th-icon-button,
       .media-p405-dock-leave.th-button,
+      .media-p405-leave-option,
       .media-p407-room-actions .th-button,
+      .media-p405-header-close.th-icon-button,
+      .whiteboard-topbar-menu-trigger.th-icon-button,
       .media-p405-shell > .th-button,
-      .media-p405-tile-meta .th-button,
-      .media-p506-tool-stage__header .th-button,
-      .whiteboard-action
+      .media-p405-tile-meta .th-button
     ):hover:not(:disabled) {
     border-color: Highlight;
     background: ButtonFace;
@@ -2453,7 +2475,8 @@
           [aria-pressed="true"],
           [aria-expanded="true"]
         ),
-      .media-p405-layout-button.th-icon-button[aria-pressed="true"],
+      .media-p405-dock-leave.th-button[aria-expanded="true"],
+      .whiteboard-topbar-menu-trigger.th-icon-button[aria-expanded="true"],
       .media-p407-room-actions .th-button[aria-pressed="true"]
     ):hover:not(:disabled) {
     border-color: ButtonText;
@@ -2462,14 +2485,14 @@
   }
 
   .media-p405-room .media-p405-dock-button.th-icon-button:disabled,
-  .media-p405-room .media-p405-layout-button.th-icon-button:disabled,
+  .media-p405-room .media-p405-leave-option:disabled,
   .media-p405-room .media-p407-room-actions .th-button:disabled {
     border-color: GrayText;
     color: GrayText;
   }
 
   .media-p405-room .media-p405-header-badges > span,
-  .media-p405-room .media-p405-effects-badge > span,
+  .media-p405-room .media-p405-live-pill,
   .media-p405-room .media-p405-tile-meta > span,
   .media-p406-lobby-banner,
   .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-role,
@@ -2484,53 +2507,52 @@
     forced-color-adjust: none;
   }
 
-  .media-p403-room.media-p405-room
-    .media-p405-header-badges
-    .media-p405-effects-badge:is(
-      :hover,
-      [aria-expanded="true"],
-      .media-p405-effects-badge--on
-    )
-    > span {
-    border-color: CanvasText;
-    background: Canvas;
-    box-shadow: none;
-    color: CanvasText;
-  }
-
   /* Studio text colours are authored for the dark floor: use system text. */
   .media-p403-room.media-p405-room,
   .media-p405-room .media-p405-header h1,
+  .media-p405-room .media-p405-header .media-p405-room-title,
   .media-p405-room .media-p405-session-clock,
-  .media-p405-room .media-p405-header p,
+  .media-p405-room .media-p405-header .media-p405-presence,
+  .media-p405-room .media-p405-presence-icon,
   .media-p405-room .media-p407-status,
   .media-p405-room .media-p407-status[role="alert"],
   .media-p405-room .media-p405-notice,
   .media-p405-room .media-p405-error,
   .media-p405-room .media-p405-empty,
   .media-p405-room .media-p405-pagination,
-  .media-p405-room .media-p405-layout-controls,
   .media-p405-room .media-p405-avatar,
   .media-p405-room .media-p405-device-panel label,
-  .media-p506-tool-stage__header h2,
+  .media-p506-tool-stage .whiteboard-tool-state,
   .media-p406-roster-drawer .media-p406-roster-person strong,
   .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-self,
   .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-connection,
-  :is(.media-p406-reaction-menu, .media-p407-participant-menu) .th-menu-item {
+  :is(
+      .media-p406-reaction-menu,
+      .media-p407-participant-menu,
+      .media-p405-layout-menu,
+      .whiteboard-topbar-menu
+    )
+    .th-menu-item,
+  .media-p405-layout-menu .media-p405-layout-option__check {
     color: CanvasText;
   }
 
-  :is(.media-p406-reaction-menu, .media-p407-participant-menu)
+  :is(
+      .media-p406-reaction-menu,
+      .media-p407-participant-menu,
+      .media-p405-layout-menu,
+      .whiteboard-topbar-menu
+    )
     .th-menu-item[data-highlighted] {
     background: Highlight;
     color: HighlightText;
     forced-color-adjust: none;
   }
 
-  .media-p405-room .media-p405-session-clock {
-    border-color: CanvasText;
-    background: Canvas;
-    box-shadow: none;
+  .media-p405-layout-menu
+    .th-menu-item[data-highlighted]
+    .media-p405-layout-option__check {
+    color: HighlightText;
   }
 
   .media-p405-room .media-p405-avatar {
@@ -2552,16 +2574,6 @@
     color: FieldText;
   }
 
-  .media-p405-room
-    .media-p405-effects-badge:is(
-      .media-p405-effects-badge--on,
-      [aria-expanded="true"]
-    )
-    > span {
-    outline: 2px solid Highlight;
-    outline-offset: 1px;
-  }
-
   .media-p405-room .media-p405-dock-divider,
   .media-p405-header-divider {
     background: CanvasText;
@@ -2569,6 +2581,14 @@
 
   .media-p405-connection-dot {
     border: 1px solid CanvasText;
+  }
+
+  .media-p405-room
+    .media-p405-classroom--tool-stage
+    .media-p405-tile-meta
+    > span::before {
+    border: 1px solid CanvasText;
+    box-shadow: none;
   }
 
   .media-p405-room .media-p405-tile[data-lk-speaking="true"] {
@@ -2628,7 +2648,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .media-p405-room .media-p405-tooltip[data-state="open"]:not([data-instant]) {
+  .media-p405-room .media-p405-tooltip[data-state="open"]:not([data-instant]),
+  .media-p405-room .media-p405-leave-popover {
     animation: none;
   }
 
@@ -2636,22 +2657,19 @@
   .media-p405-room .media-p405-tile,
   .media-p405-room .media-p405-tile::after,
   .media-p405-room .media-p405-tile-meta .th-button,
-  .media-p405-room .media-p405-header-badges > span,
-  .media-p405-room .media-p405-effects-badge > span,
   .media-p405-room .media-p405-device-panel select,
   .media-p406-reaction-menu .th-menu-item,
   .media-p406-reaction-menu .th-menu-item > span[aria-hidden="true"],
   .media-p405-room
     :is(
       .media-p405-dock-button,
-      .media-p405-layout-button,
       .media-p405-dock-leave,
-      .media-p405-effects-badge,
+      .media-p405-leave-option,
       .media-p405-tile-meta .th-button,
       .media-p407-room-actions .th-button,
-      .media-p405-shell > .th-button,
-      .media-p506-tool-stage__header .th-button,
-      .whiteboard-action
+      .media-p405-header-close,
+      .whiteboard-topbar-menu-trigger,
+      .media-p405-shell > .th-button
     ) {
     transition: none;
   }
@@ -2673,14 +2691,13 @@
   .media-p405-room
     :is(
       .media-p405-dock-button,
-      .media-p405-layout-button,
       .media-p405-dock-leave,
-      .media-p405-effects-badge,
+      .media-p405-leave-option,
       .media-p405-tile-meta .th-button,
       .media-p407-room-actions .th-button,
-      .media-p405-shell > .th-button,
-      .media-p506-tool-stage__header .th-button,
-      .whiteboard-action
+      .media-p405-header-close,
+      .whiteboard-topbar-menu-trigger,
+      .media-p405-shell > .th-button
     ):is(:hover, :active):not(:disabled),
   .media-p406-reaction-menu
     .th-menu-item[data-highlighted]

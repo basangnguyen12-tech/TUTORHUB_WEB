@@ -8004,3 +8004,196 @@ textarea:focus-visible {
   height: 1rem;
   flex: none;
 }
+
+/* ---- ROOM-COMPACT-05: Top Bar, layout menu and end-call popover ---------
+ * Base-safe layer for hosts that load only this stylesheet (the P4-06 /
+ * P4-07 fixtures): the presence status reads in full, the layout menu marks
+ * its current mode and the host end-call popover floats above the pill. The
+ * classroom stylesheet adds the 40px bar and the Liquid Glass material.
+ */
+.media-p405-header-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.media-p405-live-pill,
+.media-p405-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-p405-presence-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.media-p405-presence-short {
+  display: none;
+}
+
+.media-p405-layout-option {
+  gap: 10px;
+}
+
+.media-p405-layout-option__icon {
+  display: inline-flex;
+}
+
+.media-p405-layout-option__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.media-p405-layout-option__label {
+  flex: 1 1 auto;
+}
+
+.media-p405-layout-option__check {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-left: auto;
+}
+
+.media-p405-layout-option[data-state="unchecked"]
+  .media-p405-layout-option__check {
+  visibility: hidden;
+}
+
+.media-p405-leave {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.media-p405-leave-popover {
+  position: absolute;
+  z-index: 30;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: grid;
+  width: min(216px, calc(100vw - 24px));
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 16px;
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
+}
+
+/* A transparent bridge over the 10px gap: sliding the pointer from the pill
+   up to a choice never leaves the control, so the popover stays open. */
+.media-p405-leave-popover::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 12px;
+  content: "";
+}
+
+.media-p405-leave-option {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: start;
+}
+
+.media-p405-leave-option svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.media-p405-leave-option--end {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+}
+
+.media-p405-leave-option--end:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background: #b91c1c;
+}
+
+.media-p405-leave-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.media-p405-leave-option:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Classroom whiteboard: status text for assistive technology only, and the
+   text alternative opens from the top edge (there is no engine bar). */
+.whiteboard-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+.whiteboard-engine--classroom > .whiteboard-semantic-fallback--open {
+  top: var(--space-3);
+  max-height: calc(100% - 2 * var(--space-3));
+}
+
+@media (forced-colors: active) {
+  .media-p405-leave-popover {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+  }
+
+  .media-p405-leave-option {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+    forced-color-adjust: none;
+  }
+
+  .media-p405-leave-option--end {
+    border-width: 2px;
+  }
+
+  .media-p405-leave-option:hover:not(:disabled) {
+    border-color: Highlight;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .media-p405-leave-option:disabled {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
+  .media-p405-leave-option:focus-visible {
+    outline-color: Highlight;
+  }
+}
