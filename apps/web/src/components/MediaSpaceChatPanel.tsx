@@ -1,4 +1,11 @@
-import { APIRequestError } from "@tutorhub/api-client";
+/* eslint-disable react-refresh/only-export-components -- The room chat controller hook and its live-sync cadence are colocated with the panel that renders them. */
+import {
+  APIRequestError,
+  type ActiveMessage,
+  type Conversation,
+  type Message,
+  type MessageAttachment,
+} from "@tutorhub/api-client";
 import {
   Button,
   EmptyState,
@@ -8,36 +15,103 @@ import {
   SkeletonGroup,
 } from "@tutorhub/ui";
 import { RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
-import { useEnsureMediaSpaceConversation } from "../app/conversations";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  fetchConversationAttachmentBlob,
+  useConversation,
+  useConversationMessages,
+  useDeleteConversationMessage,
+  useEditConversationMessage,
+  useEnsureMediaSpaceConversation,
+  useMarkConversationRead,
+  useSendConversationMessage,
+  useUpdateRoomConversationSettings,
+  useUploadConversationAttachment,
+} from "../app/conversations";
 import { useI18n } from "../app/i18n";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
-import { ConversationMessages } from "./ConversationMessages";
-import "../pages/ConversationsPage.css";
+import {
+  ClassroomChatPanel,
+  type ClassroomChatSendInput,
+  type ClassroomChatUploadInput,
+} from "../features/media/ClassroomChatPanel";
+import {
+  createAttachmentObjectURLCache,
+  createClassroomChatComposerStore,
+  disposeClassroomChatComposerStore,
+  type AttachmentObjectURLCache,
+  type ClassroomChatComposerStore,
+} from "../features/media/classroomChatMedia";
 
-export function MediaSpaceChatPanel({
+/** ADR-0042 live-sync cadence (paused while the tab is hidden). */
+export const ROOM_CHAT_OPEN_POLL_MS = 2_500;
+export const ROOM_CHAT_CLOSED_POLL_MS = 5_000;
+export const ROOM_CHAT_DETAIL_POLL_MS = 5_000;
+
+function useDocumentVisible() {
+  const [visible, setVisible] = useState(
+    () =>
+      typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+  return visible;
+}
+
+export interface UseMediaSpaceRoomChatInput {
+  actorID: string;
+  /** Signed room scope ready and the session live (connected/reconnecting). */
+  enabled: boolean;
+  mediaSpaceID: string;
+  /** The chat inspector is open. */
+  open: boolean;
+  tenantID: string;
+}
+
+export interface MediaSpaceRoomChat {
+  actorID: string;
+  attachmentCache: AttachmentObjectURLCache;
+  composerStore: ClassroomChatComposerStore;
+  conversation: Conversation | undefined;
+  error: unknown;
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  messages: Message[];
+  open: boolean;
+  status: "disabled" | "loading" | "error" | "ready";
+  tenantID: string;
+  unreadCapped: boolean;
+  unreadCount: number;
+  loadAttachment: (attachment: MessageAttachment) => Promise<Blob>;
+  loadOlder: () => void;
+  onDelete: (message: ActiveMessage) => Promise<void>;
+  onEdit: (message: ActiveMessage, content: string) => Promise<void>;
+  onSend: (input: ClassroomChatSendInput) => Promise<void>;
+  onToggleParticipantChat: (enabled: boolean) => Promise<void>;
+  onUpload: (input: ClassroomChatUploadInput) => Promise<MessageAttachment>;
+  retry: () => void;
+}
+
+/**
+ * Room-level chat controller. It lives with the room page (not inside the
+ * inspector), so the Dock unread badge keeps updating before the panel is
+ * ever opened and the draft survives closing the inspector.
+ */
+export function useMediaSpaceRoomChat({
   actorID,
   enabled,
   mediaSpaceID,
+  open,
   tenantID,
-}: {
-  actorID: string;
-  enabled: boolean;
-  mediaSpaceID: string;
-  tenantID: string;
-}) {
-  const { language, t } = useI18n();
+}: UseMediaSpaceRoomChatInput): MediaSpaceRoomChat {
   const ensureConversation = useEnsureMediaSpaceConversation(tenantID);
+  const ensure = ensureConversation.mutate;
   const startedScope = useRef<string | null>(null);
   const scope = `${tenantID}\u0000${mediaSpaceID}`;
-  const formatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }),
-    [language],
-  );
+  const visible = useDocumentVisible();
 
   useEffect(() => {
     if (
@@ -49,10 +123,233 @@ export function MediaSpaceChatPanel({
       return;
     }
     startedScope.current = scope;
-    ensureConversation.mutate(mediaSpaceID);
-  }, [enabled, ensureConversation, mediaSpaceID, scope, tenantID]);
+    ensure(mediaSpaceID);
+  }, [enabled, ensure, mediaSpaceID, scope, tenantID]);
 
-  if (!enabled) {
+  const ensured =
+    ensureConversation.data?.media_space_id === mediaSpaceID ||
+    ensureConversation.data?.media_space_id === undefined
+      ? ensureConversation.data
+      : undefined;
+  const conversationID = ensured?.id;
+  const live = enabled && visible;
+  const detail = useConversation(tenantID, conversationID, {
+    refetchInterval: live && open ? ROOM_CHAT_DETAIL_POLL_MS : false,
+  });
+  const messagesQuery = useConversationMessages(tenantID, conversationID, {
+    refetchInterval: live
+      ? open
+        ? ROOM_CHAT_OPEN_POLL_MS
+        : ROOM_CHAT_CLOSED_POLL_MS
+      : false,
+  });
+  const conversation = detail.data ?? ensured;
+  const refetchDetail = detail.refetch;
+
+  // Opening the inspector reconciles posting rights at once (the host may
+  // have paused or resumed participant chat while it was closed).
+  useEffect(() => {
+    if (open && conversationID) void refetchDetail();
+  }, [conversationID, open, refetchDetail]);
+  const pages = messagesQuery.data?.pages;
+  const firstPage = pages?.[0];
+  const messages = useMemo(() => {
+    const byID = new Map<string, Message>();
+    for (const page of pages ?? []) {
+      for (const item of page.items) byID.set(item.id, item);
+    }
+    return [...byID.values()].sort(
+      (left, right) => left.sequence - right.sequence,
+    );
+  }, [pages]);
+
+  const sendMessage = useSendConversationMessage(tenantID, conversationID);
+  const markRead = useMarkConversationRead(tenantID, conversationID);
+  const upload = useUploadConversationAttachment(tenantID, conversationID);
+  const edit = useEditConversationMessage(tenantID, conversationID);
+  const remove = useDeleteConversationMessage(tenantID, conversationID);
+  const settings = useUpdateRoomConversationSettings(tenantID, conversationID);
+  const markReadMutate = markRead.mutate;
+  const markReadPending = markRead.isPending;
+
+  // Mark read only while the inspector is open on a visible tab.
+  const lastReadAttempt = useRef<string | null>(null);
+  const newest = messages[messages.length - 1];
+  const serverUnread = firstPage?.unread_count ?? 0;
+  useEffect(() => {
+    if (!open || !visible || !conversationID || !newest || markReadPending) {
+      return;
+    }
+    const readSequence = firstPage?.read_state?.last_read_sequence ?? 0;
+    if (serverUnread === 0 || newest.sequence <= readSequence) return;
+    if (lastReadAttempt.current === newest.id) return;
+    lastReadAttempt.current = newest.id;
+    markReadMutate(newest.id);
+  }, [
+    conversationID,
+    firstPage?.read_state?.last_read_sequence,
+    markReadMutate,
+    markReadPending,
+    newest,
+    open,
+    serverUnread,
+    visible,
+  ]);
+
+  const resourceScope = `${tenantID}\u0000${conversationID ?? ""}`;
+  const resources = useMemo(
+    () => ({
+      attachmentCache: createAttachmentObjectURLCache(),
+      composerStore: createClassroomChatComposerStore(),
+      scope: resourceScope,
+    }),
+    [resourceScope],
+  );
+  useEffect(
+    () => () => {
+      resources.attachmentCache.revokeAll();
+      disposeClassroomChatComposerStore(resources.composerStore);
+    },
+    [resources],
+  );
+
+  const sendMutate = sendMessage.mutateAsync;
+  const uploadMutate = upload.mutateAsync;
+  const editMutate = edit.mutateAsync;
+  const removeMutate = remove.mutateAsync;
+  const settingsMutate = settings.mutateAsync;
+  const fetchNextPage = messagesQuery.fetchNextPage;
+
+  const onSend = useCallback(
+    async (input: ClassroomChatSendInput) => {
+      try {
+        await sendMutate({
+          client_message_id: input.clientMessageID,
+          content: input.content,
+          ...(input.attachmentIDs.length > 0
+            ? { attachment_ids: input.attachmentIDs }
+            : {}),
+        });
+      } catch (error) {
+        if (
+          error instanceof APIRequestError &&
+          error.problem?.code === "conversation_read_only"
+        ) {
+          void refetchDetail();
+        }
+        throw error;
+      }
+    },
+    [refetchDetail, sendMutate],
+  );
+  const onUpload = useCallback(
+    (input: ClassroomChatUploadInput) =>
+      uploadMutate({
+        clientAttachmentID: input.clientAttachmentID,
+        file: input.file,
+        fileName: input.fileName,
+        heightPx: input.heightPx,
+        widthPx: input.widthPx,
+      }),
+    [uploadMutate],
+  );
+  const onEdit = useCallback(
+    async (message: ActiveMessage, content: string) => {
+      await editMutate({
+        content,
+        expectedVersion: message.version,
+        messageID: message.id,
+      });
+    },
+    [editMutate],
+  );
+  const onDelete = useCallback(
+    async (message: ActiveMessage) => {
+      await removeMutate({
+        expectedVersion: message.version,
+        messageID: message.id,
+      });
+    },
+    [removeMutate],
+  );
+  const onToggleParticipantChat = useCallback(
+    async (participantChatEnabled: boolean) => {
+      await settingsMutate(participantChatEnabled);
+    },
+    [settingsMutate],
+  );
+  const loadAttachment = useCallback(
+    (attachment: MessageAttachment) =>
+      fetchConversationAttachmentBlob(
+        tenantID,
+        attachment.conversation_id,
+        attachment.id,
+      ),
+    [tenantID],
+  );
+  const loadOlder = useCallback(() => {
+    void fetchNextPage();
+  }, [fetchNextPage]);
+  const retry = useCallback(() => {
+    if (ensureConversation.isError || !conversationID) {
+      startedScope.current = scope;
+      ensure(mediaSpaceID);
+      return;
+    }
+    void messagesQuery.refetch();
+  }, [
+    conversationID,
+    ensure,
+    ensureConversation.isError,
+    mediaSpaceID,
+    messagesQuery,
+    scope,
+  ]);
+
+  let status: MediaSpaceRoomChat["status"];
+  let error: unknown = null;
+  if (!conversation) {
+    if (!enabled && ensureConversation.isIdle) status = "disabled";
+    else if (ensureConversation.isError) {
+      status = "error";
+      error = ensureConversation.error;
+    } else status = "loading";
+  } else if (!messagesQuery.data) {
+    if (messagesQuery.isError) {
+      status = "error";
+      error = messagesQuery.error;
+    } else status = "loading";
+  } else status = "ready";
+
+  return {
+    actorID,
+    attachmentCache: resources.attachmentCache,
+    composerStore: resources.composerStore,
+    conversation,
+    error,
+    hasOlder: Boolean(messagesQuery.hasNextPage),
+    loadingOlder: messagesQuery.isFetchingNextPage,
+    messages,
+    open,
+    status,
+    tenantID,
+    unreadCapped: !open && (firstPage?.unread_count_capped ?? false),
+    unreadCount: open ? 0 : serverUnread,
+    loadAttachment,
+    loadOlder,
+    onDelete,
+    onEdit,
+    onSend,
+    onToggleParticipantChat,
+    onUpload,
+    retry,
+  };
+}
+
+export function MediaSpaceChatPanel({ chat }: { chat: MediaSpaceRoomChat }) {
+  const { t } = useI18n();
+
+  if (chat.status === "disabled") {
     return (
       <EmptyState
         description={t("media.p408.unavailableDescription")}
@@ -61,7 +358,10 @@ export function MediaSpaceChatPanel({
     );
   }
 
-  if (ensureConversation.isIdle || ensureConversation.isPending) {
+  if (
+    chat.status === "loading" ||
+    (chat.status === "ready" && !chat.conversation)
+  ) {
     return (
       <SkeletonGroup label={t("media.p408.loading")}>
         <Skeleton height={72} />
@@ -71,11 +371,10 @@ export function MediaSpaceChatPanel({
     );
   }
 
-  if (ensureConversation.isError) {
-    const concealed = shouldConcealTenantScopedData(ensureConversation.error);
+  if (chat.status === "error" || !chat.conversation) {
+    const concealed = shouldConcealTenantScopedData(chat.error);
     const forbidden =
-      ensureConversation.error instanceof APIRequestError &&
-      ensureConversation.error.status === 403;
+      chat.error instanceof APIRequestError && chat.error.status === 403;
     const State = forbidden
       ? ForbiddenState
       : concealed
@@ -87,7 +386,7 @@ export function MediaSpaceChatPanel({
           concealed ? undefined : (
             <Button
               leadingIcon={<RefreshCw />}
-              onClick={() => ensureConversation.mutate(mediaSpaceID)}
+              onClick={chat.retry}
               variant="secondary"
             >
               {t("state.retry")}
@@ -113,12 +412,23 @@ export function MediaSpaceChatPanel({
   }
 
   return (
-    <ConversationMessages
-      actorID={actorID}
-      canPostMessages={ensureConversation.data.viewer_access.can_post_messages}
-      conversationID={ensureConversation.data.id}
-      formatter={formatter}
-      tenantID={tenantID}
+    <ClassroomChatPanel
+      actorID={chat.actorID}
+      attachmentCache={chat.attachmentCache}
+      composerStore={chat.composerStore}
+      conversation={chat.conversation}
+      hasOlder={chat.hasOlder}
+      loadAttachment={chat.loadAttachment}
+      loadingOlder={chat.loadingOlder}
+      messages={chat.messages}
+      onDelete={chat.onDelete}
+      onEdit={chat.onEdit}
+      onLoadOlder={chat.loadOlder}
+      onSend={chat.onSend}
+      onToggleParticipantChat={chat.onToggleParticipantChat}
+      onUpload={chat.onUpload}
+      open={chat.open}
+      tenantID={chat.tenantID}
     />
   );
 }

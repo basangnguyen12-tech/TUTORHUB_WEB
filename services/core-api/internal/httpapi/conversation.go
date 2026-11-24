@@ -2,10 +2,15 @@ package httpapi
 
 import (
 	"errors"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode"
+
+	"github.com/google/uuid"
 
 	"github.com/tutorhub-v2/core-api/internal/modules/conversation"
 	"github.com/tutorhub-v2/core-api/internal/modules/identity"
@@ -14,17 +19,23 @@ import (
 )
 
 const (
-	conversationsCollectionPath   = "/api/v1/conversations"
-	conversationDirectPath        = "/api/v1/conversations/direct"
-	conversationResourcePattern   = "/api/v1/conversations/{conversation_id}"
-	conversationMessagesPattern   = "/api/v1/conversations/{conversation_id}/messages"
-	conversationMessagePattern    = "/api/v1/conversations/{conversation_id}/messages/{message_id}"
-	conversationReadPattern       = "/api/v1/conversations/{conversation_id}/read"
-	classConversationPattern      = "/api/v1/classes/{class_id}/conversation"
-	mediaSpaceConversationPattern = "/api/v1/media/spaces/{space_id}/conversation"
-	conversationTenantHeader      = "X-TutorHub-Expected-Tenant-ID"
-	maximumConversationBodySize   = 16 * 1024
-	maximumMessageBodySize        = 64 * 1024
+	conversationsCollectionPath = "/api/v1/conversations"
+	conversationDirectPath      = "/api/v1/conversations/direct"
+	conversationResourcePattern = "/api/v1/conversations/{conversation_id}"
+	conversationMessagesPattern = "/api/v1/conversations/{conversation_id}/messages"
+	conversationMessagePattern  = "/api/v1/conversations/{conversation_id}/messages/{message_id}"
+	conversationReadPattern     = "/api/v1/conversations/{conversation_id}/read"
+	// ADR-0042 room chat moderation and attachments.
+	conversationRoomSettingsPattern      = "/api/v1/conversations/{conversation_id}/room-settings"
+	conversationAttachmentsPattern       = "/api/v1/conversations/{conversation_id}/attachments"
+	conversationAttachmentContentPattern = "/api/v1/conversations/{conversation_id}/attachments/{attachment_id}/content"
+	maximumAttachmentRequestBodySize     = 11 * 1024 * 1024
+	maximumAttachmentFieldSize           = 64
+	classConversationPattern             = "/api/v1/classes/{class_id}/conversation"
+	mediaSpaceConversationPattern        = "/api/v1/media/spaces/{space_id}/conversation"
+	conversationTenantHeader             = "X-TutorHub-Expected-Tenant-ID"
+	maximumConversationBodySize          = 16 * 1024
+	maximumMessageBodySize               = 64 * 1024
 )
 
 var errConversationScopeChanged = errors.New("conversation active tenant changed")
@@ -40,8 +51,13 @@ type createDirectConversationRequest struct {
 }
 
 type sendMessageRequest struct {
-	ClientMessageID *string `json:"client_message_id"`
-	Content         *string `json:"content"`
+	ClientMessageID *string  `json:"client_message_id"`
+	Content         *string  `json:"content"`
+	AttachmentIDs   []string `json:"attachment_ids"`
+}
+
+type roomSettingsRequest struct {
+	ParticipantChatEnabled *bool `json:"participant_chat_enabled"`
 }
 
 type editMessageRequest struct {
@@ -310,9 +326,18 @@ func (handlers conversationHandlers) messages(w http.ResponseWriter, r *http.Req
 		return
 	}
 	clientMessageID, ok := parseResourceUUID(*request.ClientMessageID)
-	if !ok {
+	if !ok || len(request.AttachmentIDs) > conversation.MaximumAttachmentsPerMessage {
 		handlers.writeProblem(w, r, conversation.ErrInvalidInput)
 		return
+	}
+	attachmentIDs := make([]uuid.UUID, 0, len(request.AttachmentIDs))
+	for _, raw := range request.AttachmentIDs {
+		attachmentID, ok := parseResourceUUID(raw)
+		if !ok {
+			handlers.writeProblem(w, r, conversation.ErrInvalidInput)
+			return
+		}
+		attachmentIDs = append(attachmentIDs, attachmentID)
 	}
 	result, err := handlers.service.SendMessage(
 		r.Context(),
@@ -321,6 +346,7 @@ func (handlers conversationHandlers) messages(w http.ResponseWriter, r *http.Req
 		conversation.SendMessageInput{
 			ClientMessageID: clientMessageID,
 			Content:         *request.Content,
+			AttachmentIDs:   attachmentIDs,
 		},
 	)
 	if err != nil {
@@ -549,6 +575,18 @@ func (handlers conversationHandlers) writeProblem(w http.ResponseWriter, r *http
 	case errors.Is(err, conversation.ErrVersionConflict):
 		status, code = http.StatusConflict, "message_version_conflict"
 		title, detail = "Message changed", "Reload the latest message state before retrying this change."
+	case errors.Is(err, conversation.ErrAttachmentUnsupported):
+		status, code = http.StatusUnsupportedMediaType, "conversation_attachment_unsupported"
+		title, detail = "Attachment type not allowed", "Send PNG, JPEG, WebP or GIF images, or PDF, Office, text, CSV, Markdown or ZIP lesson files."
+	case errors.Is(err, conversation.ErrAttachmentTooLarge):
+		status, code = http.StatusRequestEntityTooLarge, "conversation_attachment_too_large"
+		title, detail = "Attachment too large", "Images may be up to 5 MiB and files up to 10 MiB."
+	case errors.Is(err, conversation.ErrAttachmentsUnavailable):
+		status, code = http.StatusServiceUnavailable, "conversation_attachments_unavailable"
+		title, detail = "Attachments unavailable", "Attachments are not available for this conversation in this environment."
+	case errors.Is(err, conversation.ErrAttachmentUnavailable):
+		status, code = http.StatusConflict, "conversation_attachment_unavailable"
+		title, detail = "Attachment unavailable", "Upload the attachment again; it expired, was already sent, or belongs to another conversation."
 	case errors.Is(err, errConversationScopeChanged):
 		status, code = http.StatusConflict, "conversation_scope_changed"
 		title, detail = "Active workspace changed", "Reload the current session before retrying the conversation request."
@@ -561,4 +599,252 @@ func (handlers conversationHandlers) writeProblem(w http.ResponseWriter, r *http
 		)
 	}
 	writeCodedProblem(w, r, status, code, title, detail)
+}
+
+func (handlers conversationHandlers) roomSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		w.Header().Set("Allow", http.MethodPatch)
+		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Room chat settings support PATCH requests.")
+		return
+	}
+	if !handlers.available(w, r) {
+		return
+	}
+	principal, ok := handlers.csrfPrincipal(w, r)
+	if !ok {
+		return
+	}
+	access, ok := handlers.access(w, r, principal)
+	if !ok {
+		return
+	}
+	conversationID, ok := parseResourceUUID(r.PathValue("conversation_id"))
+	if !ok {
+		handlers.writeProblem(w, r, conversation.ErrNotFound)
+		return
+	}
+	var request roomSettingsRequest
+	if err := decodeJSONRequest(w, r, &request, maximumConversationBodySize); err != nil ||
+		request.ParticipantChatEnabled == nil {
+		handlers.writeProblem(w, r, conversation.ErrInvalidInput)
+		return
+	}
+	item, err := handlers.service.UpdateRoomSettings(
+		r.Context(), access, conversationID,
+		conversation.RoomSettingsInput{ParticipantChatEnabled: *request.ParticipantChatEnabled},
+	)
+	if err != nil {
+		handlers.writeProblem(w, r, err)
+		return
+	}
+	writeJSON(handlers.logger, w, http.StatusOK, item)
+}
+
+func (handlers conversationHandlers) attachments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Conversation attachments support POST uploads.")
+		return
+	}
+	if !handlers.available(w, r) {
+		return
+	}
+	principal, ok := handlers.csrfPrincipal(w, r)
+	if !ok {
+		return
+	}
+	access, ok := handlers.access(w, r, principal)
+	if !ok {
+		return
+	}
+	conversationID, ok := parseResourceUUID(r.PathValue("conversation_id"))
+	if !ok {
+		handlers.writeProblem(w, r, conversation.ErrNotFound)
+		return
+	}
+	input, err := parseAttachmentUpload(w, r)
+	if err != nil {
+		handlers.writeProblem(w, r, err)
+		return
+	}
+	result, err := handlers.service.UploadAttachment(r.Context(), access, conversationID, input)
+	if err != nil {
+		handlers.writeProblem(w, r, err)
+		return
+	}
+	status := http.StatusOK
+	if result.Created {
+		status = http.StatusCreated
+	}
+	writeJSON(handlers.logger, w, status, result.Attachment)
+}
+
+// parseAttachmentUpload streams a bounded multipart body without temporary
+// files: one UUID field, optional pixel dimensions, and exactly one file part.
+func parseAttachmentUpload(
+	w http.ResponseWriter,
+	r *http.Request,
+) (conversation.UploadAttachmentInput, error) {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "multipart/form-data" {
+		return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maximumAttachmentRequestBodySize)
+	reader, err := r.MultipartReader()
+	if err != nil {
+		return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+	}
+	var input conversation.UploadAttachmentInput
+	fileSeen := false
+	for {
+		part, err := reader.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return conversation.UploadAttachmentInput{}, multipartError(err)
+		}
+		name := part.FormName()
+		switch name {
+		case "client_attachment_id", "width_px", "height_px":
+			if part.FileName() != "" {
+				_ = part.Close()
+				return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+			}
+			raw, err := io.ReadAll(io.LimitReader(part, maximumAttachmentFieldSize+1))
+			_ = part.Close()
+			if err != nil {
+				return conversation.UploadAttachmentInput{}, multipartError(err)
+			}
+			if len(raw) > maximumAttachmentFieldSize {
+				return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+			}
+			value := strings.TrimSpace(string(raw))
+			if name == "client_attachment_id" {
+				id, ok := parseResourceUUID(value)
+				if !ok || input.ClientAttachmentID != uuid.Nil {
+					return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+				}
+				input.ClientAttachmentID = id
+				continue
+			}
+			dimension, err := strconv.Atoi(value)
+			if err != nil {
+				return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+			}
+			if name == "width_px" {
+				input.WidthPx = &dimension
+			} else {
+				input.HeightPx = &dimension
+			}
+		case "file":
+			if fileSeen {
+				_ = part.Close()
+				return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+			}
+			fileSeen = true
+			input.FileName = part.FileName()
+			content, err := io.ReadAll(io.LimitReader(part, conversation.MaximumFileAttachmentBytes+1))
+			_ = part.Close()
+			if err != nil {
+				return conversation.UploadAttachmentInput{}, multipartError(err)
+			}
+			if len(content) > conversation.MaximumFileAttachmentBytes {
+				return conversation.UploadAttachmentInput{}, conversation.ErrAttachmentTooLarge
+			}
+			input.Content = content
+		default:
+			_ = part.Close()
+			return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+		}
+	}
+	if !fileSeen || len(input.Content) == 0 || input.ClientAttachmentID == uuid.Nil {
+		return conversation.UploadAttachmentInput{}, conversation.ErrInvalidInput
+	}
+	return input, nil
+}
+
+func multipartError(err error) error {
+	var maxBytes *http.MaxBytesError
+	if errors.As(err, &maxBytes) {
+		return conversation.ErrAttachmentTooLarge
+	}
+	return conversation.ErrInvalidInput
+}
+
+func (handlers conversationHandlers) attachmentContent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Attachment content supports GET requests.")
+		return
+	}
+	if !handlers.available(w, r) {
+		return
+	}
+	principal, ok := handlers.auth.authenticatedPrincipal(w, r)
+	if !ok {
+		return
+	}
+	access, ok := handlers.access(w, r, principal)
+	if !ok {
+		return
+	}
+	conversationID, conversationOK := parseResourceUUID(r.PathValue("conversation_id"))
+	attachmentID, attachmentOK := parseResourceUUID(r.PathValue("attachment_id"))
+	if !conversationOK || !attachmentOK {
+		handlers.writeProblem(w, r, conversation.ErrNotFound)
+		return
+	}
+	content, err := handlers.service.ReadAttachmentContent(r.Context(), access, conversationID, attachmentID)
+	if err != nil {
+		handlers.writeProblem(w, r, err)
+		return
+	}
+	defer func() { _ = content.Body.Close() }()
+	header := w.Header()
+	header.Set("Content-Type", content.Attachment.MediaType)
+	header.Set("Content-Length", strconv.FormatInt(content.Attachment.SizeBytes, 10))
+	header.Set("Cache-Control", "private, no-store")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Content-Security-Policy", "default-src 'none'")
+	header.Set("Content-Disposition", attachmentContentDisposition(content.Attachment.DisplayName))
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = io.CopyN(w, content.Body, content.Attachment.SizeBytes)
+}
+
+// attachmentContentDisposition always forces a download (never inline) with
+// an ASCII fallback and an RFC 5987 UTF-8 filename.
+func attachmentContentDisposition(name string) string {
+	fallback := strings.Map(func(character rune) rune {
+		if character > unicode.MaxASCII || character < 0x20 || character == 0x7f ||
+			character == '"' || character == '\\' || character == ';' {
+			return '_'
+		}
+		return character
+	}, name)
+	if strings.TrimSpace(fallback) == "" {
+		fallback = "attachment"
+	}
+	return `attachment; filename="` + fallback + `"; filename*=UTF-8''` + rfc5987Encode(name)
+}
+
+// rfc5987Encode percent-encodes every byte outside RFC 5987 attr-char.
+func rfc5987Encode(value string) string {
+	const hex = "0123456789ABCDEF"
+	var builder strings.Builder
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || strings.IndexByte("!#$&+-.^_`|~", character) >= 0 {
+			builder.WriteByte(character)
+			continue
+		}
+		builder.WriteByte('%')
+		builder.WriteByte(hex[character>>4])
+		builder.WriteByte(hex[character&0x0f])
+	}
+	return builder.String()
 }

@@ -91,6 +91,21 @@ SELECT
 			relation:      "tutorhub.tenant_message_usage",
 			updateColumns: []string{"message_count", "updated_at"},
 		},
+		{
+			// ROOM-CHAT-01: host posting switch upsert.
+			relation: "tutorhub.room_conversation_settings",
+			updateColumns: []string{
+				"participant_chat_enabled", "updated_by_user_id", "updated_at",
+			},
+		},
+		{
+			// ROOM-CHAT-01: bind, tombstone and expire attachments; bytes are
+			// cleared but object keys, names and sizes are never rewritten.
+			relation: "tutorhub.message_attachments",
+			updateColumns: []string{
+				"message_id", "state", "inline_bytes", "updated_at",
+			},
+		},
 	} {
 		var selected, inserted, updated, deleted, truncated, referenced, triggered bool
 		var columnSelected, columnInserted, columnUpdated bool
@@ -123,6 +138,7 @@ SELECT
 	targetRelations := []string{
 		"conversations", "conversation_members", "messages",
 		"message_receipts", "tenant_message_usage",
+		"room_conversation_settings", "message_attachments",
 	}
 	var publicTableGrants, publicColumnGrants int
 	if err := migrationPool.QueryRow(ctx, `
@@ -239,7 +255,9 @@ REVOKE ALL PRIVILEGES ON TABLE
     tutorhub.conversation_members,
     tutorhub.messages,
     tutorhub.tenant_message_usage,
-    tutorhub.message_receipts
+    tutorhub.message_receipts,
+    tutorhub.room_conversation_settings,
+    tutorhub.message_attachments
 FROM tutorhub_conversation_runtime_ci;
 
 REVOKE ALL PRIVILEGES ON TABLE
@@ -247,7 +265,9 @@ REVOKE ALL PRIVILEGES ON TABLE
     tutorhub.conversation_members,
     tutorhub.messages,
     tutorhub.tenant_message_usage,
-    tutorhub.message_receipts
+    tutorhub.message_receipts,
+    tutorhub.room_conversation_settings,
+    tutorhub.message_attachments
 FROM PUBLIC;
 
 GRANT SELECT, INSERT ON TABLE
@@ -255,7 +275,9 @@ GRANT SELECT, INSERT ON TABLE
     tutorhub.conversation_members,
     tutorhub.messages,
     tutorhub.tenant_message_usage,
-    tutorhub.message_receipts
+    tutorhub.message_receipts,
+    tutorhub.room_conversation_settings,
+    tutorhub.message_attachments
 TO tutorhub_conversation_runtime_ci;
 
 GRANT UPDATE (updated_at)
@@ -272,6 +294,14 @@ TO tutorhub_conversation_runtime_ci;
 
 GRANT UPDATE (last_read_sequence, last_read_message_id, updated_at)
 ON TABLE tutorhub.message_receipts
+TO tutorhub_conversation_runtime_ci;
+
+GRANT UPDATE (participant_chat_enabled, updated_by_user_id, updated_at)
+ON TABLE tutorhub.room_conversation_settings
+TO tutorhub_conversation_runtime_ci;
+
+GRANT UPDATE (message_id, state, inline_bytes, updated_at)
+ON TABLE tutorhub.message_attachments
 TO tutorhub_conversation_runtime_ci;
 `); err != nil {
 		t.Fatalf("provision isolated CI conversation ACL role: %v", err)

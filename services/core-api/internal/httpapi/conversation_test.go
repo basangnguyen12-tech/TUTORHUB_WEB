@@ -1,12 +1,15 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -498,6 +501,7 @@ type fakeConversationService struct {
 	markReadConversationID    uuid.UUID
 	markReadMessageID         uuid.UUID
 	markReadCalls             int
+	roomChat                  fakeRoomChatService
 }
 
 func (service *fakeConversationService) List(
@@ -689,3 +693,413 @@ func assertConversationProblem(
 }
 
 var _ conversation.ServiceAPI = (*fakeConversationService)(nil)
+
+type fakeRoomChatService struct {
+	roomSettingsInput  conversation.RoomSettingsInput
+	roomSettingsCalls  int
+	roomSettingsResult conversation.Conversation
+	roomSettingsError  error
+	uploadInput        conversation.UploadAttachmentInput
+	uploadCalls        int
+	uploadResult       conversation.AttachmentUploadResult
+	uploadError        error
+	contentCalls       int
+	contentAttachment  conversation.MessageAttachment
+	contentBytes       []byte
+	contentError       error
+}
+
+func (service *fakeConversationService) UpdateRoomSettings(
+	_ context.Context,
+	_ conversation.AccessContext,
+	_ uuid.UUID,
+	input conversation.RoomSettingsInput,
+) (conversation.Conversation, error) {
+	service.roomChat.roomSettingsCalls++
+	service.roomChat.roomSettingsInput = input
+	return service.roomChat.roomSettingsResult, service.roomChat.roomSettingsError
+}
+
+func (service *fakeConversationService) UploadAttachment(
+	_ context.Context,
+	_ conversation.AccessContext,
+	_ uuid.UUID,
+	input conversation.UploadAttachmentInput,
+) (conversation.AttachmentUploadResult, error) {
+	service.roomChat.uploadCalls++
+	service.roomChat.uploadInput = input
+	return service.roomChat.uploadResult, service.roomChat.uploadError
+}
+
+func (service *fakeConversationService) ReadAttachmentContent(
+	_ context.Context,
+	_ conversation.AccessContext,
+	_ uuid.UUID,
+	_ uuid.UUID,
+) (conversation.AttachmentContent, error) {
+	service.roomChat.contentCalls++
+	if service.roomChat.contentError != nil {
+		return conversation.AttachmentContent{}, service.roomChat.contentError
+	}
+	return conversation.AttachmentContent{
+		Attachment: service.roomChat.contentAttachment,
+		Body:       io.NopCloser(bytes.NewReader(service.roomChat.contentBytes)),
+	}, nil
+}
+
+type multipartField struct {
+	name, fileName string
+	content        []byte
+}
+
+func attachmentUploadRequest(
+	t *testing.T,
+	path string,
+	tenantID uuid.UUID,
+	fields []multipartField,
+) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, field := range fields {
+		var part io.Writer
+		var err error
+		if field.fileName != "" {
+			part, err = writer.CreateFormFile(field.name, field.fileName)
+		} else {
+			part, err = writer.CreateFormField(field.name)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write(field.content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := conversationAuthenticatedMutationRequest(http.MethodPost, path, "", tenantID)
+	request.Body = io.NopCloser(bytes.NewReader(body.Bytes()))
+	request.ContentLength = int64(body.Len())
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return request
+}
+
+func TestConversationRoomSettingsHandlerRequiresCSRFAndMapsModeration(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	conversationID := uuid.New()
+	open := "open"
+	service := &fakeConversationService{}
+	service.roomChat.roomSettingsResult = conversation.Conversation{
+		ID: conversationID, Kind: conversation.KindRoom, MediaSpaceStatus: &open,
+		Title: "Lớp Toán", Participants: []conversation.Participant{},
+		ViewerAccess: conversation.ViewerAccess{
+			CanPostMessages: true, CanModerateChat: true, CanUploadAttachments: true,
+		},
+		CreatedAt: conversationTestTime, UpdatedAt: conversationTestTime,
+	}
+	handler := conversationTestHandler(classIdentityService(tenantID, uuid.New(), nil), service)
+	path := "/api/v1/conversations/" + conversationID.String() + "/room-settings"
+
+	missingCSRF := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(`{"participant_chat_enabled":false}`))
+	missingCSRF.Header.Set("Content-Type", "application/json")
+	missingCSRF.Header.Set(conversationTenantHeader, tenantID.String())
+	addSessionCookie(missingCSRF)
+	missingResponse := httptest.NewRecorder()
+	handler.ServeHTTP(missingResponse, missingCSRF)
+	if missingResponse.Code != http.StatusForbidden || service.roomChat.roomSettingsCalls != 0 {
+		t.Fatalf("missing CSRF status=%d calls=%d", missingResponse.Code, service.roomChat.roomSettingsCalls)
+	}
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, conversationAuthenticatedMutationRequest(
+		http.MethodPatch, path, `{"participant_chat_enabled":false}`, tenantID,
+	))
+	if response.Code != http.StatusOK || service.roomChat.roomSettingsInput.ParticipantChatEnabled {
+		t.Fatalf("room settings status=%d input=%+v body=%s",
+			response.Code, service.roomChat.roomSettingsInput, response.Body.String())
+	}
+	assertConversationHeaders(t, response)
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	access, _ := body["viewer_access"].(map[string]any)
+	if body["participant_chat_enabled"] != false || access["can_moderate_chat"] != true ||
+		access["can_upload_attachments"] != true {
+		t.Fatalf("unexpected room settings projection: %#v", body)
+	}
+
+	missing := httptest.NewRecorder()
+	handler.ServeHTTP(missing, conversationAuthenticatedMutationRequest(http.MethodPatch, path, `{}`, tenantID))
+	assertConversationProblem(t, missing, http.StatusBadRequest, "conversation_invalid")
+
+	service.roomChat.roomSettingsError = conversation.ErrAccessDenied
+	denied := httptest.NewRecorder()
+	handler.ServeHTTP(denied, conversationAuthenticatedMutationRequest(
+		http.MethodPatch, path, `{"participant_chat_enabled":true}`, tenantID,
+	))
+	assertConversationProblem(t, denied, http.StatusForbidden, "conversation_forbidden")
+
+	service.roomChat.roomSettingsError = conversation.ErrReadOnly
+	ended := httptest.NewRecorder()
+	handler.ServeHTTP(ended, conversationAuthenticatedMutationRequest(
+		http.MethodPatch, path, `{"participant_chat_enabled":true}`, tenantID,
+	))
+	assertConversationProblem(t, ended, http.StatusConflict, "conversation_read_only")
+
+	wrongMethod := httptest.NewRecorder()
+	handler.ServeHTTP(wrongMethod, conversationAuthenticatedMutationRequest(http.MethodPost, path, `{}`, tenantID))
+	if wrongMethod.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST room settings status=%d, want 405", wrongMethod.Code)
+	}
+}
+
+func TestConversationAttachmentUploadHandlerParsesBoundedMultipart(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	conversationID := uuid.New()
+	clientAttachmentID := uuid.New()
+	attachmentID := uuid.New()
+	width, height := 1280, 720
+	service := &fakeConversationService{}
+	service.roomChat.uploadResult = conversation.AttachmentUploadResult{
+		Created: true,
+		Attachment: conversation.MessageAttachment{
+			ID: attachmentID, ConversationID: conversationID, Kind: conversation.AttachmentKindImage,
+			DisplayName: "bai-tap.png", MediaType: "image/png", SizeBytes: 9,
+			WidthPx: &width, HeightPx: &height, CreatedAt: conversationTestTime,
+		},
+	}
+	handler := conversationTestHandler(classIdentityService(tenantID, uuid.New(), nil), service)
+	path := "/api/v1/conversations/" + conversationID.String() + "/attachments"
+	png := []byte("\x89PNG\r\n\x1a\nX")
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, attachmentUploadRequest(t, path, tenantID, []multipartField{
+		{name: "client_attachment_id", content: []byte(clientAttachmentID.String())},
+		{name: "width_px", content: []byte("1280")},
+		{name: "height_px", content: []byte("720")},
+		{name: "file", fileName: "bai-tap.png", content: png},
+	}))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("upload status=%d body=%s", response.Code, response.Body.String())
+	}
+	assertConversationHeaders(t, response)
+	input := service.roomChat.uploadInput
+	if input.ClientAttachmentID != clientAttachmentID || input.FileName != "bai-tap.png" ||
+		!bytes.Equal(input.Content, png) || input.WidthPx == nil || *input.WidthPx != 1280 ||
+		input.HeightPx == nil || *input.HeightPx != 720 {
+		t.Fatalf("unexpected upload input: %+v", input)
+	}
+	var projected map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &projected); err != nil {
+		t.Fatal(err)
+	}
+	for _, hidden := range []string{"object_key", "inline_bytes", "storage_backend", "tenant_id", "uploader_user_id"} {
+		if _, exposed := projected[hidden]; exposed {
+			t.Fatalf("attachment projection exposed %q", hidden)
+		}
+	}
+
+	calls := service.roomChat.uploadCalls
+	for name, fields := range map[string][]multipartField{
+		"missing file": {{name: "client_attachment_id", content: []byte(uuid.NewString())}},
+		"missing id":   {{name: "file", fileName: "a.png", content: png}},
+		"bad id":       {{name: "client_attachment_id", content: []byte("nope")}, {name: "file", fileName: "a.png", content: png}},
+		"bad width":    {{name: "client_attachment_id", content: []byte(uuid.NewString())}, {name: "width_px", content: []byte("wide")}, {name: "file", fileName: "a.png", content: png}},
+		"two files": {
+			{name: "client_attachment_id", content: []byte(uuid.NewString())},
+			{name: "file", fileName: "a.png", content: png},
+			{name: "file", fileName: "b.png", content: png},
+		},
+		"unknown part": {
+			{name: "client_attachment_id", content: []byte(uuid.NewString())},
+			{name: "media_type", content: []byte("image/svg+xml")},
+			{name: "file", fileName: "a.png", content: png},
+		},
+	} {
+		invalid := httptest.NewRecorder()
+		handler.ServeHTTP(invalid, attachmentUploadRequest(t, path, tenantID, fields))
+		assertConversationProblem(t, invalid, http.StatusBadRequest, "conversation_invalid")
+		if service.roomChat.uploadCalls != calls {
+			t.Fatalf("%s reached the service", name)
+		}
+	}
+
+	jsonUpload := httptest.NewRecorder()
+	handler.ServeHTTP(jsonUpload, conversationAuthenticatedMutationRequest(http.MethodPost, path, `{"file":"x"}`, tenantID))
+	assertConversationProblem(t, jsonUpload, http.StatusBadRequest, "conversation_invalid")
+
+	oversized := httptest.NewRecorder()
+	handler.ServeHTTP(oversized, attachmentUploadRequest(t, path, tenantID, []multipartField{
+		{name: "client_attachment_id", content: []byte(uuid.NewString())},
+		{name: "file", fileName: "big.pdf", content: bytes.Repeat([]byte("a"), conversation.MaximumFileAttachmentBytes+1)},
+	}))
+	assertConversationProblem(t, oversized, http.StatusRequestEntityTooLarge, "conversation_attachment_too_large")
+	if service.roomChat.uploadCalls != calls {
+		t.Fatal("oversized upload reached the service")
+	}
+
+	service.roomChat.uploadError = conversation.ErrAttachmentUnsupported
+	svg := httptest.NewRecorder()
+	handler.ServeHTTP(svg, attachmentUploadRequest(t, path, tenantID, []multipartField{
+		{name: "client_attachment_id", content: []byte(uuid.NewString())},
+		{name: "file", fileName: "x.svg", content: []byte("<svg onload=alert(1)>")},
+	}))
+	assertConversationProblem(t, svg, http.StatusUnsupportedMediaType, "conversation_attachment_unsupported")
+	if strings.Contains(svg.Body.String(), "x.svg") || strings.Contains(svg.Body.String(), "onload") {
+		t.Fatal("unsupported problem echoed the file name or content")
+	}
+
+	service.roomChat.uploadError = conversation.ErrReadOnly
+	paused := httptest.NewRecorder()
+	handler.ServeHTTP(paused, attachmentUploadRequest(t, path, tenantID, []multipartField{
+		{name: "client_attachment_id", content: []byte(uuid.NewString())},
+		{name: "file", fileName: "a.png", content: png},
+	}))
+	assertConversationProblem(t, paused, http.StatusConflict, "conversation_read_only")
+
+	service.roomChat.uploadError = conversation.ErrAttachmentsUnavailable
+	unavailable := httptest.NewRecorder()
+	handler.ServeHTTP(unavailable, attachmentUploadRequest(t, path, tenantID, []multipartField{
+		{name: "client_attachment_id", content: []byte(uuid.NewString())},
+		{name: "file", fileName: "a.png", content: png},
+	}))
+	assertConversationProblem(t, unavailable, http.StatusServiceUnavailable, "conversation_attachments_unavailable")
+}
+
+func TestConversationAttachmentContentHandlerForcesSafeDownload(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	conversationID := uuid.New()
+	attachmentID := uuid.New()
+	pdf := []byte("%PDF-1.7\n%%EOF\n")
+	service := &fakeConversationService{}
+	service.roomChat.contentAttachment = conversation.MessageAttachment{
+		ID: attachmentID, ConversationID: conversationID, Kind: conversation.AttachmentKindFile,
+		DisplayName: `Đề "cương"; ôn tập.pdf`, MediaType: "application/pdf",
+		SizeBytes: int64(len(pdf)), CreatedAt: conversationTestTime,
+	}
+	service.roomChat.contentBytes = pdf
+	handler := conversationTestHandler(classIdentityService(tenantID, uuid.New(), nil), service)
+	path := "/api/v1/conversations/" + conversationID.String() + "/attachments/" + attachmentID.String() + "/content"
+
+	missingTenant := httptest.NewRequest(http.MethodGet, path, nil)
+	addSessionCookie(missingTenant)
+	missingResponse := httptest.NewRecorder()
+	handler.ServeHTTP(missingResponse, missingTenant)
+	if missingResponse.Code != http.StatusBadRequest || service.roomChat.contentCalls != 0 {
+		t.Fatalf("missing tenant header status=%d calls=%d", missingResponse.Code, service.roomChat.contentCalls)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	addSessionCookie(request)
+	request.Header.Set(conversationTenantHeader, tenantID.String())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), pdf) {
+		t.Fatalf("content status=%d body=%q", response.Code, response.Body.String())
+	}
+	header := response.Header()
+	if header.Get("Content-Type") != "application/pdf" ||
+		header.Get("Cache-Control") != "private, no-store" ||
+		header.Get("X-Content-Type-Options") != "nosniff" ||
+		header.Get("Content-Security-Policy") != "default-src 'none'" ||
+		header.Get("Content-Length") != strconv.Itoa(len(pdf)) {
+		t.Fatalf("unsafe attachment headers: %v", header)
+	}
+	disposition := header.Get("Content-Disposition")
+	if !strings.HasPrefix(disposition, `attachment; filename="`) ||
+		!strings.Contains(disposition, "filename*=UTF-8''%C4%90%E1%BB%81%20%22c%C6%B0%C6%A1ng%22%3B%20%C3%B4n%20t%E1%BA%ADp.pdf") ||
+		strings.Contains(disposition, "inline") || strings.Count(disposition, ";") != 2 {
+		t.Fatalf("unexpected Content-Disposition %q", disposition)
+	}
+
+	head := httptest.NewRequest(http.MethodHead, path, nil)
+	addSessionCookie(head)
+	head.Header.Set(conversationTenantHeader, tenantID.String())
+	headResponse := httptest.NewRecorder()
+	handler.ServeHTTP(headResponse, head)
+	if headResponse.Code != http.StatusOK || headResponse.Body.Len() != 0 {
+		t.Fatalf("HEAD status=%d body length=%d", headResponse.Code, headResponse.Body.Len())
+	}
+
+	service.roomChat.contentError = conversation.ErrNotFound
+	deleted := httptest.NewRequest(http.MethodGet, path, nil)
+	addSessionCookie(deleted)
+	deleted.Header.Set(conversationTenantHeader, tenantID.String())
+	deletedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(deletedResponse, deleted)
+	assertConversationProblem(t, deletedResponse, http.StatusNotFound, "conversation_not_found")
+}
+
+func TestConversationSendMessageHandlerForwardsBoundedAttachmentIDs(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	conversationID := uuid.New()
+	service := &fakeConversationService{}
+	handler := conversationTestHandler(classIdentityService(tenantID, uuid.New(), nil), service)
+	path := "/api/v1/conversations/" + conversationID.String() + "/messages"
+	first, second := uuid.New(), uuid.New()
+	empty := []conversation.MessageAttachment{}
+	content := ""
+	service.messageResult = conversation.MessageMutationResult{Created: true, Message: conversation.Message{
+		ID: uuid.New(), ConversationID: conversationID, Sequence: 1, ClientMessageID: uuid.New(),
+		Content: &content, State: conversation.MessageStateActive, Version: 1,
+		Attachments: &empty, CreatedAt: conversationTestTime, UpdatedAt: conversationTestTime,
+	}}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+		`{"client_message_id":"`+uuid.NewString()+`","content":"","attachment_ids":["`+first.String()+`","`+second.String()+`"]}`,
+		tenantID,
+	))
+	if response.Code != http.StatusCreated || len(service.messageInput.AttachmentIDs) != 2 ||
+		service.messageInput.AttachmentIDs[0] != first || service.messageInput.AttachmentIDs[1] != second {
+		t.Fatalf("send with attachments status=%d input=%+v", response.Code, service.messageInput)
+	}
+	if !strings.Contains(response.Body.String(), `"attachments":[]`) {
+		t.Fatalf("active message must project an attachments array: %s", response.Body.String())
+	}
+	calls := service.messageCalls
+	for name, ids := range map[string]string{
+		"too many": `"` + strings.Repeat(uuid.NewString()+`","`, 4) + uuid.NewString() + `"`,
+		"invalid":  `"not-a-uuid"`,
+	} {
+		invalid := httptest.NewRecorder()
+		handler.ServeHTTP(invalid, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+			`{"client_message_id":"`+uuid.NewString()+`","content":"x","attachment_ids":[`+ids+`]}`, tenantID,
+		))
+		assertConversationProblem(t, invalid, http.StatusBadRequest, "conversation_invalid")
+		if service.messageCalls != calls {
+			t.Fatalf("%s attachment IDs reached the service", name)
+		}
+	}
+	service.messageError = conversation.ErrReadOnly
+	paused := httptest.NewRecorder()
+	handler.ServeHTTP(paused, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+		`{"client_message_id":"`+uuid.NewString()+`","content":"hi"}`, tenantID,
+	))
+	assertConversationProblem(t, paused, http.StatusConflict, "conversation_read_only")
+	service.messageError = conversation.ErrAttachmentUnavailable
+	expired := httptest.NewRecorder()
+	handler.ServeHTTP(expired, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+		`{"client_message_id":"`+uuid.NewString()+`","content":"","attachment_ids":["`+first.String()+`"]}`, tenantID,
+	))
+	assertConversationProblem(t, expired, http.StatusConflict, "conversation_attachment_unavailable")
+}
+
+func TestAttachmentContentDispositionEncodesRFC5987(t *testing.T) {
+	t.Parallel()
+	for name, want := range map[string]string{
+		"report.pdf":   `attachment; filename="report.pdf"; filename*=UTF-8''report.pdf`,
+		"a'b(c).txt":   `attachment; filename="a'b(c).txt"; filename*=UTF-8''a%27b%28c%29.txt`,
+		"Bài\r\n.docx": `attachment; filename="B_i__.docx"; filename*=UTF-8''B%C3%A0i%0D%0A.docx`,
+	} {
+		if got := attachmentContentDisposition(name); got != want {
+			t.Fatalf("attachmentContentDisposition(%q)=%q, want %q", name, got, want)
+		}
+	}
+}

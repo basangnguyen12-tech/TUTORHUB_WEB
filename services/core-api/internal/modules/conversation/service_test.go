@@ -301,10 +301,27 @@ type fakeRepository struct {
 	editError         error
 	deleteInput       DeleteMessageInput
 	deleteResult      Message
+	deleteObjectKeys  []string
 	deleteError       error
 	markReadMessageID uuid.UUID
 	readState         MessageReadState
 	readError         error
+
+	roomSettingsInput  RoomSettingsInput
+	roomSettingsResult Conversation
+	roomSettingsError  error
+	replayAttachment   MessageAttachment
+	replayFound        bool
+	replayError        error
+	replayFingerprint  []byte
+	createdRecord      attachmentRecord
+	createdAttachment  MessageAttachment
+	createdNew         bool
+	createdExpiredKeys []string
+	createError        error
+	createCalls        int
+	stored             storedAttachment
+	storedError        error
 }
 
 func (repository *fakeRepository) List(
@@ -392,9 +409,51 @@ func (repository *fakeRepository) DeleteMessage(
 	_ uuid.UUID,
 	_ uuid.UUID,
 	input DeleteMessageInput,
-) (Message, error) {
+) (Message, []string, error) {
 	repository.deleteInput = input
-	return repository.deleteResult, repository.deleteError
+	return repository.deleteResult, repository.deleteObjectKeys, repository.deleteError
+}
+
+func (repository *fakeRepository) UpdateRoomSettings(
+	_ context.Context,
+	_ AccessContext,
+	_ uuid.UUID,
+	input RoomSettingsInput,
+) (Conversation, error) {
+	repository.roomSettingsInput = input
+	return repository.roomSettingsResult, repository.roomSettingsError
+}
+
+func (repository *fakeRepository) FindAttachmentReplay(
+	_ context.Context,
+	_ AccessContext,
+	_ uuid.UUID,
+	_ uuid.UUID,
+	fingerprint []byte,
+) (MessageAttachment, bool, error) {
+	repository.replayFingerprint = append([]byte(nil), fingerprint...)
+	return repository.replayAttachment, repository.replayFound, repository.replayError
+}
+
+func (repository *fakeRepository) CreateAttachment(
+	_ context.Context,
+	_ AccessContext,
+	_ uuid.UUID,
+	record attachmentRecord,
+) (MessageAttachment, bool, []string, error) {
+	repository.createCalls++
+	repository.createdRecord = record
+	return repository.createdAttachment, repository.createdNew,
+		repository.createdExpiredKeys, repository.createError
+}
+
+func (repository *fakeRepository) ReadAttachment(
+	_ context.Context,
+	_ AccessContext,
+	_ uuid.UUID,
+	_ uuid.UUID,
+) (storedAttachment, error) {
+	return repository.stored, repository.storedError
 }
 
 func (repository *fakeRepository) MarkRead(

@@ -28,7 +28,10 @@ import {
   MediaLobbyPanel,
   MediaLobbyWaitingCountProvider,
 } from "../components/MediaLobbyPanel";
-import { MediaSpaceChatPanel } from "../components/MediaSpaceChatPanel";
+import {
+  MediaSpaceChatPanel,
+  useMediaSpaceRoomChat,
+} from "../components/MediaSpaceChatPanel";
 import { ClassroomWhiteboardTool } from "../features/collaboration/ClassroomWhiteboardTool";
 import {
   ClassroomLiveKitRoom,
@@ -156,6 +159,16 @@ function MediaSpaceRoomSession({
     whiteboardEnabled && signalScopeReady && roomLive,
     { pollIntervalMs: whiteboardPollIntervalMs },
   );
+  // ROOM-CHAT-01: the room owns the chat controller so the Dock unread badge
+  // syncs before the inspector is first opened and drafts survive closing.
+  const [chatOpen, setChatOpen] = useState(false);
+  const roomChat = useMediaSpaceRoomChat({
+    actorID: userId,
+    enabled: signalScopeReady && roomLive,
+    mediaSpaceID: spaceId ?? "",
+    open: chatOpen,
+    tenantID: tenantId,
+  });
   const whiteboardDocument =
     whiteboardEnabled && whiteboardTool.isSuccess
       ? (whiteboardTool.data?.document ?? null)
@@ -470,14 +483,10 @@ function MediaSpaceRoomSession({
 
   const roomProps: ClassroomLiveKitRoomProps = {
     choices: handoff.choices,
-    chat: (
-      <MediaSpaceChatPanel
-        actorID={userId}
-        enabled={signalScopeReady}
-        mediaSpaceID={spaceId}
-        tenantID={tenantId}
-      />
-    ),
+    chat: <MediaSpaceChatPanel chat={roomChat} />,
+    chatUnreadCapped: roomChat.unreadCapped,
+    chatUnreadCount: roomChat.unreadCount,
+    onChatOpenChange: setChatOpen,
     connectionStatus: roomStatus,
     credential: handoff.credential,
     lobby,

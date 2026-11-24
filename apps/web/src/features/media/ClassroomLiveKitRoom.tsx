@@ -45,6 +45,10 @@ export interface ClassroomLiveKitRoomProps {
   choices: MediaJoinChoices;
   connectionStatus: ClassroomConnectionStatus;
   chat?: ReactNode;
+  /** ROOM-CHAT-01 Dock unread badge and inspector open state. */
+  chatUnreadCapped?: boolean;
+  chatUnreadCount?: number;
+  onChatOpenChange?: (open: boolean) => void;
   credential: MediaInstanceCredentialProjection;
   lobby?: ReactNode;
   moderation?: ClassroomModerationControlsModel;
@@ -115,6 +119,9 @@ function ConnectedClassroomLiveKitRoom({
   choices,
   connectionStatus,
   chat,
+  chatUnreadCapped,
+  chatUnreadCount,
+  onChatOpenChange,
   credential,
   lifecycle,
   lobby,
@@ -381,6 +388,8 @@ function ConnectedClassroomLiveKitRoom({
           canShareScreen={credential.can_share_screen}
           canSubscribe={credential.can_subscribe}
           chat={chat}
+          chatUnreadCapped={chatUnreadCapped}
+          chatUnreadCount={chatUnreadCount}
           connectionStatus={connectionStatus}
           controlAbortSignal={controlAbortController.signal}
           lobby={lobby}
@@ -389,6 +398,7 @@ function ConnectedClassroomLiveKitRoom({
           signals={signals}
           tools={tools}
           visualEffects={visualEffects}
+          onChatOpenChange={onChatOpenChange}
           onLeave={handleLeave}
           onTerminalMediaCleanup={stopOwnedLocalTracks}
         />

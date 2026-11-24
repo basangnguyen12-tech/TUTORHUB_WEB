@@ -221,6 +221,22 @@ export type DeleteMessageRequest =
   components["schemas"]["DeleteMessageRequest"];
 export type MarkConversationReadRequest =
   components["schemas"]["MarkConversationReadRequest"];
+export type MessageAttachmentKind =
+  components["schemas"]["MessageAttachmentKind"];
+export type MessageAttachment = components["schemas"]["MessageAttachment"];
+export type UpdateRoomConversationSettingsRequest =
+  components["schemas"]["UpdateRoomConversationSettingsRequest"];
+type UploadConversationAttachmentBody =
+  components["schemas"]["UploadConversationAttachmentRequest"];
+
+/** ADR-0042 upload input; the server sniffs bytes and derives the type. */
+export interface UploadConversationAttachmentInput {
+  clientAttachmentID: string;
+  file: Blob;
+  fileName: string;
+  widthPx?: number;
+  heightPx?: number;
+}
 export type Notification = components["schemas"]["Notification"];
 export type NotificationPage = components["schemas"]["NotificationPage"];
 export type NotificationUnreadCount =
@@ -2790,6 +2806,113 @@ export async function markConversationRead(
 
   return requireData<MessageReadState>(
     data as MessageReadState | undefined,
+    error,
+    response,
+  );
+}
+
+/** ADR-0042 host posting switch for a room conversation. */
+export async function updateRoomConversationSettings(
+  tenantID: string,
+  conversationID: string,
+  input: UpdateRoomConversationSettingsRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<Conversation> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PATCH(
+    "/api/v1/conversations/{conversation_id}/room-settings",
+    {
+      params: {
+        path: { conversation_id: conversationID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+
+  return requireData<Conversation>(
+    data as Conversation | undefined,
+    error,
+    response,
+  );
+}
+
+/**
+ * Stages one attachment with a multipart body. The browser sets the
+ * multipart boundary; no token or capability ever enters the URL.
+ */
+export async function uploadConversationAttachment(
+  tenantID: string,
+  conversationID: string,
+  input: UploadConversationAttachmentInput,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<MessageAttachment> {
+  requireTenantScope(tenantID);
+  const form = new FormData();
+  form.append("client_attachment_id", input.clientAttachmentID);
+  if (input.widthPx !== undefined && input.heightPx !== undefined) {
+    form.append("width_px", String(Math.round(input.widthPx)));
+    form.append("height_px", String(Math.round(input.heightPx)));
+  }
+  form.append("file", input.file, input.fileName);
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/conversations/{conversation_id}/attachments",
+    {
+      params: {
+        path: { conversation_id: conversationID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      // The generated multipart schema models `file` as a string; the wire
+      // body is the FormData above, passed through unchanged.
+      body: form as unknown as UploadConversationAttachmentBody,
+      bodySerializer: (body) => body as unknown as FormData,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+
+  return requireData<MessageAttachment>(
+    data as MessageAttachment | undefined,
+    error,
+    response,
+  );
+}
+
+/**
+ * Fetches reauthorized attachment bytes with the session cookie and the
+ * expected-tenant header. Callers turn the Blob into a revocable object URL.
+ */
+export async function downloadConversationAttachmentBlob(
+  tenantID: string,
+  conversationID: string,
+  attachmentID: string,
+  options: APIRequestOptions = {},
+): Promise<Blob> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/conversations/{conversation_id}/attachments/{attachment_id}/content",
+    {
+      params: {
+        path: { conversation_id: conversationID, attachment_id: attachmentID },
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      parseAs: "blob",
+      signal: options.signal,
+    },
+  );
+
+  return requireData<Blob>(
+    data as unknown as Blob | undefined,
     error,
     response,
   );

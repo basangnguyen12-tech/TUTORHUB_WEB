@@ -9,6 +9,9 @@ import {
 import {
   APIRequestError,
   createDirectConversation,
+  deleteConversationMessage,
+  downloadConversationAttachmentBlob,
+  editConversationMessage,
   ensureClassConversation,
   ensureMediaSpaceConversation,
   getConversation,
@@ -17,12 +20,16 @@ import {
   markConversationRead,
   rotateCSRFToken,
   sendConversationMessage,
+  updateRoomConversationSettings,
+  uploadConversationAttachment,
   type Conversation,
   type ConversationPage,
   type CreateDirectConversationRequest,
+  type Message,
   type MessagePage,
   type SendMessageRequest,
   type TenantCapabilities,
+  type UploadConversationAttachmentInput,
 } from "@tutorhub/api-client";
 import { invalidateTenantAudit } from "./audit";
 import {
@@ -101,9 +108,17 @@ export function useConversations(tenantID: string | undefined, enabled = true) {
   });
 }
 
+/** ROOM-CHAT-01 live-sync options for room chat queries. */
+export interface ConversationLiveOptions {
+  enabled?: boolean;
+  /** Poll interval in milliseconds; paused automatically while hidden. */
+  refetchInterval?: number | false;
+}
+
 export function useConversation(
   tenantID: string | undefined,
   conversationID: string | undefined,
+  options: ConversationLiveOptions = {},
 ) {
   return useQuery({
     queryKey: conversationQueryKeys.detail(
@@ -115,7 +130,9 @@ export function useConversation(
         baseUrl: getApiBaseUrl(),
         signal,
       }),
-    enabled: Boolean(tenantID && conversationID),
+    enabled: (options.enabled ?? true) && Boolean(tenantID && conversationID),
+    refetchInterval: options.refetchInterval ?? false,
+    refetchIntervalInBackground: false,
     retry: shouldRetryConversationQuery,
     staleTime: 15_000,
   });
@@ -124,6 +141,7 @@ export function useConversation(
 export function useConversationMessages(
   tenantID: string | undefined,
   conversationID: string | undefined,
+  options: ConversationLiveOptions = {},
 ) {
   return useInfiniteQuery({
     queryKey: conversationQueryKeys.messages(
@@ -140,12 +158,45 @@ export function useConversationMessages(
         },
         { baseUrl: getApiBaseUrl(), signal },
       ),
-    enabled: Boolean(tenantID && conversationID),
+    enabled: (options.enabled ?? true) && Boolean(tenantID && conversationID),
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     initialPageParam: undefined as string | undefined,
+    refetchInterval: options.refetchInterval ?? false,
+    refetchIntervalInBackground: false,
     retry: shouldRetryConversationQuery,
     staleTime: 10_000,
   });
+}
+
+/**
+ * Writes a committed message into the cached newest page so the sender sees
+ * it immediately; the following invalidation reconciles with the server.
+ */
+export function upsertCachedConversationMessage(
+  queryClient: QueryClient,
+  tenantID: string,
+  conversationID: string,
+  message: Message,
+) {
+  queryClient.setQueryData<InfiniteData<MessagePage>>(
+    conversationQueryKeys.messages(tenantID, conversationID),
+    (data) => {
+      if (!data) return data;
+      let found = false;
+      const pages = data.pages.map((page) => ({
+        ...page,
+        items: page.items.map((item) => {
+          if (item.id !== message.id) return item;
+          found = true;
+          return message;
+        }),
+      }));
+      if (!found && pages[0]) {
+        pages[0] = { ...pages[0], items: [message, ...pages[0].items] };
+      }
+      return { ...data, pages };
+    },
+  );
 }
 
 export function useSendConversationMessage(
@@ -165,10 +216,16 @@ export function useSendConversationMessage(
         { baseUrl: getApiBaseUrl() },
       );
     },
-    onSuccess: () => {
+    onSuccess: (message) => {
       if (!tenantID || !conversationID) {
         return;
       }
+      upsertCachedConversationMessage(
+        queryClient,
+        tenantID,
+        conversationID,
+        message,
+      );
       void Promise.all([
         queryClient.invalidateQueries({
           queryKey: conversationQueryKeys.messages(tenantID, conversationID),
@@ -295,6 +352,151 @@ export function useMarkConversationRead(
     retry: false,
     scope: conversationCSRFMutationScope,
   });
+}
+
+/** ADR-0042 host posting switch; the response is the new projection. */
+export function useUpdateRoomConversationSettings(
+  tenantID: string | undefined,
+  conversationID: string | undefined,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (participantChatEnabled: boolean) => {
+      const csrf = await rotateCSRFToken({ baseUrl: getApiBaseUrl() });
+      return updateRoomConversationSettings(
+        tenantID ?? "",
+        conversationID ?? "",
+        { participant_chat_enabled: participantChatEnabled },
+        csrf.csrf_token,
+        { baseUrl: getApiBaseUrl() },
+      );
+    },
+    onSuccess: (conversation) => {
+      if (!tenantID) return;
+      queryClient.setQueryData(
+        conversationQueryKeys.detail(tenantID, conversation.id),
+        conversation,
+      );
+    },
+    retry: false,
+    scope: conversationCSRFMutationScope,
+  });
+}
+
+/** Stages one attachment; uploads queue behind other CSRF mutations. */
+export function useUploadConversationAttachment(
+  tenantID: string | undefined,
+  conversationID: string | undefined,
+) {
+  return useMutation({
+    mutationFn: async (input: UploadConversationAttachmentInput) => {
+      const csrf = await rotateCSRFToken({ baseUrl: getApiBaseUrl() });
+      return uploadConversationAttachment(
+        tenantID ?? "",
+        conversationID ?? "",
+        input,
+        csrf.csrf_token,
+        { baseUrl: getApiBaseUrl() },
+      );
+    },
+    retry: false,
+    scope: conversationCSRFMutationScope,
+  });
+}
+
+export function useEditConversationMessage(
+  tenantID: string | undefined,
+  conversationID: string | undefined,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      content: string;
+      expectedVersion: number;
+      messageID: string;
+    }) => {
+      const csrf = await rotateCSRFToken({ baseUrl: getApiBaseUrl() });
+      return editConversationMessage(
+        tenantID ?? "",
+        conversationID ?? "",
+        input.messageID,
+        { content: input.content, expected_version: input.expectedVersion },
+        csrf.csrf_token,
+        { baseUrl: getApiBaseUrl() },
+      );
+    },
+    onSuccess: (message) => {
+      if (!tenantID || !conversationID) return;
+      upsertCachedConversationMessage(
+        queryClient,
+        tenantID,
+        conversationID,
+        message,
+      );
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: conversationQueryKeys.messages(tenantID, conversationID),
+      });
+    },
+    retry: false,
+    scope: conversationCSRFMutationScope,
+  });
+}
+
+export function useDeleteConversationMessage(
+  tenantID: string | undefined,
+  conversationID: string | undefined,
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      expectedVersion: number;
+      messageID: string;
+    }) => {
+      const csrf = await rotateCSRFToken({ baseUrl: getApiBaseUrl() });
+      return deleteConversationMessage(
+        tenantID ?? "",
+        conversationID ?? "",
+        input.messageID,
+        { expected_version: input.expectedVersion },
+        csrf.csrf_token,
+        { baseUrl: getApiBaseUrl() },
+      );
+    },
+    onSuccess: (message) => {
+      if (!tenantID || !conversationID) return;
+      upsertCachedConversationMessage(
+        queryClient,
+        tenantID,
+        conversationID,
+        message,
+      );
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: conversationQueryKeys.messages(tenantID, conversationID),
+      });
+    },
+    retry: false,
+    scope: conversationCSRFMutationScope,
+  });
+}
+
+/** Reauthorized attachment bytes for a revocable object URL. */
+export function fetchConversationAttachmentBlob(
+  tenantID: string,
+  conversationID: string,
+  attachmentID: string,
+  signal?: AbortSignal,
+) {
+  return downloadConversationAttachmentBlob(
+    tenantID,
+    conversationID,
+    attachmentID,
+    { baseUrl: getApiBaseUrl(), signal },
+  );
 }
 
 async function synchronizeConversation(

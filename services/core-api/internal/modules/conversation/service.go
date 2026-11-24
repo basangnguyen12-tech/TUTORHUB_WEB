@@ -11,13 +11,31 @@ import (
 
 type Service struct {
 	repository Repository
+	storage    AttachmentStorage
 }
 
-func NewService(repository Repository) (*Service, error) {
+// ServiceOption configures optional conversation capabilities.
+type ServiceOption func(*Service)
+
+// WithAttachmentStorage enables ADR-0042 chat attachments. Without it every
+// conversation reports can_upload_attachments=false and uploads return 503.
+func WithAttachmentStorage(storage AttachmentStorage) ServiceOption {
+	return func(service *Service) {
+		service.storage = storage
+	}
+}
+
+func NewService(repository Repository, options ...ServiceOption) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("conversation repository is required")
 	}
-	return &Service{repository: repository}, nil
+	service := &Service{repository: repository}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service, nil
 }
 
 func (service *Service) List(
@@ -53,7 +71,7 @@ func (service *Service) List(
 	if err != nil {
 		return Page{}, err
 	}
-	page := Page{Items: items}
+	page := Page{Items: service.decorateConversations(items)}
 	if page.Items == nil {
 		page.Items = []Conversation{}
 	}
@@ -84,7 +102,11 @@ func (service *Service) Get(
 	if conversationID == uuid.Nil {
 		return Conversation{}, ErrNotFound
 	}
-	return service.repository.Get(ctx, access, conversationID)
+	item, err := service.repository.Get(ctx, access, conversationID)
+	if err != nil {
+		return Conversation{}, err
+	}
+	return service.decorateConversation(item), nil
 }
 
 func (service *Service) CreateDirect(
@@ -102,7 +124,9 @@ func (service *Service) CreateDirect(
 	if err != nil {
 		return CreateResult{}, err
 	}
-	return service.repository.CreateDirect(ctx, access, email)
+	return service.decorateCreateResult(
+		service.repository.CreateDirect(ctx, access, email),
+	)
 }
 
 func (service *Service) CreateClass(
@@ -119,7 +143,9 @@ func (service *Service) CreateClass(
 	if classID == uuid.Nil {
 		return CreateResult{}, ErrNotFound
 	}
-	return service.repository.CreateClass(ctx, access, classID)
+	return service.decorateCreateResult(
+		service.repository.CreateClass(ctx, access, classID),
+	)
 }
 
 func (service *Service) CreateRoom(
@@ -136,7 +162,32 @@ func (service *Service) CreateRoom(
 	if mediaSpaceID == uuid.Nil {
 		return CreateResult{}, ErrNotFound
 	}
-	return service.repository.CreateRoom(ctx, access, mediaSpaceID)
+	return service.decorateCreateResult(
+		service.repository.CreateRoom(ctx, access, mediaSpaceID),
+	)
+}
+
+// decorateConversation applies service-level capabilities the repository
+// cannot know, such as whether an attachment data plane exists.
+func (service *Service) decorateConversation(item Conversation) Conversation {
+	item.ViewerAccess.CanUploadAttachments = item.Kind == KindRoom &&
+		item.ViewerAccess.CanPostMessages && service.storage.available()
+	return item
+}
+
+func (service *Service) decorateConversations(items []Conversation) []Conversation {
+	for index := range items {
+		items[index] = service.decorateConversation(items[index])
+	}
+	return items
+}
+
+func (service *Service) decorateCreateResult(result CreateResult, err error) (CreateResult, error) {
+	if err != nil {
+		return CreateResult{}, err
+	}
+	result.Conversation = service.decorateConversation(result.Conversation)
+	return result, nil
 }
 
 func validAccess(access AccessContext) bool {

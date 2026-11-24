@@ -82,6 +82,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
+  type SetStateAction,
 } from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 import {
@@ -128,6 +129,9 @@ import {
   type ClassroomModerationControlsModel,
 } from "./ClassroomModerationControls";
 
+/** ROOM-CHAT-01: the three inspectors that share the right-hand slot. */
+export type ClassroomInspectorID = "chat" | "roster" | "effects";
+
 export type ClassroomConnectionStatus =
   "connecting" | "connected" | "reconnecting" | "disconnected" | "failed";
 
@@ -138,6 +142,14 @@ export interface ClassroomMediaShellProps {
   connectionStatus: ClassroomConnectionStatus;
   controlAbortSignal?: AbortSignal;
   chat?: ReactNode;
+  /**
+   * ROOM-CHAT-01: unread room messages for the Dock badge (shown while the
+   * chat inspector is closed). `chatUnreadCapped` renders `99+`.
+   */
+  chatUnreadCount?: number;
+  chatUnreadCapped?: boolean;
+  /** ROOM-CHAT-01: the room page drives polling and read state from this. */
+  onChatOpenChange?: (open: boolean) => void;
   lobby?: ReactNode;
   /**
    * Number of people waiting for admission. Defaults to the value published by
@@ -522,6 +534,9 @@ export function ClassroomMediaShell({
   connectionStatus,
   controlAbortSignal,
   chat,
+  chatUnreadCount = 0,
+  chatUnreadCapped = false,
+  onChatOpenChange,
   lobby,
   lobbyWaitingCount,
   moderation,
@@ -552,8 +567,34 @@ export function ClassroomMediaShell({
   const [activeSpeakerID, setActiveSpeakerID] = useState<string | null>(null);
   const [devicePanelOpen, setDevicePanelOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
-  const [rosterOpen, setRosterOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  // ROOM-CHAT-01 / ADR-0042: Chat, People and Effects share one non-modal
+  // right-hand inspector slot; opening one closes the others.
+  const [inspector, setInspector] = useState<ClassroomInspectorID | null>(null);
+  const inspectorRef = useRef<ClassroomInspectorID | null>(null);
+  useLayoutEffect(() => {
+    inspectorRef.current = inspector;
+  }, [inspector]);
+  const inspectorSetters = useMemo(() => {
+    const setterFor =
+      (id: ClassroomInspectorID) => (action: SetStateAction<boolean>) =>
+        setInspector((current) => {
+          const wasOpen = current === id;
+          const next = typeof action === "function" ? action(wasOpen) : action;
+          if (next) return id;
+          return wasOpen ? null : current;
+        });
+    return {
+      chat: setterFor("chat"),
+      effects: setterFor("effects"),
+      roster: setterFor("roster"),
+    };
+  }, []);
+  const rosterOpen = inspector === "roster";
+  const chatOpen = inspector === "chat";
+  const setRosterOpen = inspectorSetters.roster;
+  const setChatOpen = inspectorSetters.chat;
+  const chatReturnFocus = useRef<HTMLButtonElement>(null);
+  const rosterReturnFocus = useRef<HTMLButtonElement>(null);
   const [openToolID, setOpenToolID] = useState<ClassroomToolID | null>(null);
   const [headerSlotElement, setHeaderSlotElement] =
     useState<HTMLDivElement | null>(null);
@@ -625,9 +666,11 @@ export function ClassroomMediaShell({
     useState<ClassroomVisualEffectsState>(
       () => visualEffectsModel?.initialState ?? DEFAULT_VISUAL_EFFECTS,
     );
-  const [effectsOpen, setEffectsOpen] = useState(false);
+  const effectsOpen = inspector === "effects";
+  const setEffectsOpen = inspectorSetters.effects;
   const effectsReturnFocus = useRef<HTMLElement | null>(null);
   const effectsDescriptionID = useId();
+  const chatDescriptionID = useId();
   const backgroundLibrary = useCustomBackgrounds(effectsScope);
   const libraryStatus = backgroundLibrary.status;
   const libraryUrlFor = backgroundLibrary.urlFor;
@@ -771,7 +814,7 @@ export function ClassroomMediaShell({
     });
     return () =>
       controlAbortSignal.removeEventListener("abort", invalidateControls);
-  }, [controlAbortSignal]);
+  }, [controlAbortSignal, setEffectsOpen]);
 
   useEffect(() => {
     effectsController.activate();
@@ -1355,6 +1398,26 @@ export function ClassroomMediaShell({
     saveVisualEffectsPreference(effectsScope, next);
   };
 
+  useEffect(() => {
+    onChatOpenChange?.(chatOpen);
+  }, [chatOpen, onChatOpenChange]);
+
+  /**
+   * A closing inspector returns focus to its Dock key, unless another
+   * inspector replaced it (that one moves focus into itself).
+   */
+  const restoreInspectorFocus = (event: Event, id: ClassroomInspectorID) => {
+    event.preventDefault();
+    if (inspectorRef.current !== null && inspectorRef.current !== id) return;
+    const opener =
+      id === "chat"
+        ? chatReturnFocus.current
+        : id === "roster"
+          ? rosterReturnFocus.current
+          : effectsReturnFocus.current;
+    opener?.focus();
+  };
+
   const toggleEffectsDrawer = (opener: HTMLElement) => {
     if (!effectsAvailable) return;
     effectsReturnFocus.current = opener;
@@ -1395,13 +1458,29 @@ export function ClassroomMediaShell({
     waitingCount > 0
       ? t("media.p406.openRosterWaiting", { count: waitingCount })
       : t("media.p406.openRoster");
+  // ROOM-CHAT-01: bounded unread badge (1..99, 99+) while chat is closed.
+  const unreadForBadge = Math.max(0, Math.floor(chatUnreadCount));
+  const chatBadge =
+    !chatOpen && unreadForBadge > 0
+      ? chatUnreadCapped || unreadForBadge > 99
+        ? "99+"
+        : String(unreadForBadge)
+      : null;
+  const chatLabel = chatBadge
+    ? t("media.chat.openWithUnread", { count: chatBadge })
+    : t("media.p408.openChat");
 
   return (
     <div
       aria-busy={connectionStatus === "connecting" || undefined}
       className={`media-p405-shell${
+        inspector !== null && (inspector !== "effects" || effectsAvailable)
+          ? " media-p405-shell--inspector-open"
+          : ""
+      }${
         effectsOpen && effectsAvailable ? " media-p405-shell--effects-open" : ""
       }`}
+      data-inspector={inspector ?? undefined}
       ref={shellRef}
     >
       {/*
@@ -1962,31 +2041,66 @@ export function ClassroomMediaShell({
           )}
 
           {chat && (
-            <Drawer onOpenChange={setChatOpen} open={chatOpen}>
+            <Drawer modal={false} onOpenChange={setChatOpen} open={chatOpen}>
               <DrawerTrigger asChild>
                 <IconButton
-                  className="media-p405-dock-button"
+                  aria-expanded={chatOpen}
+                  className="media-p405-dock-button media-p408-chat-control"
                   data-media-control="chat"
-                  data-tooltip={t("media.p408.openChat")}
+                  data-tooltip={chatLabel}
                   id="media-p408-control-chat"
-                  label={t("media.p408.openChat")}
+                  label={chatLabel}
                   onFocus={() => setToolbarFocusKey("chat")}
+                  ref={chatReturnFocus}
                   tabIndex={toolbarTabIndex("chat")}
-                  variant="secondary"
+                  variant={chatOpen ? "primary" : "secondary"}
                 >
                   <DockIcon icon={<MessageCircle />} />
+                  {chatBadge && (
+                    <span
+                      aria-hidden="true"
+                      className="media-p408-chat-badge"
+                      data-testid="media-p408-chat-badge"
+                    >
+                      {chatBadge}
+                    </span>
+                  )}
                 </IconButton>
               </DrawerTrigger>
               <DrawerContent
+                aria-describedby={`${chatDescriptionID}`}
                 className="media-p408-chat-drawer"
                 closeLabel={t("media.p405.close")}
                 data-theme="dark"
+                onCloseAutoFocus={(event) =>
+                  restoreInspectorFocus(event, "chat")
+                }
+                onEscapeKeyDown={(event) => {
+                  // The emoji popover and inline edit own their Escape.
+                  const target = event.target;
+                  if (
+                    target instanceof Element &&
+                    target.closest(
+                      ".classroom-chat-emoji__popover, .classroom-chat__edit",
+                    )
+                  ) {
+                    event.preventDefault();
+                  }
+                }}
+                onInteractOutside={(event) => event.preventDefault()}
               >
-                <DrawerTitle>{t("media.p408.title")}</DrawerTitle>
+                <header className="media-p408-chat-drawer__header">
+                  <DrawerTitle className="media-p408-chat-drawer__title">
+                    {t("media.p408.title")}
+                  </DrawerTitle>
+                  <DrawerDescription
+                    className="media-p408-chat-drawer__subtitle"
+                    id={chatDescriptionID}
+                  >
+                    {t("media.chat.subtitle")}
+                  </DrawerDescription>
+                </header>
                 {chat}
-                <DrawerClose asChild>
-                  <Button variant="secondary">{t("media.p405.close")}</Button>
-                </DrawerClose>
               </DrawerContent>
             </Drawer>
           )}
@@ -2082,9 +2196,14 @@ export function ClassroomMediaShell({
           </Menu>
 
           {(signals || lobby) && (
-            <Drawer onOpenChange={setRosterOpen} open={rosterOpen}>
+            <Drawer
+              modal={false}
+              onOpenChange={setRosterOpen}
+              open={rosterOpen}
+            >
               <DrawerTrigger asChild>
                 <IconButton
+                  aria-expanded={rosterOpen}
                   className="media-p405-dock-button media-p406-roster-control"
                   data-media-control="roster"
                   data-tooltip={rosterLabel}
@@ -2092,6 +2211,7 @@ export function ClassroomMediaShell({
                   id="media-p406-control-roster"
                   label={rosterLabel}
                   onFocus={() => setToolbarFocusKey("roster")}
+                  ref={rosterReturnFocus}
                   tabIndex={toolbarTabIndex("roster")}
                   variant={waitingCount > 0 ? "primary" : "secondary"}
                 >
@@ -2107,6 +2227,10 @@ export function ClassroomMediaShell({
                 className="media-p406-roster-drawer"
                 closeLabel={t("media.p405.close")}
                 data-theme="dark"
+                onCloseAutoFocus={(event) =>
+                  restoreInspectorFocus(event, "roster")
+                }
+                onInteractOutside={(event) => event.preventDefault()}
               >
                 <DrawerTitle>{t("media.p406.rosterTitle")}</DrawerTitle>
                 {lobby && (
@@ -2180,10 +2304,9 @@ export function ClassroomMediaShell({
             className="media-p405-effects-drawer"
             closeLabel={t("media.p405.close")}
             data-theme="dark"
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              effectsReturnFocus.current?.focus();
-            }}
+            onCloseAutoFocus={(event) =>
+              restoreInspectorFocus(event, "effects")
+            }
             onInteractOutside={(event) => event.preventDefault()}
           >
             <DrawerTitle className="media-p405-effects-drawer__title">

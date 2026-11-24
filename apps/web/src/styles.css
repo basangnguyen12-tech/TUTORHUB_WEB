@@ -5568,27 +5568,21 @@ textarea:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/*
+ * ROOM-CHAT-01: People and Chat share the 360px classroom inspector slot
+ * (ClassroomRoomStage.css owns the glass and the stage reserve).
+ */
 .media-p406-roster-drawer {
-  min-width: min(420px, calc(100vw - 24px));
+  width: min(360px, 100vw);
+  min-width: 0;
 }
 
 .media-p408-chat-drawer {
   display: flex;
-  width: min(32rem, calc(100vw - 24px));
+  width: min(360px, 100vw);
   min-width: 0;
   flex-direction: column;
-  gap: var(--space-4);
-  overflow-y: auto;
-}
-
-.media-p408-chat-drawer .conversation-messages,
-.media-p408-chat-drawer .conversation-message,
-.media-p408-chat-drawer .conversation-composer {
-  min-width: 0;
-}
-
-.media-p408-chat-drawer .conversation-message {
-  width: min(92%, 48rem);
+  overflow: hidden;
 }
 
 .media-p506-tool-drawer {

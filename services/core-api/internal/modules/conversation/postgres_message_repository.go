@@ -2,7 +2,6 @@ package conversation
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
 	"errors"
@@ -73,6 +72,11 @@ LIMIT $4`,
 	if hasMore {
 		items = items[:input.Limit]
 	}
+	if err := loadMessageAttachments(
+		queryContext, transaction, access.TenantID, conversationID, items,
+	); err != nil {
+		return messageRepositoryPage{}, err
+	}
 	readState, err := loadMessageReadState(
 		queryContext, transaction, access.TenantID, conversationID, access.ActorID,
 	)
@@ -141,7 +145,7 @@ func (repository *PostgresRepository) SendMessage(
 	if err != nil {
 		return MessageMutationResult{}, err
 	}
-	fingerprint := sha256.Sum256([]byte(input.Content))
+	fingerprint := messageRequestFingerprint(input.Content, input.AttachmentIDs)
 	if existing, found, err := loadIdempotentMessage(
 		queryContext,
 		transaction,
@@ -155,10 +159,16 @@ func (repository *PostgresRepository) SendMessage(
 			subtle.ConstantTimeCompare(existing.fingerprint, fingerprint[:]) != 1 {
 			return MessageMutationResult{}, ErrIdempotencyConflict
 		}
+		replayed, err := withMessageAttachments(
+			queryContext, transaction, access.TenantID, conversationID, existing.message,
+		)
+		if err != nil {
+			return MessageMutationResult{}, err
+		}
 		if err := transaction.Commit(queryContext); err != nil {
 			return MessageMutationResult{}, fmt.Errorf("commit message replay: %w", err)
 		}
-		return MessageMutationResult{Message: existing.message}, nil
+		return MessageMutationResult{Message: replayed}, nil
 	}
 	if err := repository.controls.RequireFeature(
 		queryContext,
@@ -191,10 +201,16 @@ func (repository *PostgresRepository) SendMessage(
 			subtle.ConstantTimeCompare(existing.fingerprint, fingerprint[:]) != 1 {
 			return MessageMutationResult{}, ErrIdempotencyConflict
 		}
+		replayed, err := withMessageAttachments(
+			queryContext, transaction, access.TenantID, conversationID, existing.message,
+		)
+		if err != nil {
+			return MessageMutationResult{}, err
+		}
 		if err := transaction.Commit(queryContext); err != nil {
 			return MessageMutationResult{}, fmt.Errorf("commit concurrent message replay: %w", err)
 		}
-		return MessageMutationResult{Message: existing.message}, nil
+		return MessageMutationResult{Message: replayed}, nil
 	}
 	var now time.Time
 	if err := transaction.QueryRow(queryContext, `SELECT clock_timestamp()`).Scan(&now); err != nil {
@@ -267,6 +283,17 @@ RETURNING
 	if err != nil {
 		return MessageMutationResult{}, safeMessageStoreError("insert message", err)
 	}
+	if err := bindMessageAttachments(
+		queryContext, transaction, access, conversationID, item.ID, input.AttachmentIDs, now,
+	); err != nil {
+		return MessageMutationResult{}, err
+	}
+	item, err = withMessageAttachments(
+		queryContext, transaction, access.TenantID, conversationID, item,
+	)
+	if err != nil {
+		return MessageMutationResult{}, err
+	}
 	if _, err := transaction.Exec(
 		queryContext,
 		`UPDATE tutorhub.conversations
@@ -327,6 +354,12 @@ func (repository *PostgresRepository) EditMessage(
 		return Message{}, ErrVersionConflict
 	}
 	if item.Content != nil && *item.Content == input.Content {
+		item, err = withMessageAttachments(
+			queryContext, transaction, access.TenantID, conversationID, item,
+		)
+		if err != nil {
+			return Message{}, err
+		}
 		if err := transaction.Commit(queryContext); err != nil {
 			return Message{}, fmt.Errorf("commit unchanged message edit: %w", err)
 		}
@@ -366,6 +399,12 @@ RETURNING
 	if err != nil {
 		return Message{}, safeMessageStoreError("update message content", err)
 	}
+	item, err = withMessageAttachments(
+		queryContext, transaction, access.TenantID, conversationID, item,
+	)
+	if err != nil {
+		return Message{}, err
+	}
 	if err := transaction.Commit(queryContext); err != nil {
 		return Message{}, fmt.Errorf("commit message edit: %w", err)
 	}
@@ -377,48 +416,48 @@ func (repository *PostgresRepository) DeleteMessage(
 	access AccessContext,
 	conversationID, messageID uuid.UUID,
 	input DeleteMessageInput,
-) (Message, error) {
+) (Message, []string, error) {
 	queryContext, cancel := context.WithTimeout(ctx, repository.queryTimeout)
 	defer cancel()
 	transaction, err := repository.database.Begin(queryContext)
 	if err != nil {
-		return Message{}, fmt.Errorf("begin message delete: %w", err)
+		return Message{}, nil, fmt.Errorf("begin message delete: %w", err)
 	}
 	defer rollback(transaction)
 	access, err = repository.authorizeMessageRead(
 		queryContext, transaction, access, conversationID,
 	)
 	if err != nil {
-		return Message{}, err
+		return Message{}, nil, err
 	}
 	if err := repository.controls.RequireFeature(
 		queryContext, transaction, access.TenantID, featurecontrol.FeatureConversations,
 	); err != nil {
-		return Message{}, err
+		return Message{}, nil, err
 	}
 	access, err = repository.authorizeMessageWrite(
 		queryContext, transaction, access, conversationID,
 	)
 	if err != nil {
-		return Message{}, err
+		return Message{}, nil, err
 	}
 	item, err := loadMessageForUpdate(
 		queryContext, transaction, access.TenantID, conversationID, messageID,
 	)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && item.Author.UserID != access.ActorID) {
-		return Message{}, ErrNotFound
+		return Message{}, nil, ErrNotFound
 	}
 	if err != nil {
-		return Message{}, safeMessageStoreError("load message for delete", err)
+		return Message{}, nil, safeMessageStoreError("load message for delete", err)
 	}
 	if item.State == MessageStateDeleted {
 		if err := transaction.Commit(queryContext); err != nil {
-			return Message{}, fmt.Errorf("commit repeated message delete: %w", err)
+			return Message{}, nil, fmt.Errorf("commit repeated message delete: %w", err)
 		}
-		return item, nil
+		return item, nil, nil
 	}
 	if item.Version != input.ExpectedVersion {
-		return Message{}, ErrVersionConflict
+		return Message{}, nil, ErrVersionConflict
 	}
 	item, err = scanMessage(transaction.QueryRow(
 		queryContext,
@@ -452,12 +491,18 @@ RETURNING
 		messageID,
 	))
 	if err != nil {
-		return Message{}, safeMessageStoreError("tombstone message", err)
+		return Message{}, nil, safeMessageStoreError("tombstone message", err)
+	}
+	objectKeys, err := tombstoneMessageAttachments(
+		queryContext, transaction, access.TenantID, conversationID, messageID,
+	)
+	if err != nil {
+		return Message{}, nil, err
 	}
 	if err := transaction.Commit(queryContext); err != nil {
-		return Message{}, fmt.Errorf("commit message delete: %w", err)
+		return Message{}, nil, fmt.Errorf("commit message delete: %w", err)
 	}
-	return item, nil
+	return item, objectKeys, nil
 }
 
 func (repository *PostgresRepository) MarkRead(
@@ -696,6 +741,15 @@ FOR UPDATE`,
 		return AccessContext{}, ErrNotFound
 	} else if err != nil {
 		return AccessContext{}, fmt.Errorf("lock message conversation: %w", err)
+	}
+	if row.Kind == KindRoom {
+		// ADR-0042: the host posting switch is read under the conversation
+		// lock; only room moderators may write while it is off.
+		if err := repository.requireRoomChatPosting(
+			ctx, transaction, access, conversationID, row.MediaSpaceID.UUID,
+		); err != nil {
+			return AccessContext{}, err
+		}
 	}
 	return access, nil
 }

@@ -1,8 +1,11 @@
 package conversation
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -81,11 +84,21 @@ func (service *Service) SendMessage(
 	if input.ClientMessageID == uuid.Nil {
 		return MessageMutationResult{}, ErrInvalidInput
 	}
-	content, err := normalizeMessageContent(input.Content)
+	attachmentIDs, err := normalizeAttachmentIDs(input.AttachmentIDs)
+	if err != nil {
+		return MessageMutationResult{}, err
+	}
+	var content string
+	if len(attachmentIDs) > 0 {
+		content, err = normalizeOptionalMessageContent(input.Content)
+	} else {
+		content, err = normalizeMessageContent(input.Content)
+	}
 	if err != nil {
 		return MessageMutationResult{}, err
 	}
 	input.Content = content
+	input.AttachmentIDs = attachmentIDs
 	return service.repository.SendMessage(ctx, access, conversationID, input)
 }
 
@@ -135,9 +148,14 @@ func (service *Service) DeleteMessage(
 	if input.ExpectedVersion < 1 {
 		return Message{}, ErrInvalidInput
 	}
-	return service.repository.DeleteMessage(
+	item, objectKeys, err := service.repository.DeleteMessage(
 		ctx, access, conversationID, messageID, input,
 	)
+	if err != nil {
+		return Message{}, err
+	}
+	service.deleteAttachmentObjects(ctx, objectKeys)
+	return item, nil
 }
 
 func (service *Service) MarkRead(
@@ -155,6 +173,55 @@ func (service *Service) MarkRead(
 		return MessageReadState{}, ErrNotFound
 	}
 	return service.repository.MarkRead(ctx, access, conversationID, messageID)
+}
+
+// normalizeAttachmentIDs rejects nil, duplicate, or more than four IDs and
+// returns them in canonical order for the request fingerprint.
+func normalizeAttachmentIDs(values []uuid.UUID) ([]uuid.UUID, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	if len(values) > MaximumAttachmentsPerMessage {
+		return nil, ErrInvalidInput
+	}
+	normalized := append([]uuid.UUID(nil), values...)
+	slices.SortFunc(normalized, func(left, right uuid.UUID) int {
+		return bytes.Compare(left[:], right[:])
+	})
+	for index, value := range normalized {
+		if value == uuid.Nil || (index > 0 && normalized[index-1] == value) {
+			return nil, ErrInvalidInput
+		}
+	}
+	return normalized, nil
+}
+
+// normalizeOptionalMessageContent allows an empty caption for a message that
+// carries attachments; every other bound still applies.
+func normalizeOptionalMessageContent(value string) (string, error) {
+	if !utf8.ValidString(value) {
+		return "", ErrInvalidInput
+	}
+	if strings.TrimSpace(value) == "" {
+		return "", nil
+	}
+	return normalizeMessageContent(value)
+}
+
+// messageRequestFingerprint keeps the pre-attachment fingerprint for
+// text-only sends so committed replays stay byte-identical.
+func messageRequestFingerprint(content string, attachmentIDs []uuid.UUID) [32]byte {
+	if len(attachmentIDs) == 0 {
+		return sha256.Sum256([]byte(content))
+	}
+	payload := make([]byte, 0, len(content)+13+len(attachmentIDs)*16)
+	payload = append(payload, content...)
+	payload = append(payload, 0)
+	payload = append(payload, "attachments:"...)
+	for _, attachmentID := range attachmentIDs {
+		payload = append(payload, attachmentID[:]...)
+	}
+	return sha256.Sum256(payload)
 }
 
 func normalizeMessageContent(value string) (string, error) {

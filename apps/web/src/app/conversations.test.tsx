@@ -9,13 +9,18 @@ import {
 import type { Conversation, Message } from "@tutorhub/api-client";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { InfiniteData } from "@tanstack/react-query";
+import type { MessagePage } from "@tutorhub/api-client";
 import {
   conversationQueryKeys,
   useConversations,
   useCreateDirectConversation,
+  useDeleteConversationMessage,
   useEnsureClassConversation,
   useEnsureMediaSpaceConversation,
   useSendConversationMessage,
+  useUpdateRoomConversationSettings,
+  useUploadConversationAttachment,
 } from "./conversations";
 
 const tenantID = "4b18543a-74de-419f-9fe8-d0c3dfc991eb";
@@ -346,5 +351,188 @@ describe("conversation queries", () => {
         new URL(request.url).pathname.endsWith("/api/v1/auth/csrf"),
       ),
     ).toHaveLength(2);
+  });
+
+  it("ROOM-CHAT-01 seeds the sent message into the newest cached page", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((request: Request) => {
+        const path = new URL(request.url).pathname;
+        if (path.endsWith("/api/v1/auth/csrf")) {
+          return Promise.resolve(jsonResponse({ csrf_token: "send-csrf" }));
+        }
+        if (request.method === "GET") {
+          return new Promise<Response>(() => undefined);
+        }
+        return Promise.resolve(jsonResponse(sentMessage, 201));
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData<InfiniteData<MessagePage>>(
+      conversationQueryKeys.messages(tenantID, conversationID),
+      {
+        pageParams: [undefined],
+        pages: [
+          {
+            items: [],
+            read_state: null,
+            unread_count: 0,
+            unread_count_capped: false,
+          },
+        ],
+      },
+    );
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MessageMutationProbe />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(await screen.findByText(sentMessage.id)).toBeInTheDocument();
+    const cached = queryClient.getQueryData<InfiniteData<MessagePage>>(
+      conversationQueryKeys.messages(tenantID, conversationID),
+    );
+    expect(cached?.pages[0]?.items.map((item) => item.id)).toEqual([
+      sentMessage.id,
+    ]);
+  });
+
+  it("ROOM-CHAT-01 updates the room posting switch, uploads with CSRF and tombstones messages", async () => {
+    const requests: Request[] = [];
+    const paused = {
+      ...conversation,
+      kind: "room" as const,
+      participant_chat_enabled: false,
+      participants: [],
+      viewer_access: {
+        can_moderate_chat: true,
+        can_post_messages: true,
+        can_upload_attachments: true,
+      },
+    };
+    const tombstone = {
+      ...sentMessage,
+      content: undefined,
+      deleted_at: "2026-08-08T12:05:00Z",
+      state: "deleted" as const,
+      version: 2,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((request: Request) => {
+        requests.push(request);
+        const path = new URL(request.url).pathname;
+        if (path.endsWith("/api/v1/auth/csrf")) {
+          return Promise.resolve(
+            jsonResponse({ csrf_token: `csrf-${requests.length}` }),
+          );
+        }
+        if (path.endsWith("/room-settings")) {
+          return Promise.resolve(jsonResponse(paused));
+        }
+        if (path.endsWith("/attachments")) {
+          return Promise.resolve(
+            jsonResponse(
+              {
+                conversation_id: conversationID,
+                created_at: "2026-08-08T12:00:00Z",
+                display_name: "de.pdf",
+                id: "0c7f6a4e-7f0e-4a3e-9c55-0b5b1c7d0a11",
+                kind: "file",
+                media_type: "application/pdf",
+                size_bytes: 4,
+              },
+              201,
+            ),
+          );
+        }
+        return Promise.resolve(jsonResponse(tombstone));
+      }),
+    );
+    function RoomChatProbe() {
+      const settings = useUpdateRoomConversationSettings(
+        tenantID,
+        conversationID,
+      );
+      const upload = useUploadConversationAttachment(tenantID, conversationID);
+      const remove = useDeleteConversationMessage(tenantID, conversationID);
+      return (
+        <>
+          <button onClick={() => settings.mutate(false)} type="button">
+            pause
+          </button>
+          <button
+            onClick={() =>
+              upload.mutate({
+                clientAttachmentID: "d4c2b0a1-1e2f-4a5b-8c9d-0e1f2a3b4c5d",
+                file: new Blob(["%PDF"], { type: "application/pdf" }),
+                fileName: "de.pdf",
+              })
+            }
+            type="button"
+          >
+            upload
+          </button>
+          <button
+            onClick={() =>
+              remove.mutate({ expectedVersion: 1, messageID: sentMessage.id })
+            }
+            type="button"
+          >
+            delete
+          </button>
+          <output>
+            {[
+              settings.data?.participant_chat_enabled === false ? "paused" : "",
+              upload.data?.display_name ?? "",
+              remove.data?.state ?? "",
+            ].join("|")}
+          </output>
+        </>
+      );
+    }
+    const queryClient = renderProbe(<RoomChatProbe />);
+    fireEvent.click(screen.getByRole("button", { name: "pause" }));
+    expect(await screen.findByText("paused||")).toBeInTheDocument();
+    expect(
+      queryClient.getQueryData<Conversation>(
+        conversationQueryKeys.detail(tenantID, conversationID),
+      )?.participant_chat_enabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "upload" }));
+    expect(await screen.findByText("paused|de.pdf|")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "delete" }));
+    expect(
+      await screen.findByText("paused|de.pdf|deleted"),
+    ).toBeInTheDocument();
+
+    const settingsRequest = requests.find((request) =>
+      new URL(request.url).pathname.endsWith("/room-settings"),
+    );
+    expect(settingsRequest?.method).toBe("PATCH");
+    expect(settingsRequest?.headers.get("X-CSRF-Token")).toMatch(/^csrf-/u);
+    await expect(settingsRequest?.clone().json()).resolves.toEqual({
+      participant_chat_enabled: false,
+    });
+    const uploadRequest = requests.find((request) =>
+      new URL(request.url).pathname.endsWith("/attachments"),
+    );
+    expect(uploadRequest?.headers.get("Content-Type")).toMatch(
+      /^multipart\/form-data/u,
+    );
+    expect(uploadRequest?.headers.get("X-TutorHub-Expected-Tenant-ID")).toBe(
+      tenantID,
+    );
+    const deleteRequest = requests.find(
+      (request) => request.method === "DELETE",
+    );
+    await expect(deleteRequest?.clone().json()).resolves.toEqual({
+      expected_version: 1,
+    });
   });
 });

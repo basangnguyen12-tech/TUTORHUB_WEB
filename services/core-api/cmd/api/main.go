@@ -210,7 +210,19 @@ func run() int {
 			logger.Error("initialize conversation repository", "error", conversationErr)
 			return 1
 		}
-		conversationService, conversationErr = conversation.NewService(conversationRepository)
+		// ADR-0042: attachments use B2 when configured; bounded inline bytes
+		// are allowed only outside staging/production so local preview and
+		// CI work without credentials. Staging/production fail closed.
+		attachmentStorage := conversation.AttachmentStorage{
+			AllowInline: cfg.Environment != "staging" && cfg.Environment != "production",
+		}
+		if objectStore != nil {
+			attachmentStorage.Store = objectStore
+		}
+		conversationService, conversationErr = conversation.NewService(
+			conversationRepository,
+			conversation.WithAttachmentStorage(attachmentStorage),
+		)
 		if conversationErr != nil {
 			logger.Error("initialize conversation service", "error", conversationErr)
 			return 1

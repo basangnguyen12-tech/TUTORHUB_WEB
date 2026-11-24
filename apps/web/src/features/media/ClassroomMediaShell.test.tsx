@@ -527,12 +527,116 @@ describe("ClassroomMediaShell", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Persistent room history")).toBeInTheDocument();
 
-    const close = screen
-      .getAllByRole("button", { name: "Close" })
-      .find((button) => button.textContent?.trim() === "Close");
-    expect(close).toBeDefined();
-    fireEvent.click(close!);
+    // ROOM-CHAT-01: only the round ✕ closes the inspector (no footer key).
+    const drawer = screen.getByRole("dialog", { name: "In-room chat" });
+    const closeKeys = within(drawer).getAllByRole("button", { name: "Close" });
+    expect(closeKeys).toHaveLength(1);
+    expect(closeKeys[0]?.textContent?.trim()).toBe("");
+    fireEvent.click(closeKeys[0]!);
     await waitFor(() => expect(opener).toHaveFocus());
+    expect(opener).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("ROOM-CHAT-01 docks chat, people and effects in one non-modal inspector slot", async () => {
+    const onChatOpenChange = vi.fn();
+    const view = renderShell({
+      chat: <div>Persistent room history</div>,
+      onChatOpenChange,
+      signals: createSignalControls(),
+    });
+    const shell = view.container.querySelector(".media-p405-shell");
+    const chat = screen.getByRole("button", { name: "Open in-room chat" });
+    const people = screen.getByRole("button", {
+      name: "Open classroom roster",
+    });
+
+    expect(chat).toHaveAttribute("aria-expanded", "false");
+    expect(chat).toHaveClass("th-button--secondary");
+    expect(onChatOpenChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(chat);
+    const chatDrawer = await screen.findByRole("dialog", {
+      name: "In-room chat",
+    });
+    expect(chatDrawer).toHaveAccessibleDescription(
+      "Saved for class members · To: Everyone",
+    );
+    expect(chat).toHaveAttribute("aria-expanded", "true");
+    expect(chat).toHaveClass("th-button--primary");
+    expect(onChatOpenChange).toHaveBeenLastCalledWith(true);
+    expect(shell).toHaveClass("media-p405-shell--inspector-open");
+    expect(shell).toHaveAttribute("data-inspector", "chat");
+    // Non-modal: no overlay and the stage stays interactive.
+    expect(document.querySelector(".th-dialog-overlay")).toBeNull();
+    fireEvent.pointerDown(view.container.querySelector(".media-p405-stage")!);
+    expect(screen.getByRole("dialog", { name: "In-room chat" })).toBeVisible();
+
+    // Opening People replaces Chat in the same slot.
+    fireEvent.click(people);
+    expect(
+      await screen.findByRole("dialog", { name: "Classroom roster" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "In-room chat" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(chat).toHaveAttribute("aria-expanded", "false");
+    expect(people).toHaveAttribute("aria-expanded", "true");
+    expect(shell).toHaveAttribute("data-inspector", "roster");
+    expect(onChatOpenChange).toHaveBeenLastCalledWith(false);
+
+    // Escape closes the inspector and gives the stage its width back.
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(shell).not.toHaveClass("media-p405-shell--inspector-open"),
+    );
+    await waitFor(() => expect(people).toHaveFocus());
+  });
+
+  it("ROOM-CHAT-01 shows a bounded unread badge on the closed chat key", async () => {
+    const view = renderShell({
+      chat: <div>Persistent room history</div>,
+      chatUnreadCount: 3,
+    });
+    const chat = screen.getByRole("button", {
+      name: "Open in-room chat, 3 unread messages",
+    });
+    expect(screen.getByTestId("media-p408-chat-badge")).toHaveTextContent("3");
+
+    view.rerender(
+      shellElement({
+        chat: <div>Persistent room history</div>,
+        chatUnreadCount: 120,
+      }),
+    );
+    expect(screen.getByTestId("media-p408-chat-badge")).toHaveTextContent(
+      "99+",
+    );
+    view.rerender(
+      shellElement({
+        chat: <div>Persistent room history</div>,
+        chatUnreadCapped: true,
+        chatUnreadCount: 40,
+      }),
+    );
+    expect(screen.getByTestId("media-p408-chat-badge")).toHaveTextContent(
+      "99+",
+    );
+
+    fireEvent.click(chat);
+    await screen.findByRole("dialog", { name: "In-room chat" });
+    expect(screen.queryByTestId("media-p408-chat-badge")).toBeNull();
+    expect(chat).toHaveAccessibleName("Open in-room chat");
+
+    view.rerender(
+      shellElement({
+        chat: <div>Persistent room history</div>,
+        chatUnreadCount: 0,
+      }),
+    );
+    expect(screen.queryByTestId("media-p408-chat-badge")).toBeNull();
   });
 
   it("mounts a registered classroom tool lazily without remounting media and restores focus", async () => {

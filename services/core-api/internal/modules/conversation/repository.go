@@ -15,6 +15,12 @@ type Repository interface {
 	ListMessages(context.Context, AccessContext, uuid.UUID, MessageListInput, messageCursor) (messageRepositoryPage, error)
 	SendMessage(context.Context, AccessContext, uuid.UUID, SendMessageInput) (MessageMutationResult, error)
 	EditMessage(context.Context, AccessContext, uuid.UUID, uuid.UUID, EditMessageInput) (Message, error)
-	DeleteMessage(context.Context, AccessContext, uuid.UUID, uuid.UUID, DeleteMessageInput) (Message, error)
+	// DeleteMessage also returns object-storage keys of attachments that were
+	// tombstoned in the same transaction, for best-effort deletion after commit.
+	DeleteMessage(context.Context, AccessContext, uuid.UUID, uuid.UUID, DeleteMessageInput) (Message, []string, error)
 	MarkRead(context.Context, AccessContext, uuid.UUID, uuid.UUID) (MessageReadState, error)
+	UpdateRoomSettings(context.Context, AccessContext, uuid.UUID, RoomSettingsInput) (Conversation, error)
+	FindAttachmentReplay(context.Context, AccessContext, uuid.UUID, uuid.UUID, []byte) (MessageAttachment, bool, error)
+	CreateAttachment(context.Context, AccessContext, uuid.UUID, attachmentRecord) (MessageAttachment, bool, []string, error)
+	ReadAttachment(context.Context, AccessContext, uuid.UUID, uuid.UUID) (storedAttachment, error)
 }

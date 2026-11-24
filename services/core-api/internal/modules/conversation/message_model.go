@@ -39,6 +39,9 @@ type Message struct {
 	UpdatedAt       time.Time     `json:"updated_at"`
 	EditedAt        *time.Time    `json:"edited_at,omitempty"`
 	DeletedAt       *time.Time    `json:"deleted_at,omitempty"`
+	// Attachments is non-nil (possibly empty) for active messages and nil for
+	// tombstones, whose public projection never exposes attachments.
+	Attachments *[]MessageAttachment `json:"attachments,omitempty"`
 }
 
 type MessageListInput struct {
@@ -63,6 +66,9 @@ type MessagePage struct {
 type SendMessageInput struct {
 	ClientMessageID uuid.UUID
 	Content         string
+	// AttachmentIDs are staged uploads owned by the actor in this
+	// conversation; content may be empty only when at least one is present.
+	AttachmentIDs []uuid.UUID
 }
 
 type EditMessageInput struct {

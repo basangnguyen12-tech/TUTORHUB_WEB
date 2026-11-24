@@ -1884,6 +1884,46 @@ export type paths = {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/v1/conversations/{conversation_id}/attachments": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Stage one bounded image or lesson-file attachment for a room message
+     * @description Multipart upload (body at most 11 MiB). The server sniffs magic bytes; images (PNG, JPEG, WebP, GIF) may be up to 5 MiB and files (PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, MD, ZIP) up to 10 MiB. SVG, HTML, scripts and executables are rejected. The staged attachment expires after 15 minutes unless a message binds it. Reusing client_attachment_id with the same payload returns the existing attachment (200); a different payload returns 409.
+     */
+    readonly post: operations["uploadConversationAttachment"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/conversations/{conversation_id}/attachments/{attachment_id}/content": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Stream the bytes of an attachment on an active message after reauthorization
+     * @description Returns 404 for missing, foreign-tenant, staged, or deleted attachments. The response always forces a download and is never cached or sniffed.
+     */
+    readonly get: operations["downloadConversationAttachment"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/v1/conversations/{conversation_id}/messages": {
     readonly parameters: {
       readonly query?: never;
@@ -1944,6 +1984,26 @@ export type paths = {
     readonly options?: never;
     readonly head?: never;
     readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/conversations/{conversation_id}/room-settings": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    /**
+     * Turn participant posting on or off in an open room conversation
+     * @description ADR-0042 host posting switch. Only the class teacher/owner/organization admin, the StudyMeeting owner, or a live host/co-host of the active RoomInstance may change it while the MediaSpace is open. When participant chat is disabled, moderators keep posting and every other participant receives 409 for message or attachment writes.
+     */
+    readonly patch: operations["updateRoomConversationSettings"];
     readonly trace?: never;
   };
   readonly "/api/v1/conversations/direct": {
@@ -3921,13 +3981,15 @@ export type components = {
       readonly expected_version: number;
     };
     readonly ActiveMessage: {
+      /** @description Attachments sent with this active message (an empty array when none). Deleted messages never expose attachments. */
+      readonly attachments?: readonly components["schemas"]["MessageAttachment"][];
       readonly author: components["schemas"]["MessageAuthor"];
       /**
        * Format: uuid
        * @description Sender-supplied idempotency identifier; it never selects the sender or conversation.
        */
       readonly client_message_id: string;
-      /** @description Normalized plain text for an active message. */
+      /** @description Normalized plain text for an active message. It is empty only when the message carries at least one attachment. */
       readonly content: string;
       /** Format: uuid */
       readonly conversation_id: string;
@@ -4981,6 +5043,8 @@ export type components = {
        */
       readonly media_space_id?: string;
       readonly media_space_status?: components["schemas"]["MediaSpaceStatus"];
+      /** @description ADR-0042 room host posting switch; always true for direct and class conversations. */
+      readonly participant_chat_enabled?: boolean;
       /** @description The two direct participants. Class and room conversations return an empty array so this projection cannot bypass roster visibility policy. */
       readonly participants: readonly components["schemas"]["ConversationParticipant"][];
       readonly title: string;
@@ -5004,7 +5068,11 @@ export type components = {
       readonly user_id: string;
     };
     readonly ConversationViewerAccess: {
+      /** @description ADR-0042. True only on an open room conversation for the class teacher/owner/organization admin, the StudyMeeting owner, or a live host/co-host. Always sent by servers implementing ROOM-CHAT-01. */
+      readonly can_moderate_chat?: boolean;
       readonly can_post_messages: boolean;
+      /** @description ADR-0042. True when the viewer can post in a room conversation and an attachment data plane is configured. */
+      readonly can_upload_attachments?: boolean;
     };
     readonly CreateAvailabilityPollCapabilityRequest: {
       /** Format: int64 */
@@ -6106,6 +6174,25 @@ export type components = {
     readonly Message:
       | components["schemas"]["ActiveMessage"]
       | components["schemas"]["DeletedMessage"];
+    readonly MessageAttachment: {
+      /** Format: uuid */
+      readonly conversation_id: string;
+      /** Format: date-time */
+      readonly created_at: string;
+      /** @description Normalized base file name; never used to select storage. */
+      readonly display_name: string;
+      readonly height_px?: number;
+      /** Format: uuid */
+      readonly id: string;
+      readonly kind: components["schemas"]["MessageAttachmentKind"];
+      /** @description Server-derived media type from magic bytes and the lesson-file allowlist. */
+      readonly media_type: string;
+      /** Format: int64 */
+      readonly size_bytes: number;
+      readonly width_px?: number;
+    };
+    /** @enum {string} */
+    readonly MessageAttachmentKind: "image" | "file";
     readonly MessageAuthor: {
       readonly display_name: string;
       /** Format: uuid */
@@ -6735,9 +6822,11 @@ export type components = {
       readonly replayed: boolean;
     };
     readonly SendMessageRequest: {
+      /** @description Unexpired staged attachments uploaded by the sender to this conversation; they are bound atomically to the new message. */
+      readonly attachment_ids?: readonly string[];
       /** Format: uuid */
       readonly client_message_id: string;
-      /** @description Plain text; the server also enforces a 16 KiB UTF-8 maximum after normalization. */
+      /** @description Plain text; the server also enforces a 16 KiB UTF-8 maximum after normalization. It may be empty only when attachment_ids has 1 to 4 items. */
       readonly content: string;
     };
     readonly SessionAudience: {
@@ -7181,6 +7270,9 @@ export type components = {
       /** @constant */
       readonly notice_version: "p5-collab-19-v1";
     };
+    readonly UpdateRoomConversationSettingsRequest: {
+      readonly participant_chat_enabled: boolean;
+    };
     readonly UpdateSSOConnectionRequest: {
       readonly allowed_org_ids?: readonly string[];
       /** @enum {string|null} */
@@ -7214,6 +7306,14 @@ export type components = {
       readonly name?: string;
       readonly slug?: string;
       readonly timezone?: string;
+    };
+    readonly UploadConversationAttachmentRequest: {
+      /** Format: uuid */
+      readonly client_attachment_id: string;
+      /** Format: binary */
+      readonly file: string;
+      readonly height_px?: number;
+      readonly width_px?: number;
     };
     readonly User: {
       readonly avatar_object_key?: string;
@@ -11330,6 +11430,120 @@ export interface operations {
       readonly default: components["responses"]["ProblemResponse"];
     };
   };
+  readonly uploadConversationAttachment: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        readonly "X-CSRF-Token": string;
+        /** @description Client cache-scope assertion; authorization still comes only from the server-side active session. */
+        readonly "X-TutorHub-Expected-Tenant-ID": string;
+      };
+      readonly path: {
+        readonly conversation_id: string;
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "multipart/form-data": components["schemas"]["UploadConversationAttachmentRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Existing staged or sent attachment returned by an exact idempotent replay */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["MessageAttachment"];
+        };
+      };
+      /** @description Attachment staged */
+      readonly 201: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["MessageAttachment"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      /** @description The image or file exceeds its size bound */
+      readonly 413: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The attachment type is not on the server allowlist */
+      readonly 415: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The actor attachment upload rate was reached */
+      readonly 429: {
+        headers: {
+          readonly "Retry-After": number;
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/problem+json": components["schemas"]["Problem"];
+        };
+      };
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly downloadConversationAttachment: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Client cache-scope assertion; authorization still comes only from the server-side active session. */
+        readonly "X-TutorHub-Expected-Tenant-ID": string;
+      };
+      readonly path: {
+        readonly attachment_id: string;
+        readonly conversation_id: string;
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Attachment bytes */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          /** @description Always `attachment` with an RFC 5987 UTF-8 filename. */
+          readonly "Content-Disposition"?: string;
+          readonly "Content-Security-Policy"?: "default-src 'none'";
+          readonly "X-Content-Type-Options"?: "nosniff";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/octet-stream": string;
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
   readonly listConversationMessages: {
     readonly parameters: {
       readonly query?: {
@@ -11529,6 +11743,44 @@ export interface operations {
         };
         content: {
           readonly "application/json": components["schemas"]["MessageReadState"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly updateRoomConversationSettings: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        readonly "X-CSRF-Token": string;
+        /** @description Client cache-scope assertion; authorization still comes only from the server-side active session. */
+        readonly "X-TutorHub-Expected-Tenant-ID": string;
+      };
+      readonly path: {
+        readonly conversation_id: string;
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["UpdateRoomConversationSettingsRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Updated room conversation projection */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["Conversation"];
         };
       };
       readonly 400: components["responses"]["ProblemResponse"];

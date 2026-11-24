@@ -162,6 +162,9 @@ LIMIT $7`,
 	if hasMore {
 		items = items[:input.Limit]
 	}
+	if err := repository.applyRoomChatControls(queryContext, transaction, access, items); err != nil {
+		return nil, false, err
+	}
 	if err := transaction.Commit(queryContext); err != nil {
 		return nil, false, fmt.Errorf("commit conversation list: %w", err)
 	}
@@ -197,10 +200,14 @@ func (repository *PostgresRepository) Get(
 	if err != nil {
 		return Conversation{}, err
 	}
+	items := []Conversation{item}
+	if err := repository.applyRoomChatControls(queryContext, transaction, access, items); err != nil {
+		return Conversation{}, err
+	}
 	if err := transaction.Commit(queryContext); err != nil {
 		return Conversation{}, fmt.Errorf("commit conversation query: %w", err)
 	}
-	return item, nil
+	return items[0], nil
 }
 
 func (repository *PostgresRepository) CreateDirect(
@@ -561,10 +568,14 @@ WHERE tenant_id = $1 AND kind = 'room' AND media_space_id = $2`,
 	if err != nil {
 		return CreateResult{}, err
 	}
+	items := []Conversation{item}
+	if err := repository.applyRoomChatControls(queryContext, transaction, access, items); err != nil {
+		return CreateResult{}, err
+	}
 	if err := transaction.Commit(queryContext); err != nil {
 		return CreateResult{}, fmt.Errorf("commit room conversation creation: %w", err)
 	}
-	return CreateResult{Conversation: item, Created: created}, nil
+	return CreateResult{Conversation: items[0], Created: created}, nil
 }
 
 type lockedMember struct {
@@ -1183,6 +1194,7 @@ func (repository *PostgresRepository) project(
 	item := Conversation{
 		ID: row.ID, TenantID: row.TenantID, Kind: row.Kind,
 		Participants: []Participant{}, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		ParticipantChatEnabled: true,
 	}
 	item.UnreadCount = row.UnreadCount
 	if item.UnreadCount > maximumUnreadCount {
@@ -1288,6 +1300,7 @@ func (repository *PostgresRepository) project(
 			roomSourceWritable = repository.authorizer.Authorize(policy.Input{
 				Subject: classSubject, Action: policy.ActionChatSend, Resource: resource,
 			}).Allowed
+			item.roomSourceModerator = classRolesModerateRoomChat(access, classRoles)
 			classID := row.ClassID.UUID
 			classStatus := row.ClassStatus.String
 			item.ClassID = &classID
@@ -1296,6 +1309,8 @@ func (repository *PostgresRepository) project(
 			roomReadable = (row.MediaOwnerID.Valid && row.MediaOwnerID.UUID == access.ActorID) ||
 				(row.MediaMemberState.Valid && row.MediaMemberState.String == "active")
 			roomSourceWritable = roomReadable
+			item.roomSourceModerator = row.MediaOwnerID.Valid &&
+				row.MediaOwnerID.UUID == access.ActorID
 		default:
 			return Conversation{}, fmt.Errorf("unsupported room conversation source")
 		}

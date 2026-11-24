@@ -45,23 +45,37 @@ type Participant struct {
 
 type ViewerAccess struct {
 	CanPostMessages bool `json:"can_post_messages"`
+	// CanModerateChat is true only on an open room conversation for the class
+	// teacher/owner/organization admin, the StudyMeeting owner, or a live
+	// host/co-host of the active RoomInstance (ADR-0042).
+	CanModerateChat bool `json:"can_moderate_chat"`
+	// CanUploadAttachments requires current posting authority on a room
+	// conversation and a configured attachment data plane.
+	CanUploadAttachments bool `json:"can_upload_attachments"`
 }
 
 type Conversation struct {
-	ID                uuid.UUID     `json:"id"`
-	TenantID          uuid.UUID     `json:"-"`
-	Kind              Kind          `json:"kind"`
-	ClassID           *uuid.UUID    `json:"class_id,omitempty"`
-	ClassStatus       *string       `json:"class_status,omitempty"`
-	MediaSpaceID      *uuid.UUID    `json:"media_space_id,omitempty"`
-	MediaSpaceStatus  *string       `json:"media_space_status,omitempty"`
-	Title             string        `json:"title"`
-	Participants      []Participant `json:"participants"`
-	ViewerAccess      ViewerAccess  `json:"viewer_access"`
-	UnreadCount       int           `json:"unread_count"`
-	UnreadCountCapped bool          `json:"unread_count_capped"`
-	CreatedAt         time.Time     `json:"created_at"`
-	UpdatedAt         time.Time     `json:"updated_at"`
+	ID               uuid.UUID     `json:"id"`
+	TenantID         uuid.UUID     `json:"-"`
+	Kind             Kind          `json:"kind"`
+	ClassID          *uuid.UUID    `json:"class_id,omitempty"`
+	ClassStatus      *string       `json:"class_status,omitempty"`
+	MediaSpaceID     *uuid.UUID    `json:"media_space_id,omitempty"`
+	MediaSpaceStatus *string       `json:"media_space_status,omitempty"`
+	Title            string        `json:"title"`
+	Participants     []Participant `json:"participants"`
+	ViewerAccess     ViewerAccess  `json:"viewer_access"`
+	// ParticipantChatEnabled is the room host posting switch; it is always
+	// true for direct and class conversations.
+	ParticipantChatEnabled bool      `json:"participant_chat_enabled"`
+	UnreadCount            int       `json:"unread_count"`
+	UnreadCountCapped      bool      `json:"unread_count_capped"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
+
+	// roomSourceModerator records durable source moderation authority found
+	// while projecting a room row; it is never serialized.
+	roomSourceModerator bool
 }
 
 type ListInput struct {
@@ -91,4 +105,7 @@ type ServiceAPI interface {
 	EditMessage(context.Context, AccessContext, uuid.UUID, uuid.UUID, EditMessageInput) (Message, error)
 	DeleteMessage(context.Context, AccessContext, uuid.UUID, uuid.UUID, DeleteMessageInput) (Message, error)
 	MarkRead(context.Context, AccessContext, uuid.UUID, uuid.UUID) (MessageReadState, error)
+	UpdateRoomSettings(context.Context, AccessContext, uuid.UUID, RoomSettingsInput) (Conversation, error)
+	UploadAttachment(context.Context, AccessContext, uuid.UUID, UploadAttachmentInput) (AttachmentUploadResult, error)
+	ReadAttachmentContent(context.Context, AccessContext, uuid.UUID, uuid.UUID) (AttachmentContent, error)
 }

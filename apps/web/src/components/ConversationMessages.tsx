@@ -8,7 +8,7 @@ import {
   SkeletonGroup,
   StatusBadge,
 } from "@tutorhub/ui";
-import { ChevronUp, RefreshCw, Send } from "lucide-react";
+import { ChevronUp, Paperclip, RefreshCw, Send } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -322,9 +322,23 @@ export function ConversationMessages({
                   {t("conversations.messageDeleted")}
                 </p>
               ) : (
-                <p className="conversation-message__content">
-                  {message.content}
-                </p>
+                <>
+                  {(message.content || !message.attachments?.length) && (
+                    <p className="conversation-message__content">
+                      {message.content}
+                    </p>
+                  )}
+                  {message.attachments && message.attachments.length > 0 && (
+                    <ul className="conversation-message__attachments">
+                      {message.attachments.map((attachment) => (
+                        <li key={attachment.id}>
+                          <Paperclip aria-hidden="true" size={14} />{" "}
+                          <span>{attachment.display_name}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
               )}
               {message.state === "active" && message.edited_at && (
                 <span className="conversation-message__edited">

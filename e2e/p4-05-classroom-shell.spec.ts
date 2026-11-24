@@ -30,6 +30,12 @@ interface FixtureOptions {
     /** ROOM-COMPACT-05: the lesson name shown in the Top Bar. */
     roomTitle?: string;
     /**
+     * ROOM-CHAT-01: mount the production `ClassroomChatPanel` over a local
+     * in-memory message store (no Core API) with seeded lesson messages.
+     * `paused` projects the host posting switch off for the viewer.
+     */
+    chat?: { paused?: boolean };
+    /**
      * WHITEBOARD-PAPER-01: mount the production `CanonicalExcalidrawCanvas`
      * over a real local `CanonicalExcalidrawAuthority` (Y.Doc, no grant, no
      * socket) instead of the static whiteboard placeholder.
@@ -79,7 +85,44 @@ interface BrowserReactModule {
     props?: Record<string, unknown> | null,
     ...children: unknown[]
   ): unknown;
+  useCallback<Callback>(callback: Callback, deps: unknown[]): Callback;
   useContext<Value>(context: unknown): Value;
+  useEffect(effect: () => void | (() => void), deps?: unknown[]): void;
+  useState<Value>(
+    initial: Value | (() => Value),
+  ): [Value, (next: Value | ((current: Value) => Value)) => void];
+}
+
+interface BrowserChatPanelModule {
+  ClassroomChatPanel: unknown;
+}
+
+interface ChatFixtureAttachment {
+  conversation_id: string;
+  created_at: string;
+  display_name: string;
+  height_px?: number;
+  id: string;
+  kind: "image" | "file";
+  media_type: string;
+  size_bytes: number;
+  width_px?: number;
+}
+
+interface ChatFixtureMessage {
+  attachments?: ChatFixtureAttachment[];
+  author: { display_name: string; user_id: string };
+  client_message_id: string;
+  content?: string;
+  conversation_id: string;
+  created_at: string;
+  deleted_at?: string;
+  edited_at?: string;
+  id: string;
+  sequence: number;
+  state: "active" | "deleted";
+  updated_at: string;
+  version: number;
 }
 
 interface BrowserReactDOMModule {
@@ -139,6 +182,11 @@ declare global {
     };
     __p405MediaProbe?: MediaProbeState;
     __paperFixtureAuthority?: PaperFixtureAuthority;
+    __roomChatFixture?: {
+      participantChatEnabled: () => boolean;
+      receive: (content: string) => void;
+      sent: () => number;
+    };
   }
 }
 
@@ -584,6 +632,294 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
       participantCount: fixtureOptions.participantCount,
     };
     window.__p405Fixture = fixtureState;
+
+    // ROOM-CHAT-01: a stateful room wrapper drives the real chat panel and
+    // the Dock unread badge from an in-memory message store.
+    let ChatRoom: unknown = null;
+    if (studio?.chat) {
+      const chatModule = await dynamicImport<BrowserChatPanelModule>(
+        "/src/features/media/ClassroomChatPanel.tsx",
+      );
+      const conversationID = "20000000-0000-4000-8000-000000000001";
+      const host = {
+        display_name: studioNames[0] ?? "Teacher",
+        user_id: participantKey(1),
+      };
+      const viewerIsHost = studio.role !== "student";
+      const viewer = viewerIsHost
+        ? host
+        : {
+            display_name: studioNames[1] ?? "Student",
+            user_id: participantKey(2),
+          };
+      const drawWorksheet = () =>
+        new Promise<Blob>((resolve) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = 640;
+          canvas.height = 420;
+          const context = canvas.getContext("2d")!;
+          context.fillStyle = "#fffdf7";
+          context.fillRect(0, 0, 640, 420);
+          context.strokeStyle = "#cbd5e1";
+          for (let line = 70; line < 420; line += 34) {
+            context.beginPath();
+            context.moveTo(24, line);
+            context.lineTo(616, line);
+            context.stroke();
+          }
+          context.fillStyle = "#c2255c";
+          context.font = "bold 30px sans-serif";
+          context.fillText(
+            vietnamese ? "Bài 3 · Phương trình" : "Lesson 3",
+            32,
+            50,
+          );
+          context.fillStyle = "#1e3a8a";
+          context.font = "26px serif";
+          context.fillText("x² − 5x + 6 = 0", 40, 128);
+          context.fillText("Δ = 25 − 24 = 1", 40, 196);
+          context.fillText("x₁ = 3 ;  x₂ = 2", 40, 264);
+          context.strokeStyle = "#16a34a";
+          context.lineWidth = 4;
+          context.beginPath();
+          context.arc(460, 230, 70, 0, Math.PI * 2);
+          context.stroke();
+          canvas.toBlob((blob) => resolve(blob!), "image/png");
+        });
+      const blobs = new Map<string, Blob>();
+      const uploadedMeta = new Map<string, ChatFixtureAttachment>();
+      const minutesAgo = (minutes: number) =>
+        new Date(Date.now() - minutes * 60_000).toISOString();
+      const worksheet = await drawWorksheet();
+      const worksheetAttachment: ChatFixtureAttachment = {
+        conversation_id: conversationID,
+        created_at: minutesAgo(9),
+        display_name: vietnamese ? "bai-3-minh-anh.png" : "lesson-3.png",
+        height_px: 420,
+        id: "30000000-0000-4000-8000-000000000001",
+        kind: "image",
+        media_type: "image/png",
+        size_bytes: worksheet.size,
+        width_px: 640,
+      };
+      blobs.set(worksheetAttachment.id, worksheet);
+      const outline = new Blob(["%PDF-1.7\n% ROOM-CHAT-01 fixture\n%%EOF\n"], {
+        type: "application/pdf",
+      });
+      const outlineAttachment: ChatFixtureAttachment = {
+        conversation_id: conversationID,
+        created_at: minutesAgo(4),
+        display_name: vietnamese
+          ? "De-cuong-on-tap-Chuong-2.pdf"
+          : "Chapter-2-review.pdf",
+        id: "30000000-0000-4000-8000-000000000002",
+        kind: "file",
+        media_type: "application/pdf",
+        size_bytes: 1_258_291,
+      };
+      blobs.set(outlineAttachment.id, outline);
+      let sequence = 0;
+      const activeMessage = (
+        author: { display_name: string; user_id: string },
+        content: string,
+        created_at: string,
+        attachments: ChatFixtureAttachment[] = [],
+      ): ChatFixtureMessage => {
+        sequence += 1;
+        return {
+          attachments,
+          author,
+          client_message_id: crypto.randomUUID(),
+          content,
+          conversation_id: conversationID,
+          created_at,
+          id: crypto.randomUUID(),
+          sequence,
+          state: "active",
+          updated_at: created_at,
+          version: 1,
+        };
+      };
+      const student = (index: number) => ({
+        display_name: studioNames[index] ?? `Student ${index}`,
+        user_id: participantKey(index + 1),
+      });
+      const seeded: ChatFixtureMessage[] = [
+        activeMessage(
+          student(1),
+          vietnamese
+            ? "Em chào cô ạ! Em gửi ảnh bài 3 nhé"
+            : "Hi! Here is my lesson 3 photo",
+          minutesAgo(9),
+          [worksheetAttachment],
+        ),
+        activeMessage(
+          student(2),
+          vietnamese
+            ? "Cô ơi phần b) em chưa hiểu cách đặt ẩn ạ"
+            : "I am stuck on part b)",
+          minutesAgo(7),
+        ),
+        activeMessage(student(3), "👍👏", minutesAgo(6)),
+        activeMessage(
+          host,
+          vietnamese
+            ? "Cả lớp xem đề cương ôn tập Chương 2 nhé: https://tutorhub.example/on-tap"
+            : "Please review chapter 2: https://tutorhub.example/review",
+          minutesAgo(4),
+          [outlineAttachment],
+        ),
+      ];
+      let sentCount = 0;
+      const paused = Boolean(studio.chat.paused);
+      ChatRoom = () => {
+        const [open, setOpen] = React.useState(false);
+        const [unread, setUnread] = React.useState(0);
+        const [participantChatEnabled, setParticipantChatEnabled] =
+          React.useState(!paused);
+        const [messages, setMessages] =
+          React.useState<ChatFixtureMessage[]>(seeded);
+        const onChatOpenChange = React.useCallback((next: boolean) => {
+          setOpen(next);
+          if (next) setUnread(0);
+        }, []);
+        React.useEffect(() => {
+          window.__roomChatFixture = {
+            participantChatEnabled: () => participantChatEnabled,
+            receive: (content: string) => {
+              setMessages((current) => [
+                ...current,
+                activeMessage(host, content, new Date().toISOString()),
+              ]);
+              if (!open) setUnread((count) => count + 1);
+            },
+            sent: () => sentCount,
+          };
+        }, [open, participantChatEnabled]);
+        const canModerate = viewerIsHost;
+        const canPost = canModerate || participantChatEnabled;
+        const conversation = {
+          created_at: minutesAgo(30),
+          id: conversationID,
+          kind: "room",
+          media_space_id: "40000000-0000-4000-8000-000000000001",
+          media_space_status: "open",
+          participant_chat_enabled: participantChatEnabled,
+          participants: [],
+          title: studio.roomTitle ?? "Classroom",
+          unread_count: 0,
+          unread_count_capped: false,
+          updated_at: minutesAgo(1),
+          viewer_access: {
+            can_moderate_chat: canModerate,
+            can_post_messages: canPost,
+            can_upload_attachments: canPost,
+          },
+        };
+        const chatNode = React.createElement(chatModule.ClassroomChatPanel, {
+          actorID: viewer.user_id,
+          conversation,
+          hasOlder: false,
+          loadAttachment: async (attachment: ChatFixtureAttachment) =>
+            blobs.get(attachment.id) ?? new Blob([]),
+          loadingOlder: false,
+          messages,
+          onDelete: async (message: ChatFixtureMessage) => {
+            setMessages((current) =>
+              current.map((item) =>
+                item.id === message.id
+                  ? {
+                      ...item,
+                      attachments: undefined,
+                      content: undefined,
+                      deleted_at: new Date().toISOString(),
+                      state: "deleted",
+                      version: item.version + 1,
+                    }
+                  : item,
+              ),
+            );
+          },
+          onEdit: async (message: ChatFixtureMessage, content: string) => {
+            setMessages((current) =>
+              current.map((item) =>
+                item.id === message.id
+                  ? {
+                      ...item,
+                      content,
+                      edited_at: new Date().toISOString(),
+                      version: item.version + 1,
+                    }
+                  : item,
+              ),
+            );
+          },
+          onLoadOlder: () => undefined,
+          onSend: async (input: {
+            attachmentIDs: string[];
+            content: string;
+          }) => {
+            sentCount += 1;
+            const attachments = input.attachmentIDs.flatMap((id) => {
+              const blob = blobs.get(id);
+              const meta = uploadedMeta.get(id);
+              return blob && meta ? [meta] : [];
+            });
+            setMessages((current) => [
+              ...current,
+              activeMessage(
+                viewer,
+                input.content,
+                new Date().toISOString(),
+                attachments,
+              ),
+            ]);
+          },
+          onToggleParticipantChat: async (enabled: boolean) => {
+            setParticipantChatEnabled(enabled);
+          },
+          onUpload: async (input: {
+            clientAttachmentID: string;
+            file: Blob;
+            fileName: string;
+            heightPx?: number;
+            widthPx?: number;
+          }) => {
+            const image = input.file.type.startsWith("image/");
+            const meta: ChatFixtureAttachment = {
+              conversation_id: conversationID,
+              created_at: new Date().toISOString(),
+              display_name: input.fileName,
+              height_px: image ? input.heightPx : undefined,
+              id: input.clientAttachmentID,
+              kind: image ? "image" : "file",
+              media_type: input.file.type || "application/octet-stream",
+              size_bytes: input.file.size,
+              width_px: image ? input.widthPx : undefined,
+            };
+            blobs.set(meta.id, input.file);
+            uploadedMeta.set(meta.id, meta);
+            return meta;
+          },
+          open,
+          tenantID: "50000000-0000-4000-8000-000000000001",
+        });
+        return React.createElement(shell.ClassroomMediaShell, {
+          canPublishCameraMicrophone:
+            fixtureOptions.canPublishCameraMicrophone ?? true,
+          canShareScreen: fixtureOptions.canShareScreen ?? true,
+          canSubscribe: fixtureOptions.canSubscribe ?? true,
+          connectionStatus: "connected",
+          onLeave: () => {
+            fixtureState.leaveCalls += 1;
+          },
+          ...studioProps,
+          chat: chatNode,
+          chatUnreadCount: unread,
+          onChatOpenChange,
+        });
+      };
+    }
     const rootElement = document.getElementById("p405-fixture-root");
     if (!rootElement) throw new Error("P4-05 fixture root is missing.");
     const root = ReactDOM.createRoot(rootElement);
@@ -597,17 +933,19 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
           React.createElement(
             components.RoomContext.Provider,
             { value: room },
-            React.createElement(shell.ClassroomMediaShell, {
-              canPublishCameraMicrophone:
-                fixtureOptions.canPublishCameraMicrophone ?? true,
-              canShareScreen: fixtureOptions.canShareScreen ?? true,
-              canSubscribe: fixtureOptions.canSubscribe ?? true,
-              connectionStatus: "connected",
-              onLeave: () => {
-                fixtureState.leaveCalls += 1;
-              },
-              ...studioProps,
-            }),
+            ChatRoom
+              ? React.createElement(ChatRoom)
+              : React.createElement(shell.ClassroomMediaShell, {
+                  canPublishCameraMicrophone:
+                    fixtureOptions.canPublishCameraMicrophone ?? true,
+                  canShareScreen: fixtureOptions.canShareScreen ?? true,
+                  canSubscribe: fixtureOptions.canSubscribe ?? true,
+                  connectionStatus: "connected",
+                  onLeave: () => {
+                    fixtureState.leaveCalls += 1;
+                  },
+                  ...studioProps,
+                }),
           ),
         ),
       ),
@@ -2659,4 +2997,371 @@ test("ROOM-COMPACT-05 reflows the Top Bar and the end-call popover at 320 CSS pi
   await page.keyboard.press("Escape");
   await expect(endPopover).toHaveCount(0);
   await expect(leave).toBeFocused();
+});
+
+// ---- ROOM-CHAT-01 (ADR-0042) classroom chat inspector -------------------
+
+// Set ROOM_CHAT_SCREENSHOT_DIR to save the acceptance screenshots.
+const roomChatScreenshotDir =
+  process.env.ROOM_CHAT_SCREENSHOT_DIR?.trim() ?? "";
+
+async function saveRoomChatScreenshot(page: Page, name: string) {
+  if (!roomChatScreenshotDir) return;
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${roomChatScreenshotDir}/${name}` });
+}
+
+async function lessonImagePNG(page: Page) {
+  const base64 = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 480;
+    canvas.height = 320;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#f8fafc";
+    context.fillRect(0, 0, 480, 320);
+    context.fillStyle = "#1d4ed8";
+    context.font = "bold 28px sans-serif";
+    context.fillText("Lời giải mẫu", 24, 48);
+    context.strokeStyle = "#f59e0b";
+    context.lineWidth = 6;
+    context.beginPath();
+    context.moveTo(40, 260);
+    context.quadraticCurveTo(240, 40, 440, 260);
+    context.stroke();
+    return canvas.toDataURL("image/png").split(",")[1] ?? "";
+  });
+  return Buffer.from(base64, "base64");
+}
+
+const roomChatExternalRoute =
+  /^https?:\/\/(?!127\.0\.0\.1[:/]|localhost[:/])[^/]+\//;
+
+test("ROOM-CHAT-01 docks a 360px chat beside the whiteboard and camera column with emoji, attachments and a lightbox", async ({
+  page,
+}) => {
+  await page.route(roomChatExternalRoute, (route) => route.abort());
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 4,
+    studio: {
+      chat: {},
+      language: "vi",
+      roomTitle: roomCompactTitle,
+      whiteboard: "paper",
+    },
+  });
+  await loadRoomStudioStyles(page);
+  await page
+    .getByRole("button", { name: "Mở bảng trắng", exact: true })
+    .click();
+  await expect(page.locator(".whiteboard-engine-canvas")).toBeVisible();
+  const probe = await page.evaluate(() => {
+    const tiles = Array.from(
+      document.querySelectorAll<HTMLElement>(".media-p405-tile"),
+    );
+    tiles.forEach((tile, index) => {
+      tile.dataset.chatProbe = String(index);
+    });
+    const videos = Array.from(
+      document.querySelectorAll<HTMLElement>(".media-p405-shell video"),
+    );
+    videos.forEach((video, index) => {
+      video.dataset.chatProbe = String(index);
+    });
+    return { tiles: tiles.length, videos: videos.length };
+  });
+  expect(probe.tiles).toBeGreaterThan(0);
+  const canvasBefore = await boxOf(page.locator(".whiteboard-engine-canvas"));
+
+  const chatKey = page.locator("#media-p408-control-chat");
+  await expect(chatKey).toHaveAttribute("aria-expanded", "false");
+  await chatKey.click();
+  const drawer = page.getByRole("dialog", { name: "Trò chuyện trong phòng" });
+  await expect(drawer).toBeVisible();
+  await expect(chatKey).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".media-p405-shell")).toHaveClass(
+    /media-p405-shell--inspector-open/u,
+  );
+  // Let the 200ms reserve transition settle before measuring.
+  await page.waitForTimeout(450);
+
+  // ---- Geometry: a 360px inspector that covers nothing. ----
+  const drawerBox = await boxOf(drawer);
+  const canvasBox = await boxOf(page.locator(".whiteboard-engine-canvas"));
+  const tileBox = await boxOf(page.locator(".media-p405-tile").first());
+  const headerBox = await boxOf(page.locator(".media-p405-header"));
+  const dockBox = await boxOf(page.locator(".media-p405-footer"));
+  expect(Math.round(drawerBox.width)).toBe(360);
+  expect(Math.round(drawerBox.x)).toBe(1_080);
+  expect(Math.round(drawerBox.height)).toBe(900);
+  expect(Math.abs(tileBox.width - 256)).toBeLessThanOrEqual(2);
+  expect(tileBox.x + tileBox.width).toBeLessThanOrEqual(drawerBox.x);
+  expect(canvasBox.x + canvasBox.width).toBeLessThanOrEqual(tileBox.x);
+  expect(headerBox.x + headerBox.width).toBeLessThanOrEqual(drawerBox.x);
+  expect(dockBox.x + dockBox.width).toBeLessThanOrEqual(drawerBox.x);
+  expect(await page.locator(".th-dialog-overlay").count()).toBe(0);
+  expect(
+    await page.evaluate(() => ({
+      tiles: document.querySelectorAll(".media-p405-tile[data-chat-probe]")
+        .length,
+      videos: document.querySelectorAll(
+        ".media-p405-shell video[data-chat-probe]",
+      ).length,
+    })),
+  ).toEqual(probe);
+  console.log(
+    `[ROOM-CHAT-01 metrics] ${JSON.stringify({
+      canvasAfter: canvasBox,
+      canvasBefore,
+      dock: dockBox,
+      drawer: drawerBox,
+      header: headerBox,
+      tile: tileBox,
+    })}`,
+  );
+
+  // ---- Host switch, seeded messages, image thumbnail and PDF card. ----
+  const toggle = drawer.getByRole("switch", {
+    name: "Cho phép người tham gia gửi tin nhắn",
+  });
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect(
+    drawer.getByText("Tin nhắn được lưu cho thành viên lớp · Đến: Mọi người"),
+  ).toBeVisible();
+  await expect(
+    drawer.getByRole("button", { name: "Xem ảnh bai-3-minh-anh.png" }),
+  ).toBeEnabled();
+  await expect(drawer.getByText("De-cuong-on-tap-Chuong-2.pdf")).toBeVisible();
+  await expect(drawer.locator("[data-jumbo]")).toHaveText("👍👏");
+  await expect(drawer.getByText("Làm mới tin nhắn")).toHaveCount(0);
+  await expect(drawer.getByText("Lịch sử tin nhắn")).toHaveCount(0);
+  await saveRoomChatScreenshot(
+    page,
+    "01-chat-with-whiteboard-host-vi-1440x900.png",
+  );
+
+  // ---- Composer: emoji popover + staged image and PDF. ----
+  const composer = drawer.getByRole("textbox", { name: "Nội dung tin nhắn" });
+  await composer.fill("Cô gửi lời giải mẫu ");
+  await drawer.getByRole("button", { name: "Biểu tượng cảm xúc" }).click();
+  const picker = page.getByRole("dialog", { name: "Chọn biểu tượng cảm xúc" });
+  await expect(picker).toBeVisible();
+  await page.getByTestId("classroom-chat-image-input").setInputFiles({
+    buffer: await lessonImagePNG(page),
+    mimeType: "image/png",
+    name: "loi-giai-mau.png",
+  });
+  await page.getByTestId("classroom-chat-file-input").setInputFiles({
+    buffer: Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n"),
+    mimeType: "application/pdf",
+    name: "Phieu-bai-tap-tuan-12.pdf",
+  });
+  const strip = drawer.getByRole("list", { name: "Tệp đang chờ gửi" });
+  await expect(strip.locator('[data-status="ready"]')).toHaveCount(2);
+  await expect(strip.locator("img")).toHaveCount(1);
+  const pickerBox = await boxOf(picker);
+  expect(pickerBox.x).toBeGreaterThanOrEqual(drawerBox.x);
+  expect(pickerBox.x + pickerBox.width).toBeLessThanOrEqual(1_440);
+  await saveRoomChatScreenshot(
+    page,
+    "02-chat-emoji-picker-and-staged-files-vi-1440x900.png",
+  );
+  await picker.getByRole("button", { name: "vỗ tay hoan hô" }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(composer).toHaveValue("Cô gửi lời giải mẫu 👏");
+  await composer.press("Enter");
+  await expect(strip).toHaveCount(0);
+  await expect(composer).toHaveValue("");
+  await expect(drawer.getByText("Cô gửi lời giải mẫu 👏")).toBeVisible();
+  await expect(
+    drawer.getByRole("button", { name: "Xem ảnh loi-giai-mau.png" }),
+  ).toBeEnabled();
+  await expect(drawer.getByText("Phieu-bai-tap-tuan-12.pdf")).toBeVisible();
+  expect(await page.evaluate(() => window.__roomChatFixture?.sent())).toBe(1);
+
+  // ---- Lightbox. ----
+  await drawer
+    .getByRole("button", { name: "Xem ảnh bai-3-minh-anh.png" })
+    .click();
+  const lightbox = page.getByRole("dialog", { name: "bai-3-minh-anh.png" });
+  await expect(
+    lightbox.getByRole("img", { name: "bai-3-minh-anh.png" }),
+  ).toBeVisible();
+  await expect(
+    lightbox.getByRole("link", { name: "Tải ảnh gốc" }),
+  ).toHaveAttribute("download", "bai-3-minh-anh.png");
+  await saveRoomChatScreenshot(page, "03-chat-image-lightbox-vi-1440x900.png");
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".classroom-chat-lightbox")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(lightbox).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+
+  // ---- Host pauses participant chat. ----
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(
+    await page.evaluate(() =>
+      window.__roomChatFixture?.participantChatEnabled(),
+    ),
+  ).toBe(false);
+  await expect(composer).toBeVisible();
+
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p408-chat-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-footer").analyze())
+      .violations,
+  ).toEqual([]);
+
+  // Escape closes the inspector, returns focus and gives the width back.
+  await composer.focus();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(chatKey).toBeFocused();
+  await expect(chatKey).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".media-p405-shell")).not.toHaveClass(
+    /media-p405-shell--inspector-open/u,
+  );
+});
+
+test("ROOM-CHAT-01 shows students the unread badge and a calm read-only notice when the teacher pauses chat", async ({
+  page,
+}) => {
+  await page.route(roomChatExternalRoute, (route) => route.abort());
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 4,
+    studio: {
+      chat: { paused: true },
+      language: "vi",
+      role: "student",
+      roomTitle: roomCompactTitle,
+    },
+  });
+  await loadRoomStudioStyles(page);
+  const chatKey = page.locator("#media-p408-control-chat");
+  const badge = page.getByTestId("media-p408-chat-badge");
+  await expect(badge).toHaveCount(0);
+
+  await page.evaluate(() => {
+    window.__roomChatFixture?.receive("Cả lớp tập trung nghe cô giảng nhé.");
+    window.__roomChatFixture?.receive(
+      "Cô sẽ mở lại trò chuyện sau phần ví dụ.",
+    );
+  });
+  await expect(badge).toHaveText("2");
+  await expect(chatKey).toHaveAccessibleName(
+    "Mở trò chuyện trong phòng, 2 tin nhắn chưa đọc",
+  );
+  const keyBox = await boxOf(chatKey);
+  const badgeBox = await boxOf(badge);
+  expect(badgeBox.x + badgeBox.width).toBeGreaterThan(
+    keyBox.x + keyBox.width - 4,
+  );
+  expect(badgeBox.y).toBeLessThan(keyBox.y + 4);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-footer").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomChatScreenshot(
+    page,
+    "05-chat-student-unread-badge-closed-vi-1440x900.png",
+  );
+
+  await chatKey.click();
+  const drawer = page.getByRole("dialog", { name: "Trò chuyện trong phòng" });
+  await expect(drawer).toBeVisible();
+  await expect(badge).toHaveCount(0);
+  await expect(
+    drawer.getByText("Giáo viên đã tạm tắt gửi tin nhắn cho người tham gia."),
+  ).toBeVisible();
+  await expect(drawer.getByRole("switch")).toHaveCount(0);
+  await expect(
+    drawer.getByRole("textbox", { name: "Nội dung tin nhắn" }),
+  ).toHaveCount(0);
+  await expect(
+    drawer.getByText("Cô sẽ mở lại trò chuyện sau phần ví dụ."),
+  ).toBeVisible();
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p408-chat-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await saveRoomChatScreenshot(
+    page,
+    "04-chat-student-readonly-and-unread-badge-vi-1440x900.png",
+  );
+});
+
+test("ROOM-CHAT-01 reflows the chat inspector and emoji popover at 320 CSS pixels with forced colors and no violations", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await mountClassroomFixture(page, {
+    participantCount: 2,
+    studio: { chat: {}, language: "vi", roomTitle: roomCompactTitle },
+  });
+  await loadRoomStudioStyles(page);
+  const horizontalOverflow = () =>
+    page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+
+  const chatKey = page.locator("#media-p408-control-chat");
+  await chatKey.scrollIntoViewIfNeeded();
+  await chatKey.click();
+  const drawer = page.getByRole("dialog", { name: "Trò chuyện trong phòng" });
+  await expect(drawer).toBeVisible();
+  // The sheet slides in from the right edge; measure once it has settled.
+  await expect.poll(async () => Math.round((await boxOf(drawer)).x)).toBe(0);
+  const drawerBox = await boxOf(drawer);
+  expect(drawerBox.x).toBeGreaterThanOrEqual(0);
+  expect(drawerBox.x + drawerBox.width).toBeLessThanOrEqual(320);
+  expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
+
+  const emoji = drawer.getByRole("button", { name: "Biểu tượng cảm xúc" });
+  await emoji.click();
+  const picker = page.getByRole("dialog", { name: "Chọn biểu tượng cảm xúc" });
+  await expect(picker).toBeVisible();
+  await expect(
+    picker.getByRole("searchbox", { name: "Tìm biểu tượng cảm xúc" }),
+  ).toBeFocused();
+  const pickerBox = await boxOf(picker);
+  expect(pickerBox.x).toBeGreaterThanOrEqual(0);
+  expect(pickerBox.x + pickerBox.width).toBeLessThanOrEqual(320);
+  expect(pickerBox.y).toBeGreaterThanOrEqual(0);
+  expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
+  await expect(picker).toHaveCSS("border-top-style", "solid");
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p408-chat-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+
+  // Escape closes the popover first (focus back on its key), then the panel.
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(emoji).toBeFocused();
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(chatKey).toBeFocused();
 });
