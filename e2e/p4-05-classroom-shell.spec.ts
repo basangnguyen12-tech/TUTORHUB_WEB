@@ -41,6 +41,20 @@ interface FixtureOptions {
      * socket) instead of the static whiteboard placeholder.
      */
     whiteboard?: "paper";
+    /**
+     * ROOM-PEOPLE-03: a host People inspector — the production
+     * `MediaLobbyPanel` over React Query (admissions JSON routed by the test,
+     * no Core API), raised hands, a co-host, one reconnecting student and
+     * server moderation operations for every student.
+     */
+    people?: {
+      /** Roster indexes (0 = the host, you) with a raised hand, FIFO. */
+      raisedHands?: number[];
+      /** Roster index projected as `co_host`. */
+      coHost?: number;
+      /** Roster index projected as `reconnecting`. */
+      reconnecting?: number;
+    };
   };
 }
 
@@ -174,6 +188,18 @@ interface BrowserIconModule {
   PenTool: unknown;
 }
 
+interface BrowserQueryModule {
+  QueryClient: new (options: {
+    defaultOptions: { queries: { retry: boolean } };
+  }) => { invalidateQueries(): Promise<void> };
+  QueryClientProvider: unknown;
+}
+
+interface BrowserLobbyModule {
+  MediaLobbyPanel: unknown;
+  MediaLobbyWaitingCountProvider: unknown;
+}
+
 declare global {
   interface Window {
     __p405Fixture?: {
@@ -182,6 +208,9 @@ declare global {
     };
     __p405MediaProbe?: MediaProbeState;
     __paperFixtureAuthority?: PaperFixtureAuthority;
+    __roomPeopleFixture?: {
+      refetch: () => Promise<void>;
+    };
     __roomChatFixture?: {
       participantChatEnabled: () => boolean;
       receive: (content: string) => void;
@@ -397,6 +426,9 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
         },
       );
       const noop = async () => undefined;
+      const people = studio.people;
+      const rosterName = (index: number) =>
+        studioNames[index] ?? `${vietnamese ? "Học viên" : "Student"} ${index}`;
       studioProps.signals = {
         error: false,
         loading: false,
@@ -417,14 +449,28 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
             (_, index) => ({
               participant_key: participantKey(index + 1),
               roster_sequence: index + 1,
-              display_name:
-                studioNames[index] ??
-                `${vietnamese ? "Học viên" : "Student"} ${index}`,
-              instance_role: index === 0 ? "host" : "attendee",
-              connection_state: "connected",
+              display_name: rosterName(index),
+              instance_role:
+                index === 0
+                  ? "host"
+                  : index === people?.coHost
+                    ? "co_host"
+                    : "attendee",
+              connection_state:
+                index === people?.reconnecting ? "reconnecting" : "connected",
             }),
           ),
-          raised_hands: [],
+          raised_hands: (people?.raisedHands ?? []).map(
+            (index, queueIndex) => ({
+              participant_key: participantKey(index + 1),
+              signal_sequence: queueIndex + 1,
+              raised_at: new Date(
+                Date.now() - (10 - queueIndex) * 1_000,
+              ).toISOString(),
+              display_name: rosterName(index),
+              queue_position: queueIndex + 1,
+            }),
+          ),
           reactions: { clusters: [], hidden_cluster_count: 0, summary: [] },
           server_time: new Date().toISOString(),
         },
@@ -440,7 +486,21 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
         roomLocked: false,
         canLockRoom: host,
         canEndRoom: host,
-        participantOperations: [],
+        // ROOM-PEOPLE-03: the server grants the host every operation on
+        // students (never on the host's own row).
+        participantOperations:
+          people && host
+            ? Array.from(
+                { length: fixtureOptions.participantCount - 1 },
+                (_, index) => ({
+                  participantKey: participantKey(index + 2),
+                  canPromoteCoHost: index + 1 !== people.coHost,
+                  canDemoteCoHost: index + 1 === people.coHost,
+                  canRemoteMute: true,
+                  canRemove: true,
+                }),
+              )
+            : [],
         mutationState: { status: "idle" },
         providerEffect: { status: "idle" },
         onSetRoomLocked: noop,
@@ -632,6 +692,53 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
       participantCount: fixtureOptions.participantCount,
     };
     window.__p405Fixture = fixtureState;
+
+    // ROOM-PEOPLE-03: the production waiting room over React Query. The test
+    // routes the admissions JSON; `refetch` stands in for the 2.5s poll.
+    let wrapShell = (node: unknown) => node;
+    if (studio?.people) {
+      const lobbySource = await fetch("/src/app/mediaLobby.ts").then(
+        (response) => response.text(),
+      );
+      const queryPath = lobbySource.match(
+        /from "([^"]*\/@tanstack_react-query\.js\?v=[^"]+)"/,
+      )?.[1];
+      if (!queryPath) throw new Error("Could not resolve React Query.");
+      const [query, lobbyModule] = await Promise.all([
+        dynamicImport<BrowserQueryModule>(queryPath),
+        dynamicImport<BrowserLobbyModule>(
+          "/src/components/MediaLobbyPanel.tsx",
+        ),
+      ]);
+      const client = new query.QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      window.__roomPeopleFixture = {
+        refetch: () => client.invalidateQueries(),
+      };
+      const scope = {
+        enabled: true,
+        roomInstanceID: "10000000-0000-4000-8000-000000000001",
+        roomInstanceVersion: 1,
+        spaceID: "40000000-0000-4000-8000-000000000001",
+        spaceVersion: 1,
+        tenantID: "50000000-0000-4000-8000-000000000001",
+      };
+      studioProps.lobby = React.createElement(
+        lobbyModule.MediaLobbyPanel,
+        scope,
+      );
+      wrapShell = (node) =>
+        React.createElement(
+          query.QueryClientProvider,
+          { client },
+          React.createElement(
+            lobbyModule.MediaLobbyWaitingCountProvider,
+            scope,
+            node,
+          ),
+        );
+    }
 
     // ROOM-CHAT-01: a stateful room wrapper drives the real chat panel and
     // the Dock unread badge from an in-memory message store.
@@ -933,19 +1040,21 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
           React.createElement(
             components.RoomContext.Provider,
             { value: room },
-            ChatRoom
-              ? React.createElement(ChatRoom)
-              : React.createElement(shell.ClassroomMediaShell, {
-                  canPublishCameraMicrophone:
-                    fixtureOptions.canPublishCameraMicrophone ?? true,
-                  canShareScreen: fixtureOptions.canShareScreen ?? true,
-                  canSubscribe: fixtureOptions.canSubscribe ?? true,
-                  connectionStatus: "connected",
-                  onLeave: () => {
-                    fixtureState.leaveCalls += 1;
-                  },
-                  ...studioProps,
-                }),
+            wrapShell(
+              ChatRoom
+                ? React.createElement(ChatRoom)
+                : React.createElement(shell.ClassroomMediaShell, {
+                    canPublishCameraMicrophone:
+                      fixtureOptions.canPublishCameraMicrophone ?? true,
+                    canShareScreen: fixtureOptions.canShareScreen ?? true,
+                    canSubscribe: fixtureOptions.canSubscribe ?? true,
+                    connectionStatus: "connected",
+                    onLeave: () => {
+                      fixtureState.leaveCalls += 1;
+                    },
+                    ...studioProps,
+                  }),
+            ),
           ),
         ),
       ),
@@ -3768,4 +3877,489 @@ test("ROOM-CHAT-EMOJI-02 reflows the emoji popover at 320 CSS pixels with forced
   await expect(picker).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await expect(drawer).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// ROOM-PEOPLE-03: the People inspector (Google Meet × Teams × Zoom) — a slim
+// "Người tham gia (N)" header, one accent-insensitive search, a waiting group
+// that only exists while someone waits, collapsible in-class groups of 52px
+// rows with hover/focus actions and a pinned host footer. Set
+// ROOM_PEOPLE_SCREENSHOT_DIR (for example `.tmp/room-people-03`) to save the
+// acceptance screenshots.
+const roomPeopleScreenshotDir =
+  process.env.ROOM_PEOPLE_SCREENSHOT_DIR?.trim() || "";
+
+async function saveRoomPeopleScreenshot(page: Page, name: string) {
+  if (!roomPeopleScreenshotDir) return;
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${roomPeopleScreenshotDir}/${name}` });
+}
+
+interface AdmissionCommand {
+  action: "admit" | "deny";
+  admissionID: string;
+  body: Record<string, unknown>;
+  csrf: string | null;
+}
+
+/**
+ * Routes the host's admissions queue (no Core API): GET returns the current
+ * waiting people, CSRF rotates, and admit/deny record the exact command and
+ * drop that person from the queue.
+ */
+async function installRoomPeopleAdmissions(page: Page, names: string[]) {
+  let sequence = 0;
+  const entry = (name: string) => {
+    sequence += 1;
+    return {
+      id: `70000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`,
+      name,
+    };
+  };
+  const state = {
+    commands: [] as AdmissionCommand[],
+    waiting: names.map(entry),
+    add(name: string) {
+      state.waiting.push(entry(name));
+    },
+  };
+  await page.route(
+    /\/api\/v1\/media\/spaces\/[^/]+\/admissions(\?|$)/,
+    (route) =>
+      route.fulfill({
+        json: {
+          items: state.waiting.map(({ id, name }) => ({
+            created_at: new Date().toISOString(),
+            display_name: name,
+            expires_at: new Date(Date.now() + 600_000).toISOString(),
+            id,
+            status: "waiting",
+            version: 1,
+          })),
+        },
+      }),
+  );
+  await page.route("**/api/v1/auth/csrf", (route) =>
+    route.fulfill({ json: { csrf_token: "room-people-fixture-csrf" } }),
+  );
+  await page.route(
+    /\/api\/v1\/media\/spaces\/[^/]+\/admissions\/[^/]+\/(admit|deny)$/,
+    async (route) => {
+      const request = route.request();
+      const segments = new URL(request.url()).pathname.split("/");
+      const action = segments.at(-1) as "admit" | "deny";
+      const admissionID = segments.at(-2) ?? "";
+      state.commands.push({
+        action,
+        admissionID,
+        body: request.postDataJSON() as Record<string, unknown>,
+        csrf: request.headers()["x-csrf-token"] ?? null,
+      });
+      const resolved = state.waiting.find(({ id }) => id === admissionID);
+      state.waiting = state.waiting.filter(({ id }) => id !== admissionID);
+      await route.fulfill({
+        json: {
+          created_at: new Date().toISOString(),
+          display_name: resolved?.name ?? "",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+          id: admissionID,
+          status: action === "admit" ? "admitted" : "denied",
+          version: 2,
+        },
+      });
+    },
+  );
+  return state;
+}
+
+async function openRoomPeople(page: Page, title: string) {
+  await page.locator("#media-p406-control-roster").click();
+  const drawer = page.getByRole("dialog", { name: title });
+  await expect(drawer).toBeVisible();
+  const viewport = page.viewportSize()!;
+  await expect
+    .poll(async () => {
+      const box = await drawer.boundingBox();
+      return box ? Math.round(box.x + box.width) : 0;
+    })
+    .toBe(viewport.width);
+  return drawer;
+}
+
+test("ROOM-PEOPLE-03 gives a host a slim People inspector with a waiting group, in-class groups and hover actions", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await installRoomPeopleAdmissions(page, ["Phạm Quỳnh Như", "Lê Hoàng Nam"]);
+  await mountClassroomFixture(page, {
+    participantCount: 6,
+    studio: {
+      language: "vi",
+      people: { coHost: 1, raisedHands: [3, 2], reconnecting: 4 },
+      roomTitle: "Toán 9A · Phương trình bậc hai",
+    },
+  });
+  await loadRoomStudioStyles(page);
+
+  // The Dock key keeps its id, name and waiting badge.
+  const peopleKey = page.locator("#media-p406-control-roster");
+  await expect(peopleKey).toHaveAccessibleName(
+    "Mở danh sách lớp học (2 người đang chờ vào phòng)",
+  );
+  await expect(page.locator(".media-p406-roster-badge")).toHaveText("2");
+
+  const drawer = await openRoomPeople(page, "Người tham gia (6)");
+  const drawerBox = (await drawer.boundingBox())!;
+  expect(drawerBox.width).toBeLessThanOrEqual(361);
+  // Non-modal inspector: the stage reflows beside it.
+  const stageBox = await page.locator(".media-p405-stage").boundingBox();
+  expect(stageBox!.x + stageBox!.width).toBeLessThanOrEqual(drawerBox.x + 1);
+
+  // Header: 16px / 600, the ✕ is the only Close key, no manual refresh.
+  const title = drawer.getByRole("heading", { name: "Người tham gia (6)" });
+  await expect(title).toHaveCSS("font-size", "16px");
+  await expect(title).toHaveCSS("font-weight", "600");
+  await expect(drawer.getByRole("button", { name: "Đóng" })).toHaveCount(1);
+  await expect(drawer.getByRole("button", { name: /Làm mới/ })).toHaveCount(0);
+  const searchBox = drawer.locator(".media-p406-people__search");
+  expect(Math.round((await searchBox.boundingBox())!.height)).toBe(36);
+
+  // Waiting group: uppercase label, counted box, inline Admit + ⋮.
+  const waitingLabel = drawer.getByRole("heading", {
+    name: "Đang chờ vào lớp",
+  });
+  await expect(waitingLabel).toHaveCSS("text-transform", "uppercase");
+  await expect(waitingLabel).toHaveCSS("font-size", "11px");
+  await expect(
+    drawer.getByRole("button", { name: "Đang chờ được cho phép 2" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    drawer.getByRole("button", { name: "Cho Phạm Quỳnh Như vào" }),
+  ).toHaveText("Chấp nhận");
+  await expect(
+    drawer.getByRole("button", { name: "Thao tác khác cho Lê Hoàng Nam" }),
+  ).toBeVisible();
+  await expect(
+    drawer.locator(".media-p406-people-group[data-group='waiting']"),
+  ).toHaveCSS("border-top-left-radius", "12px");
+
+  // In class: staff and students with counts; you first, then hands FIFO,
+  // then roster_sequence; the default "connected" state stays silent.
+  await expect(
+    drawer.getByRole("button", { name: "Giáo viên & người tổ chức 2" }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    drawer.getByRole("button", { name: "Học sinh 4" }),
+  ).toBeVisible();
+  await expect(
+    drawer
+      .getByRole("list", { name: "Giáo viên & người tổ chức" })
+      .locator(".media-p406-people-row__display"),
+  ).toHaveText(["Thu Hà (Giáo viên)", "Minh Anh"]);
+  await expect(
+    drawer
+      .getByRole("list", { name: "Học sinh" })
+      .locator(".media-p406-people-row__display"),
+  ).toHaveText(["Khánh Linh", "Gia Bảo", "Đức Huy", "Ngọc Trâm"]);
+  await expect(drawer.getByText("(Bạn)")).toBeVisible();
+  await expect(drawer.getByText("Chủ phòng", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("Người đồng tổ chức")).toBeVisible();
+  await expect(drawer.getByText("Đã kết nối")).toHaveCount(0);
+  await expect(drawer.getByText("Đang kết nối lại…")).toBeVisible();
+  await expect(drawer.locator("ol")).toHaveCount(0);
+  await expect(drawer).not.toContainText("00000000-0000-4000-8000");
+
+  // Every row is a slim line (no card, no ordinal): ≤ 56px.
+  const rowHeights = await drawer
+    .locator(".media-p406-people-row")
+    .evaluateAll((rows) =>
+      rows.map((row) => row.getBoundingClientRect().height),
+    );
+  expect(rowHeights).toHaveLength(8);
+  for (const height of rowHeights) expect(height).toBeLessThanOrEqual(56);
+  await expect(
+    drawer
+      .getByRole("list", { name: "Học sinh" })
+      .getByRole("listitem")
+      .first(),
+  ).toHaveCSS("border-top-width", "0px");
+
+  // Pinned host footer with the only server-backed bulk action.
+  const footer = drawer.getByRole("group", {
+    name: "Thao tác của người chủ trì",
+  });
+  const lowerAll = footer.getByRole("button", { name: "Hạ tất cả tay (2)" });
+  expect(Math.round((await lowerAll.boundingBox())!.height)).toBe(32);
+  const footerBox = (await footer.boundingBox())!;
+  expect(
+    Math.abs(footerBox.y + footerBox.height - drawerBox.height),
+  ).toBeLessThanOrEqual(1);
+
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p406-roster-drawer")
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await page.mouse.move(540, 720);
+  await saveRoomPeopleScreenshot(
+    page,
+    "01-people-host-waiting-and-in-class-vi-1440x900.png",
+  );
+
+  // Row actions stay quiet until hover, then a soft 10px glass wash.
+  const students = drawer.getByRole("list", { name: "Học sinh" });
+  const khanh = students
+    .getByRole("listitem")
+    .filter({ hasText: "Khánh Linh" });
+  const khanhActions = khanh.locator(".media-p406-people-row__actions");
+  await expect(khanhActions).toHaveCSS("opacity", "0");
+  await khanh.hover();
+  await expect(khanhActions).toHaveCSS("opacity", "1");
+  await expect(khanh).toHaveCSS("border-top-left-radius", "10px");
+  await expect(khanh).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(
+    khanh.getByRole("button", { name: "Quản trị Khánh Linh" }),
+  ).toBeVisible();
+  await khanh.getByRole("button", { name: "Hạ tay của Khánh Linh" }).hover();
+  await expect(khanh.getByText("Tay đang giơ, vị trí 1")).toHaveCount(1);
+  await saveRoomPeopleScreenshot(
+    page,
+    "02-people-hover-actions-raised-hand-vi-1440x900.png",
+  );
+
+  // Keyboard focus reveals the next row's actions without a pointer.
+  await khanh.getByRole("button", { name: "Quản trị Khánh Linh" }).focus();
+  await page.mouse.move(540, 720);
+  await page.keyboard.press("Tab");
+  const gia = students.getByRole("listitem").filter({ hasText: "Gia Bảo" });
+  await expect(
+    gia.getByRole("button", { name: "Hạ tay của Gia Bảo" }),
+  ).toBeFocused();
+  await expect(gia.locator(".media-p406-people-row__actions")).toHaveCSS(
+    "opacity",
+    "1",
+  );
+  await page.keyboard.press("Tab");
+  const giaMenu = gia.getByRole("button", { name: "Quản trị Gia Bảo" });
+  await expect(giaMenu).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("menu", { name: "Quản trị Gia Bảo" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(giaMenu).toBeFocused();
+
+  // Groups collapse with aria-expanded.
+  const staffToggle = drawer.getByRole("button", {
+    name: "Giáo viên & người tổ chức 2",
+  });
+  await staffToggle.click();
+  await expect(staffToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    drawer.locator(".media-p406-people-group[data-group='staff'] ul"),
+  ).toBeHidden();
+});
+
+test("ROOM-PEOPLE-03 hides an empty waiting group, then opens and announces a new request and admits it with the exact command", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  const admissions = await installRoomPeopleAdmissions(page, []);
+  await mountClassroomFixture(page, {
+    participantCount: 3,
+    studio: { language: "vi", people: {} },
+  });
+  await loadRoomStudioStyles(page);
+  const drawer = await openRoomPeople(page, "Người tham gia (3)");
+
+  // Nobody waiting: no label, no box, no description card — zero height.
+  await expect(
+    drawer.getByRole("heading", { name: "Đang chờ vào lớp" }),
+  ).toHaveCount(0);
+  const lobbySlot = drawer.locator(".media-p406-roster-lobby");
+  expect(Math.round((await lobbySlot.boundingBox())?.height ?? 0)).toBe(0);
+  const live = drawer.locator(
+    ".media-p406-people-waiting [aria-live='polite']",
+  );
+  await expect(live).toHaveText("");
+
+  admissions.add("Phạm Quỳnh Như");
+  await page.evaluate(() => window.__roomPeopleFixture?.refetch());
+  const waitingToggle = drawer.getByRole("button", {
+    name: "Đang chờ được cho phép 1",
+  });
+  await expect(waitingToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(live).toHaveText("Có người mới xin vào lớp. 1 người đang chờ.");
+  await expect(page.locator(".media-p406-roster-badge")).toHaveText("1");
+  // The stage banner steps aside while People is open (no double reading).
+  await expect(page.locator(".media-p406-lobby-banner")).toHaveClass(
+    /media-p406-lobby-banner--idle/,
+  );
+
+  await drawer.getByRole("button", { name: "Cho Phạm Quỳnh Như vào" }).click();
+  await expect.poll(() => admissions.commands.length).toBe(1);
+  expect(admissions.commands[0]).toEqual({
+    action: "admit",
+    admissionID: "70000000-0000-4000-8000-000000000001",
+    body: {
+      expected_space_version: 1,
+      expected_room_instance_id: "10000000-0000-4000-8000-000000000001",
+      expected_room_instance_version: 1,
+      expected_admission_version: 1,
+      idempotency_key: expect.stringMatching(/^media-admission-admit-/),
+    },
+    csrf: "room-people-fixture-csrf",
+  });
+  const feedback = drawer.getByText("Đã cho Phạm Quỳnh Như vào.");
+  await expect(feedback).toBeVisible();
+  await expect(feedback).toBeFocused();
+  await expect(
+    drawer.getByRole("heading", { name: "Đang chờ vào lớp" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".media-p406-roster-badge")).toHaveCount(0);
+});
+
+for (const count of [25, 50]) {
+  test(`ROOM-PEOPLE-03 scrolls a ${count}-person class and searches names without accents`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1_440, height: 900 });
+    await installRoomPeopleAdmissions(page, []);
+    await mountClassroomFixture(page, {
+      participantCount: count,
+      studio: { language: "vi", people: { raisedHands: [12, 7] } },
+    });
+    await loadRoomStudioStyles(page);
+    const drawer = await openRoomPeople(page, `Người tham gia (${count})`);
+    const body = drawer.locator(".media-p406-people__body");
+
+    // At least ten people fit one screen; the body scrolls, the page does not.
+    const visibleRows = await body.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return Array.from(
+        element.querySelectorAll(".media-p406-people-row"),
+      ).filter((row) => {
+        const rect = row.getBoundingClientRect();
+        return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5;
+      }).length;
+    });
+    expect(visibleRows).toBeGreaterThanOrEqual(10);
+    const scroll = await body.evaluate((element) => ({
+      client: element.clientHeight,
+      height: element.scrollHeight,
+    }));
+    expect(scroll.height).toBeGreaterThan(scroll.client);
+    await body.evaluate((element) =>
+      element.scrollTo({ top: element.scrollHeight }),
+    );
+    await expect(
+      drawer.getByText(`Học viên ${count - 1}`, { exact: true }),
+    ).toBeInViewport();
+    await body.evaluate((element) => element.scrollTo({ top: 0 }));
+    expect(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      ),
+    ).toBeLessThanOrEqual(1);
+
+    const search = drawer.getByRole("searchbox", { name: "Tìm người" });
+    await search.fill("hoc vien 1");
+    await expect(
+      drawer.getByRole("list", { name: "Học sinh" }).getByRole("listitem"),
+    ).toHaveCount(10);
+    await expect(
+      drawer.getByRole("button", { name: "Học sinh 10" }),
+    ).toBeVisible();
+    await expect(
+      drawer.getByRole("button", { name: /Giáo viên & người tổ chức/ }),
+    ).toHaveCount(0);
+    // A raised hand still leads the filtered group.
+    await expect(
+      drawer
+        .getByRole("list", { name: "Học sinh" })
+        .locator(".media-p406-people-row__display")
+        .first(),
+    ).toHaveText("Học viên 12");
+    await expect(
+      drawer.getByRole("button", { name: "Xóa tìm kiếm" }),
+    ).toBeVisible();
+    if (count === 25) {
+      await page.mouse.move(540, 720);
+      await saveRoomPeopleScreenshot(
+        page,
+        "03-people-25-participants-search-vi-1440x900.png",
+      );
+    }
+
+    await search.fill("không có ai");
+    await expect(
+      drawer.getByText("Không tìm thấy “không có ai”"),
+    ).toBeVisible();
+    // Escape clears a filled box and keeps the inspector open.
+    await search.press("Escape");
+    await expect(search).toHaveValue("");
+    await expect(drawer).toBeVisible();
+    await expect(
+      drawer.getByRole("button", { name: `Học sinh ${count - 1}` }),
+    ).toBeVisible();
+  });
+}
+
+test("ROOM-PEOPLE-03 reflows the People inspector at 320 CSS pixels with forced colors and no violations", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await installRoomPeopleAdmissions(page, ["Phạm Quỳnh Như"]);
+  await mountClassroomFixture(page, {
+    participantCount: 6,
+    studio: {
+      language: "vi",
+      people: { coHost: 1, raisedHands: [2], reconnecting: 4 },
+    },
+  });
+  await loadRoomStudioStyles(page);
+  const drawer = await openRoomPeople(page, "Người tham gia (6)");
+  expect((await drawer.boundingBox())!.width).toBeLessThanOrEqual(320);
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    await drawer.evaluate(
+      (element) => element.scrollWidth - element.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+
+  // System borders, actions always shown, group chevrons snap.
+  await expect(drawer.locator(".media-p406-people-group").first()).toHaveCSS(
+    "border-top-width",
+    "2px",
+  );
+  await expect(
+    drawer.locator(".media-p406-people-row__actions").first(),
+  ).toHaveCSS("opacity", "1");
+  await expect(
+    drawer.locator(".media-p406-people-group__chevron").first(),
+  ).toHaveCSS("transition-duration", "0s");
+  await expect(
+    drawer.getByRole("button", { name: "Cho Phạm Quỳnh Như vào" }),
+  ).toBeVisible();
+
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await saveRoomPeopleScreenshot(page, "04-people-320px-forced-colors.png");
 });

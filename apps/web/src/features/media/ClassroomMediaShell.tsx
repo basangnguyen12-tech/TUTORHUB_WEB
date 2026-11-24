@@ -65,6 +65,7 @@ import {
   Track,
   VideoQuality,
   type LocalVideoTrack,
+  type Participant,
   type TrackProcessor,
 } from "livekit-client";
 import {
@@ -124,10 +125,13 @@ import {
 import {
   ClassroomEndRoomDialog,
   ClassroomModerationControls,
-  ClassroomParticipantModerationMenu,
   classroomModerationBusy,
   type ClassroomModerationControlsModel,
 } from "./ClassroomModerationControls";
+import {
+  ClassroomPeoplePanel,
+  type ClassroomPeopleMediaState,
+} from "./ClassroomPeoplePanel";
 
 /** ROOM-CHAT-01: the three inspectors that share the right-hand slot. */
 export type ClassroomInspectorID = "chat" | "roster" | "effects";
@@ -1438,6 +1442,18 @@ export function ClassroomMediaShell({
   );
   const participantCount =
     signals?.projection?.roster.length ?? cameraItems.length;
+  // ROOM-PEOPLE-03: mic-off / speaking cues for the People rows, joined only
+  // through the server-signed participant key (never shown, never logged).
+  const peopleMediaStates = rosterOpen
+    ? classroomPeopleMediaStates(
+        liveKitParticipants,
+        speakingParticipants,
+        isMicrophoneEnabled,
+      )
+    : undefined;
+  // While People is open its own waiting group and polite live region take
+  // over, so the stage banner steps aside instead of announcing twice.
+  const lobbyBannerActive = waitingCount > 0 && !rosterOpen;
   // ROOM-MEET-DOCK-04: each icon-only control's accessible name doubles as
   // its floating tooltip, so both always follow the control's live state.
   const microphoneLabel = t(
@@ -1567,7 +1583,7 @@ export function ClassroomMediaShell({
         // region announces new waiting requests without taking stage height.
         <div
           className={`media-p406-lobby-banner${
-            waitingCount > 0 ? "" : " media-p406-lobby-banner--idle"
+            lobbyBannerActive ? "" : " media-p406-lobby-banner--idle"
           }`}
         >
           <p
@@ -1576,11 +1592,11 @@ export function ClassroomMediaShell({
             className="media-p406-lobby-banner__text"
             role="status"
           >
-            {waitingCount > 0
+            {lobbyBannerActive
               ? t("media.p406.lobbyWaiting", { count: waitingCount })
               : ""}
           </p>
-          {waitingCount > 0 && (
+          {lobbyBannerActive && (
             <Button
               disabled={controlsTerminated}
               leadingIcon={<Users />}
@@ -2226,43 +2242,64 @@ export function ClassroomMediaShell({
                   )}
                 </IconButton>
               </DrawerTrigger>
+              {/*
+                ROOM-PEOPLE-03: slim "People (N)" header + ✕ (no footer Close
+                key), then the People panel: search, waiting group, in-class
+                groups and the pinned host footer.
+              */}
               <DrawerContent
+                aria-describedby={undefined}
                 className="media-p406-roster-drawer"
                 closeLabel={t("media.p405.close")}
                 data-theme="dark"
                 onCloseAutoFocus={(event) =>
                   restoreInspectorFocus(event, "roster")
                 }
+                onEscapeKeyDown={(event) => {
+                  // Escape in a filled search box clears it, not the drawer.
+                  const target = event.target;
+                  if (
+                    target instanceof HTMLInputElement &&
+                    target.type === "search" &&
+                    target.value !== ""
+                  ) {
+                    event.preventDefault();
+                  }
+                }}
                 onInteractOutside={(event) => event.preventDefault()}
               >
-                <DrawerTitle>{t("media.p406.rosterTitle")}</DrawerTitle>
-                {lobby && (
-                  <div className="media-p406-roster-lobby">{lobby}</div>
-                )}
-                {signals && (
-                  <ClassroomRoster
-                    moderation={moderation}
-                    moderationDisabled={
-                      controlsTerminated || connectionStatus !== "connected"
-                    }
-                    onLowerAll={() =>
-                      void runSignalAction(
-                        signals.onLowerAllHands,
-                        "media.p406.loweredAllHands",
-                      )
-                    }
-                    onLowerHand={(participantKey) =>
-                      void runSignalAction(
-                        () => signals.onLowerHand(participantKey),
-                        "media.p406.loweredHand",
-                      )
-                    }
-                    signals={signals}
-                  />
-                )}
-                <DrawerClose asChild>
-                  <Button variant="secondary">{t("media.p405.close")}</Button>
-                </DrawerClose>
+                <header className="media-p406-roster-drawer__header">
+                  <DrawerTitle className="media-p406-roster-drawer__title">
+                    {signals?.projection
+                      ? t("media.people.title", {
+                          count: signals.projection.roster.length,
+                        })
+                      : t("media.people.titlePlain")}
+                  </DrawerTitle>
+                </header>
+                <ClassroomPeoplePanel
+                  lobby={lobby}
+                  mediaStates={peopleMediaStates}
+                  moderation={moderation}
+                  moderationDisabled={
+                    controlsTerminated || connectionStatus !== "connected"
+                  }
+                  onLowerAll={() => {
+                    if (!signals) return;
+                    void runSignalAction(
+                      signals.onLowerAllHands,
+                      "media.p406.loweredAllHands",
+                    );
+                  }}
+                  onLowerHand={(participantKey) => {
+                    if (!signals) return;
+                    void runSignalAction(
+                      () => signals.onLowerHand(participantKey),
+                      "media.p406.loweredHand",
+                    );
+                  }}
+                  signals={signals}
+                />
               </DrawerContent>
             </Drawer>
           )}
@@ -2737,128 +2774,6 @@ function formatSessionClock(totalSeconds: number): string {
   return hours > 0
     ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
     : `${pad(minutes)}:${pad(seconds)}`;
-}
-
-function ClassroomRoster({
-  moderation,
-  moderationDisabled,
-  onLowerAll,
-  onLowerHand,
-  signals,
-}: {
-  moderation?: ClassroomModerationControlsModel;
-  moderationDisabled: boolean;
-  onLowerAll: () => void;
-  onLowerHand: (participantKey: string) => void;
-  signals: ClassroomSignalControls;
-}) {
-  const { t } = useI18n();
-  const projection = signals.projection;
-  if (signals.loading && !projection) {
-    return <p className="media-p405-empty">{t("media.p406.loading")}</p>;
-  }
-  if (signals.error && !projection) {
-    return (
-      <div className="media-p406-roster-state" role="alert">
-        <p>{t("media.p406.loadError")}</p>
-        <Button onClick={() => void signals.onResync()} size="sm">
-          {t("media.p406.retry")}
-        </Button>
-      </div>
-    );
-  }
-  if (!projection || projection.roster.length === 0) {
-    return <p className="media-p405-empty">{t("media.p406.rosterEmpty")}</p>;
-  }
-
-  const raisedByParticipant = new Map(
-    projection.raised_hands.map((hand) => [hand.participant_key, hand]),
-  );
-  const canModerate = projection.viewer_operations.can_moderate_hands;
-  return (
-    <section className="media-p406-roster">
-      <div className="media-p406-roster-summary">
-        <span>
-          {t("media.room.participantCount", {
-            count: projection.roster.length,
-          })}
-        </span>
-        {signals.refreshing && <span>{t("media.p406.refreshing")}</span>}
-        {canModerate && projection.raised_hands.length > 0 && (
-          <Button
-            disabled={signals.mutating}
-            onClick={onLowerAll}
-            size="sm"
-            variant="secondary"
-          >
-            {t("media.p406.lowerAllHands")}
-          </Button>
-        )}
-      </div>
-      <ol aria-label={t("media.p406.rosterLabel")}>
-        {projection.roster.map((participant) => {
-          const hand = raisedByParticipant.get(participant.participant_key);
-          const isSelf =
-            participant.participant_key === projection.self_participant_key;
-          return (
-            <li key={participant.participant_key}>
-              <div className="media-p406-roster-person">
-                <strong>{participant.display_name}</strong>
-                {isSelf && (
-                  <span className="media-p406-roster-self">
-                    {" "}
-                    ({t("media.p406.you")})
-                  </span>
-                )}
-                <span
-                  className="media-p406-roster-role"
-                  data-role={participant.instance_role}
-                >
-                  {t(instanceRoleKey(participant.instance_role))}
-                </span>
-                <span
-                  className="media-p406-roster-connection"
-                  data-connection={participant.connection_state}
-                >
-                  {t(connectionStateKey(participant.connection_state))}
-                </span>
-              </div>
-              {moderation && (
-                <ClassroomParticipantModerationMenu
-                  controls={moderation}
-                  disabled={moderationDisabled}
-                  displayName={participant.display_name}
-                  isSelf={isSelf}
-                  participantKey={participant.participant_key}
-                />
-              )}
-              {hand && (
-                <div className="media-p406-hand-state">
-                  <span>
-                    {t("media.p406.handQueuePosition", {
-                      position: hand.queue_position,
-                    })}
-                  </span>
-                  {canModerate && !isSelf && (
-                    <Button
-                      disabled={signals.mutating}
-                      onClick={() => onLowerHand(participant.participant_key)}
-                      size="sm"
-                      variant="quiet"
-                    >
-                      {t("media.p406.lowerNamedHand", {
-                        name: participant.display_name,
-                      })}
-                    </Button>
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-    </section>
-  );
 }
 
 function MediaTile({
@@ -3547,16 +3462,35 @@ function reactionLabelKey(reaction: ClassroomReactionType): TranslationKey {
   return `media.p406.reaction.${reaction}` as TranslationKey;
 }
 
-function instanceRoleKey(
-  role: ClassroomSignalProjection["roster"][number]["instance_role"],
-): TranslationKey {
-  return `media.p406.role.${role}` as TranslationKey;
-}
-
-function connectionStateKey(
-  state: ClassroomSignalProjection["roster"][number]["connection_state"],
-): TranslationKey {
-  return `media.p406.connection.${state}` as TranslationKey;
+/**
+ * ROOM-PEOPLE-03: microphone and speaking cues per roster key. The only join
+ * is the `tutorhub.participant_key` attribute that Core API signs into the
+ * LiveKit token (participants cannot update their own attributes) — the same
+ * key the grid already orders tiles by. Provider identities are never read;
+ * a participant without the attribute, or a field the provider does not
+ * expose, simply yields no cue.
+ */
+function classroomPeopleMediaStates(
+  participants: readonly Participant[],
+  speakingParticipants: readonly Participant[],
+  localMicrophoneEnabled: boolean,
+): ReadonlyMap<string, ClassroomPeopleMediaState> {
+  const speaking = new Set<Participant>(speakingParticipants);
+  const states = new Map<string, ClassroomPeopleMediaState>();
+  for (const participant of participants) {
+    const participantKey = participant.attributes?.["tutorhub.participant_key"];
+    if (typeof participantKey !== "string" || states.has(participantKey)) {
+      continue;
+    }
+    const microphoneEnabled: unknown = participant.isLocal
+      ? localMicrophoneEnabled
+      : participant.isMicrophoneEnabled;
+    states.set(participantKey, {
+      ...(typeof microphoneEnabled === "boolean" ? { microphoneEnabled } : {}),
+      speaking: speaking.has(participant),
+    });
+  }
+  return states;
 }
 
 function signalMutationErrorKey(error: unknown): TranslationKey {

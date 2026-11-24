@@ -1629,95 +1629,223 @@
   color: #fff;
 }
 
-.media-p406-roster-drawer {
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
+/*
+ * ROOM-PEOPLE-03 — People inspector glass. Slim "People (N)" header, a 36px
+ * frosted search field, uppercase section labels, hairline 12px groups,
+ * 52px rows whose hover is a soft glass wash (10px), a sapphire inline
+ * Admit, an amber raised-hand chip and a pinned glass-pill host footer.
+ */
+.media-p406-roster-drawer .media-p406-roster-drawer__title.th-dialog-title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-/* macOS System Settings inset groups. */
-.media-p406-roster-lobby .media-p404-lobby {
-  width: 100%;
-  max-width: none;
-  padding: 14px;
-  margin: 12px 0 0;
-  border: 1px solid rgb(255 255 255 / 8%);
-  border-radius: 14px;
-  background: rgb(255 255 255 / 5.5%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+.media-p406-roster-drawer .media-p406-people__search {
+  border-color: rgb(255 255 255 / 10%);
+  background: rgb(255 255 255 / 6%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
 }
 
-.media-p406-roster-drawer .media-p406-roster li {
-  padding: 10px 12px;
-  border: 1px solid rgb(255 255 255 / 8%);
-  border-radius: 14px;
-  background: rgb(255 255 255 / 5.5%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+.media-p406-roster-drawer .media-p406-people__search:hover {
+  border-color: rgb(255 255 255 / 16%);
 }
 
-.media-p406-roster-drawer .media-p406-roster li::marker {
+.media-p406-roster-drawer .media-p406-people__search:focus-within {
+  border-color: rgb(138 180 248 / 70%);
+  background: rgb(255 255 255 / 8%);
+  outline: 2px solid var(--room-focus-ring);
+  outline-offset: 1px;
+}
+
+.media-p406-roster-drawer .media-p406-people__search-icon,
+.media-p406-roster-drawer .media-p406-people__search-input::placeholder {
   color: #aeb5c1;
-  font-size: 12px;
 }
 
-.media-p406-roster-drawer .media-p406-roster li > .media-p406-roster-person {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-}
-
-.media-p406-roster-drawer .media-p406-roster-person strong {
-  min-width: 0;
-  max-width: 100%;
+.media-p406-roster-drawer .media-p406-people__search-input {
   color: #f3f4f6;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.006em;
 }
 
-.media-p406-roster-drawer .media-p406-roster li .media-p406-roster-self {
-  color: #aeb5c1;
-  font-size: 13px;
-}
-
-.media-p406-roster-drawer .media-p406-roster li .media-p406-roster-role {
-  padding: 2px 8px;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 999px;
-  margin-left: auto;
-  background: rgb(255 255 255 / 7%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+.media-p406-roster-drawer .media-p406-people__search-clear {
   color: #d1d5db;
-  font-size: 11.5px;
-  font-weight: 600;
+}
+
+.media-p406-roster-drawer .media-p406-people__sync {
+  color: #aeb5c1;
+}
+
+.media-p406-roster-drawer .media-p406-people__sync[data-state="error"] {
+  color: #fcd34d;
+}
+
+.media-p406-roster-drawer .media-p406-people__sync .th-button--quiet {
+  color: #a8c7fa;
+}
+
+.media-p406-roster-drawer .media-p406-people-section__label {
+  color: #aeb5c1;
+}
+
+.media-p406-roster-drawer .media-p406-people-group {
+  border-color: rgb(255 255 255 / 9%);
+  background: rgb(255 255 255 / 3.5%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.media-p406-roster-drawer .media-p406-people-group__toggle {
+  color: #f3f4f6;
+}
+
+.media-p406-roster-drawer .media-p406-people-group__toggle:hover {
+  background: rgb(255 255 255 / 5%);
+}
+
+.media-p406-roster-drawer .media-p406-people-group__toggle:focus-visible {
+  outline-color: var(--room-focus-ring);
 }
 
 .media-p406-roster-drawer
-  .media-p406-roster
-  li
-  .media-p406-roster-role:is([data-role="host"], [data-role="co_host"]) {
-  border-color: rgb(96 165 250 / 45%);
-  background: rgb(59 130 246 / 18%);
-  color: #bfdbfe;
-}
-
-.media-p406-roster-drawer .media-p406-roster li .media-p406-roster-connection {
-  flex-basis: 100%;
+  :is(
+    .media-p406-people-group__dot,
+    .media-p406-people-group__count,
+    .media-p406-people-group__chevron
+  ) {
   color: #aeb5c1;
-  font-size: 12px;
 }
 
-.media-p406-roster-drawer .media-p406-hand-state {
-  padding: 6px 8px 6px 10px;
-  border: 1px solid rgb(245 158 11 / 35%);
-  border-radius: 11px;
-  background: rgb(245 158 11 / 12%);
+.media-p406-roster-drawer .media-p406-people-group__chevron {
+  transition: transform 260ms var(--room-ease-spring);
+}
+
+.media-p406-roster-drawer .media-p406-people-row {
+  transition: background-color 120ms ease;
+}
+
+.media-p406-roster-drawer .media-p406-people-row:hover,
+.media-p406-roster-drawer .media-p406-people-row:has(:focus-visible) {
+  background: rgb(255 255 255 / 7%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.media-p406-roster-drawer .media-p406-people-avatar {
+  background:
+    radial-gradient(
+      110% 80% at 32% 12%,
+      rgb(255 255 255 / 20%) 0%,
+      rgb(255 255 255 / 0%) 42%
+    ),
+    linear-gradient(160deg, var(--avatar-from) 0%, var(--avatar-to) 100%);
+  box-shadow:
+    inset 0 1px 0.5px rgb(255 255 255 / 32%),
+    0 0 0 1px rgb(255 255 255 / 6%);
+  text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
+}
+
+.media-p406-roster-drawer .media-p406-people-row__name {
+  color: #f3f4f6;
+  letter-spacing: -0.006em;
+}
+
+.media-p406-roster-drawer
+  :is(.media-p406-people-row__self, .media-p406-people-row__meta) {
+  color: #aeb5c1;
+}
+
+.media-p406-roster-drawer
+  .media-p406-people-row__connection[data-connection="reconnecting"] {
   color: #fcd34d;
 }
 
-.media-p406-roster-drawer .media-p406-hand-state span {
+.media-p406-roster-drawer .media-p406-people-row__status {
+  color: #aeb5c1;
+}
+
+/* A quiet grey like Meet: most of a class sits muted, so no alarm colour. */
+.media-p406-roster-drawer .media-p406-people-mic {
+  color: #aeb5c1;
+}
+
+.media-p406-roster-drawer .media-p406-people-speaking > span {
+  background: #8ab4f8;
+}
+
+.media-p406-roster-drawer .media-p406-people-hand {
+  border: 1px solid rgb(245 158 11 / 38%);
+  background: rgb(245 158 11 / 14%);
   color: #fcd34d;
+}
+
+.media-p406-roster-drawer
+  :is(.media-p406-people-action, .media-p406-people-more).th-button--quiet {
+  color: #d1d5db;
+}
+
+.media-p406-roster-drawer
+  :is(
+    .media-p406-people-action,
+    .media-p406-people-more
+  ).th-button--quiet:hover:not(:disabled),
+.media-p406-roster-drawer
+  :is(.media-p406-people-action, .media-p406-people-more)[data-state="open"] {
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+}
+
+.media-p406-roster-drawer .media-p406-people-action[data-people-tip]::after {
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(40 45 58 / 96%);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 40%);
+  color: #f3f4f6;
+}
+
+.media-p406-roster-drawer .media-p406-people-admit.th-button--quiet {
+  color: #a8c7fa;
+}
+
+.media-p406-roster-drawer
+  .media-p406-people-admit.th-button--quiet:hover:not(:disabled) {
+  background: rgb(138 180 248 / 14%);
+  color: #d3e3fd;
+}
+
+.media-p406-roster-drawer .media-p406-people-feedback {
+  color: #86efac;
+}
+
+.media-p406-roster-drawer
+  :is(.media-p406-people-state__title, .media-p406-people-empty__title) {
+  color: #f3f4f6;
+}
+
+.media-p406-roster-drawer
+  :is(
+    .media-p406-people-state__text,
+    .media-p406-people-empty__text,
+    .media-p406-people-inline-error p
+  ) {
+  color: #c4cad4;
+}
+
+.media-p406-roster-drawer .media-p406-people-inline-error {
+  border-color: rgb(252 211 77 / 30%);
+  background: rgb(245 158 11 / 10%);
+}
+
+.media-p406-roster-drawer .media-p406-people-skeleton .th-skeleton {
+  background: rgb(255 255 255 / 9%);
+}
+
+.media-p406-roster-drawer .media-p406-people__footer {
+  border-top-color: rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 2%);
+}
+
+.media-p406-roster-drawer .media-p406-people__lower-all.th-button--secondary {
+  min-height: 32px;
 }
 
 /* ---- Tool stage: an edge-to-edge paper card (ROOM-COMPACT-05) ------- */
@@ -2496,9 +2624,9 @@
   .media-p405-room .media-p405-live-pill,
   .media-p405-room .media-p405-tile-meta > span,
   .media-p406-lobby-banner,
-  .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-role,
-  .media-p406-roster-drawer .media-p406-hand-state,
-  .media-p406-roster-drawer .media-p406-hand-state span {
+  .media-p406-roster-drawer .media-p406-people-hand,
+  .media-p406-roster-drawer .media-p406-people-avatar,
+  .media-p406-roster-drawer .media-p406-people-action[data-people-tip]::after {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     border-color: CanvasText;
@@ -2524,9 +2652,30 @@
   .media-p405-room .media-p405-avatar,
   .media-p405-room .media-p405-device-panel label,
   .media-p506-tool-stage .whiteboard-tool-state,
-  .media-p406-roster-drawer .media-p406-roster-person strong,
-  .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-self,
-  .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-connection,
+  .media-p406-roster-drawer
+    :is(
+      .media-p406-people-section__label,
+      .media-p406-people-group__toggle,
+      .media-p406-people-group__dot,
+      .media-p406-people-group__count,
+      .media-p406-people-group__chevron,
+      .media-p406-people-row__name,
+      .media-p406-people-row__self,
+      .media-p406-people-row__meta,
+      .media-p406-people-row__connection[data-connection="reconnecting"],
+      .media-p406-people-row__status,
+      .media-p406-people-mic,
+      .media-p406-people__search-icon,
+      .media-p406-people__search-input,
+      .media-p406-people__sync,
+      .media-p406-people-feedback,
+      .media-p406-people-state__title,
+      .media-p406-people-state__text,
+      .media-p406-people-empty__title,
+      .media-p406-people-empty__text,
+      .media-p406-people-action,
+      .media-p406-people-more
+    ),
   :is(
       .media-p406-reaction-menu,
       .media-p407-participant-menu,
@@ -2597,10 +2746,62 @@
     outline-offset: -3px;
   }
 
-  .media-p406-roster-drawer .media-p406-roster li,
-  .media-p406-roster-lobby .media-p404-lobby {
+  /* People: system hairlines, Highlight hover, row actions always shown. */
+  .media-p406-roster-drawer
+    :is(
+      .media-p406-people-group,
+      .media-p406-people__search,
+      .media-p406-people-inline-error
+    ) {
     border: 2px solid CanvasText;
+    background: Canvas;
     box-shadow: none;
+  }
+
+  .media-p406-roster-drawer .media-p406-people__footer {
+    border-top: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .media-p406-roster-drawer .media-p406-people-row:hover,
+  .media-p406-roster-drawer .media-p406-people-row:has(:focus-visible) {
+    background: Canvas;
+    box-shadow: none;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .media-p406-roster-drawer .media-p406-people-row__actions {
+    opacity: 1;
+  }
+
+  /* Chromium keeps the authored text colour on translucent glass buttons:
+     every People control states its own system pair, like the Dock. */
+  .media-p406-roster-drawer
+    :is(
+      .media-p406-people-admit,
+      .media-p406-people__lower-all,
+      .media-p406-people-action,
+      .media-p406-people-more,
+      .media-p406-people__search-clear,
+      .media-p406-people__sync .th-button,
+      .media-p406-people-empty .th-button,
+      .media-p406-people-state .th-button,
+      .media-p406-people-inline-error .th-button
+    ).th-button {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    box-shadow: none;
+    color: ButtonText;
+    forced-color-adjust: none;
+  }
+
+  .media-p406-roster-drawer .media-p406-people-speaking > span {
+    background: CanvasText;
+  }
+
+  .media-p406-roster-drawer .media-p406-people-avatar {
+    text-shadow: none;
   }
 
   .media-p405-room
@@ -2682,6 +2883,22 @@
       .whiteboard-paper-card
     ) {
     transition: none;
+  }
+
+  /* ROOM-PEOPLE-03: groups snap open/closed; no speaking bars or spinner. */
+  .media-p406-roster-drawer
+    :is(
+      .media-p406-people-group__chevron,
+      .media-p406-people-row,
+      .media-p406-people-row__actions,
+      .media-p406-people__search
+    ) {
+    transition: none;
+  }
+
+  .media-p406-roster-drawer
+    :is(.media-p406-people-speaking > span, .media-p406-people__sync-icon) {
+    animation: none;
   }
 
   .media-p405-room

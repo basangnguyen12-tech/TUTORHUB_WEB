@@ -7,6 +7,7 @@ import { useContext, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../app/i18n";
 import {
+  MediaLobbyFilterContext,
   MediaLobbyPanel,
   MediaLobbyWaitingCountContext,
   MediaLobbyWaitingCountProvider,
@@ -116,8 +117,21 @@ describe("MediaLobbyPanel", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Waiting room" })).toBeVisible();
+    // ROOM-PEOPLE-03: a Meet-style "Waiting to join" group with a counted,
+    // collapsible box and one slim row per request (no manual refresh).
+    expect(
+      screen.getByRole("heading", { name: "Waiting to join" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Waiting to be admitted 1" }),
+    ).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Student One")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Refresh/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Admit Student One" }),
+    ).toHaveTextContent("Admit");
     expect(document.body).not.toHaveTextContent("student@example.test");
     fireEvent.click(screen.getByRole("button", { name: "Admit Student One" }));
 
@@ -137,7 +151,7 @@ describe("MediaLobbyPanel", () => {
     );
   });
 
-  it("requires confirmation before denying a waiting participant", () => {
+  it("requires confirmation before denying a waiting participant", async () => {
     renderEnglish(
       <MediaLobbyPanel
         enabled
@@ -149,9 +163,14 @@ describe("MediaLobbyPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Deny Student One" }));
+    // ROOM-PEOPLE-03: Deny moved into the row's ⋮ menu; it still confirms.
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "More actions for Student One" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Deny" }));
     expect(
-      screen.getByRole("heading", { name: "Deny this join request?" }),
+      await screen.findByRole("heading", { name: "Deny this join request?" }),
     ).toBeVisible();
     expect(lobbyMocks.resolve().mutate).not.toHaveBeenCalled();
 
@@ -164,6 +183,120 @@ describe("MediaLobbyPanel", () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it("ROOM-PEOPLE-03 hides the group while nobody waits, then reopens and announces a new request", () => {
+    const waitingItem = (id: string, name: string) => ({
+      id,
+      status: "waiting",
+      version: 1,
+      display_name: name,
+      created_at: "2030-08-03T00:00:00Z",
+    });
+    lobbyMocks.admissions.mockReturnValue(queryResult({ items: [] }));
+    // A fresh element each time, so React re-reads the mocked query.
+    const panel = () => (
+      <MediaLobbyPanel
+        enabled
+        roomInstanceID={roomInstanceID}
+        roomInstanceVersion={3}
+        spaceID={spaceID}
+        spaceVersion={5}
+        tenantID={tenantID}
+      />
+    );
+    const view = renderEnglish(panel());
+
+    // Empty: no heading, no box, no description card — only a silent region.
+    expect(
+      screen.queryByRole("heading", { name: "Waiting to join" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+    const live = screen.getByRole("status");
+    expect(live).toHaveAttribute("aria-live", "polite");
+    expect(live).toHaveTextContent("");
+
+    lobbyMocks.admissions.mockReturnValue(
+      queryResult({ items: [waitingItem("a", "Student One")] }),
+    );
+    view.rerender(<I18nProvider initialLanguage="en">{panel()}</I18nProvider>);
+    expect(
+      screen.getByRole("heading", { name: "Waiting to join" }),
+    ).toBeVisible();
+    expect(live).toHaveTextContent("Someone asked to join. 1 waiting.");
+
+    // A collapsed group re-opens by itself when someone else asks to join.
+    const toggle = screen.getByRole("button", {
+      name: "Waiting to be admitted 1",
+    });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const list = document.getElementById(
+      toggle.getAttribute("aria-controls") ?? "",
+    );
+    expect(list).toHaveAttribute("aria-label", "People waiting to be admitted");
+    expect(list).not.toBeVisible();
+    lobbyMocks.admissions.mockReturnValue(
+      queryResult({
+        items: [
+          waitingItem("a", "Student One"),
+          waitingItem("b", "Student Two"),
+        ],
+      }),
+    );
+    view.rerender(<I18nProvider initialLanguage="en">{panel()}</I18nProvider>);
+    expect(
+      screen.getByRole("button", { name: "Waiting to be admitted 2" }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(live).toHaveTextContent("Someone asked to join. 2 waiting.");
+    expect(screen.getByText("Student Two")).toBeVisible();
+  });
+
+  it("ROOM-PEOPLE-03 follows the People search and reports its matches", () => {
+    lobbyMocks.admissions.mockReturnValue(
+      queryResult({
+        items: [
+          {
+            id: "a",
+            status: "waiting",
+            version: 1,
+            display_name: "Phạm Quỳnh Như",
+          },
+          {
+            id: "b",
+            status: "waiting",
+            version: 1,
+            display_name: "Lê Hoàng Nam",
+          },
+        ],
+      }),
+    );
+    const onMatchCountChange = vi.fn();
+    renderEnglish(
+      <MediaLobbyFilterContext
+        value={{
+          active: true,
+          matches: (name) => name.includes("Như"),
+          onMatchCountChange,
+        }}
+      >
+        <MediaLobbyPanel
+          enabled
+          roomInstanceID={roomInstanceID}
+          roomInstanceVersion={3}
+          spaceID={spaceID}
+          spaceVersion={5}
+          tenantID={tenantID}
+        />
+      </MediaLobbyFilterContext>,
+    );
+
+    expect(screen.getByText("Phạm Quỳnh Như")).toBeVisible();
+    expect(screen.queryByText("Lê Hoàng Nam")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Waiting to be admitted 1" }),
+    ).toBeVisible();
+    expect(onMatchCountChange).toHaveBeenLastCalledWith(1);
   });
 
   it("fails closed when moderation authority is revoked mid-session", () => {

@@ -12,10 +12,22 @@
 | Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                                              |
 | Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                                                |
 | Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                                                          |
-| Task `DONE` gần nhất | `ROOM-CHAT-EMOJI-02` Popup Emoji Lớp học Chuẩn Zalo — Kho `1.898` Emoji Unicode CLDR Song ngữ Nạp động, Ảo hóa Hàng, `Gần đây` & Scroll-Spy Đáy                                          |
-| Mốc repository mới   | `@tutorhub/web` `1143/1143` (`105` file), `@tutorhub/api-client` `136/136`, Go `conversation` PG17 integration PASS, Chromium E2E `p4-03..07` `57/57` PASS, `security:bundle` `220` file |
-| Task hiện tại        | Trải nghiệm trực tiếp Popup Emoji Kiểu Zalo (`1.898` emoji theo chủ đề) & Chat Lớp học tại `http://localhost:5173`                                                                       |
+| Task `DONE` gần nhất | `ROOM-PEOPLE-03` Thiết kế lại Ngăn `Người tham gia (N)` Chuẩn Google Meet × Teams × Zoom — Ẩn Hàng Chờ Rỗng, Nhóm Thu Gọn, Dòng `52px` & Thao Tác Hover                                  |
+| Mốc repository mới   | `@tutorhub/web` `1158/1158` (`106` file), `@tutorhub/api-client` `136/136`, Go `conversation` PG17 integration PASS, Chromium E2E `p4-03..07` `62/62` PASS, `security:bundle` `220` file |
+| Task hiện tại        | Trải nghiệm trực tiếp Ngăn `Người tham gia` Mới, Chat Lớp học & Popup Emoji Kiểu Zalo tại `http://localhost:5173`                                                                        |
 | Task tiếp theo       | Tiếp nhận phản hồi trải nghiệm trực tiếp hoặc đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` (lưu ý cấp quyền runtime Neon cho 2 bảng `000053` trước khi deploy staging)              |
+
+### Checkpoint `ROOM-PEOPLE-03` Thiết kế lại Ngăn `Người tham gia (N)` Chuẩn Google Meet × Microsoft Teams × Zoom (`DONE`) — 2026-11-24
+
+Claude Code khảo sát trực quan 3 nền tảng (`Google Meet`, `Microsoft Teams`, `Zoom Workplace`) ở Phase 0 và triển khai `ROOM-PEOPLE-03` trong `Allowed Scope`; Gatekeeper (Antigravity) review `RESEARCH.md`, phê duyệt cơ chế ẩn tạm `media-p406-lobby-banner` khi ngăn People đang mở (tránh đọc lặp trình đọc màn hình) và phép ghép `tutorhub.participant_key` do server ký, chạy độc lập `pnpm verify`, cổng bundle và trọn bộ 43 bài Chromium Playwright E2E `p4-05..07`:
+
+- **Bố cục Mật độ Cao gấp `4×` & Ẩn Hoàn Toàn Hàng Chờ Khi Rỗng (`ClassroomPeoplePanel.tsx`, `MediaLobbyPanel.tsx`, `ClassroomMediaShell.tsx`)**:
+  - Đổi tiêu đề sang `Người tham gia (N)` + `✕` (bỏ nút `Làm mới` thủ công và nút `Đóng` thừa ở đáy), bổ sung ô tìm kiếm `36px` lọc **không dấu Tiếng Việt + Tiếng Anh** xuyên suốt cả hàng chờ lẫn danh sách trong lớp (`MediaLobbyFilterContext`, nhấn `Escape` khi có chữ chỉ xóa ô tìm mà không đóng ngăn).
+  - Nhóm `ĐANG CHỜ VÀO LỚP` ẩn hoàn toàn về **`0px`** khi không có ai chờ (trước đây chiếm cứng `335px`), tự mở lại kèm thông báo `polite` khi có người mới xin vào; mỗi dòng chờ gọn `48px` gồm avatar `32px`, tên, nút `Chấp nhận` trực tiếp và menu `⋮` chứa `Từ chối` (bảo toàn 100% CAS, idempotency và hộp xác nhận).
+- **Phân Nhóm Vai Trò Thu Gọn, Dòng `52px` Sạch Nhãn Thừa & Thao Tác Hiện Khi Hover/Focus (`ClassroomPeoplePanel.tsx`, `ClassroomModerationControls.tsx`, `ClassroomRoomStage.css`)**:
+  - Chia 2 hộp thu gọn được (`Giáo viên & người tổ chức · N` và `Học sinh · N`, tự gộp thành `Người tham gia · N` khi chỉ có 1 vai trò); giữ thứ tự chuẩn `Bạn` → người giơ tay theo FIFO → `roster_sequence`.
+  - Thu gọn mỗi dòng người từ `107–122px` xuống **`52px`** (tăng số người thấy trọn trong 1 màn `1440×900` từ `3` lên **`12` người**): bỏ số thứ tự `1.`, đổi vai trò sang dòng phụ mảnh, ẩn nhãn mặc định `"Đã kết nối"` (chỉ hiện khi `Đang kết nối lại...` / `Đang vào...`), ghép an toàn icon mic tắt & vạch đang nói qua attribute `tutorhub.participant_key` do server ký trong LiveKit token (không lộ khóa hay identity), ẩn nút `Hạ tay` / `⋮` bằng `opacity` cho tới khi hover hoặc focus bàn phím (luôn hiện trên cảm ứng & `forced-colors`), và ghim nút `Hạ tất cả tay (N)` ở đáy ngăn.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1158/1158`** trên `106` file — tăng `15` unit test mới, `security:bundle` `220` file, Storybook build, Go `40` package + `go vet`), `check-whiteboard-performance-bundle.mjs` PASS (`issues: []`), và Chromium Playwright E2E `p4-05..07` (**`43/43`** bài gồm đo dòng `<= 56px`, ẩn/mở hàng chờ + CAS admit, cuộn & lọc không dấu lớp `25`/`50` người, `320px` `forced-colors` và Axe `0` vi phạm) **`PASS` (`1.2m`)**.
 
 ### Checkpoint `ROOM-CHAT-EMOJI-02` Thiết kế lại Popup Emoji Lớp học theo Bố cục & Logic Zalo kèm Kho `1.898` Emoji Unicode CLDR Song ngữ Nạp Động (`DONE`) — 2026-11-24
 

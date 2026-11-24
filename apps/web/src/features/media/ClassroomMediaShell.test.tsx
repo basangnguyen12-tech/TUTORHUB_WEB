@@ -500,9 +500,16 @@ describe("ClassroomMediaShell", () => {
       screen.getByRole("button", { name: "Open classroom roster" }),
     );
     expect(
-      await screen.findByRole("heading", { name: "Classroom roster" }),
+      await screen.findByRole("heading", { name: "People (2)" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Lower all hands" }));
+    // ROOM-PEOPLE-03: the one bulk action the server supports, pinned at the
+    // drawer's foot with its live count.
+    const hostActions = screen.getByRole("group", { name: "Host actions" });
+    fireEvent.click(
+      within(hostActions).getByRole("button", {
+        name: "Lower all hands (1)",
+      }),
+    );
     await waitFor(() => expect(lowerAll).toHaveBeenCalledTimes(1));
     fireEvent.click(
       screen.getByRole("button", { name: "Lower Student One's hand" }),
@@ -573,7 +580,7 @@ describe("ClassroomMediaShell", () => {
     // Opening People replaces Chat in the same slot.
     fireEvent.click(people);
     expect(
-      await screen.findByRole("dialog", { name: "Classroom roster" }),
+      await screen.findByRole("dialog", { name: "People (2)" }),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(
@@ -880,16 +887,92 @@ describe("ClassroomMediaShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "View waiting room" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Classroom roster" }),
+      await screen.findByRole("heading", { name: "People (2)" }),
     ).toBeInTheDocument();
     const lobby = screen.getByRole("region", { name: "Waiting room panel" });
-    const rosterList = screen.getByRole("list", {
-      name: "Participants in classroom order",
-    });
+    const inClass = screen.getByRole("region", { name: "In class" });
     expect(
-      lobby.compareDocumentPosition(rosterList) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      lobby.compareDocumentPosition(inClass) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    // ROOM-PEOPLE-03: the open drawer owns the waiting announcement, so the
+    // stage banner steps aside (no duplicate live text, no second button).
+    expect(
+      screen.queryByRole("button", { name: "View waiting room" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((element) => element.textContent === "2 waiting to join"),
+    ).toBe(false);
+    // The Dock badge keeps its behaviour while the drawer is open.
+    expect(
+      screen.getByRole("button", {
+        name: "Open classroom roster (2 waiting to join)",
+      }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("ROOM-PEOPLE-03 titles the drawer with the class size, drops the footer Close key and clears search on Escape", async () => {
+    renderShell({ signals: createSignalControls() });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open classroom roster" }),
+    );
+    const drawer = await screen.findByRole("dialog", { name: "People (2)" });
+    expect(
+      screen.queryByRole("heading", { name: "Classroom roster" }),
+    ).not.toBeInTheDocument();
+    // Only the round ✕ closes it (no duplicate footer "Close").
+    const closeKeys = within(drawer).getAllByRole("button", { name: "Close" });
+    expect(closeKeys).toHaveLength(1);
+    expect(closeKeys[0]?.textContent?.trim()).toBe("");
+
+    const search = within(drawer).getByRole("searchbox", {
+      name: "Search for people",
+    });
+    fireEvent.change(search, { target: { value: "stu" } });
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(search).toHaveValue("");
+    expect(screen.getByRole("dialog", { name: "People (2)" })).toBeVisible();
+    fireEvent.keyDown(search, { key: "Escape" });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "People (2)" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("ROOM-PEOPLE-03 shows mic-off and speaking cues only through the signed participant key", async () => {
+    liveKitState.cameraTrackRefs = createCameraTracks(3);
+    const keys = [PARTICIPANT_A, PARTICIPANT_B];
+    liveKitState.cameraTrackRefs.forEach((track, index) => {
+      const key = keys[index];
+      if (key)
+        track.participant.attributes = { "tutorhub.participant_key": key };
+      track.participant.identity = `unsafe-provider-identity-${index}`;
+      (
+        track.participant as { isMicrophoneEnabled?: boolean }
+      ).isMicrophoneEnabled = false;
+    });
+    renderShell({ signals: createSignalControls() });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open classroom roster" }),
+    );
+    const drawer = await screen.findByRole("dialog", { name: "People (2)" });
+    const student = within(drawer)
+      .getByText("Student One")
+      .closest("li") as HTMLElement;
+    const teacher = within(drawer)
+      .getByText("Teacher One")
+      .closest("li") as HTMLElement;
+    // Remote: the provider says muted. Self: the local hook's state (off).
+    expect(
+      within(student).getByRole("img", { name: "Microphone off" }),
+    ).toBeInTheDocument();
+    expect(
+      within(teacher).getByRole("img", { name: "Microphone off" }),
+    ).toBeInTheDocument();
+    expect(drawer.textContent).not.toContain("unsafe-provider");
+    expect(drawer.textContent).not.toContain(PARTICIPANT_B);
   });
 
   it("takes no stage space when nobody is waiting and reads the provider count", () => {

@@ -463,11 +463,21 @@ for (const participantCount of [2, 5, 25, 50]) {
     ).toBeVisible();
     await expect(page.locator(".media-p406-reaction-cluster")).toHaveCount(3);
     await page.getByRole("button", { name: "Open classroom roster" }).click();
-    const roster = page.getByRole("list", {
-      name: "Participants in classroom order",
-    });
+    // ROOM-PEOPLE-03: "People (N)" with collapsible staff / student lists.
+    await expect(
+      page.getByRole("dialog", { name: `People (${participantCount})` }),
+    ).toBeVisible();
+    const roster = page.getByRole("region", { name: "In class" });
     await expect(roster.getByRole("listitem")).toHaveCount(participantCount);
-    await expect(roster.getByRole("listitem").first()).toContainText("You");
+    await expect(
+      roster
+        .getByRole("list", { name: "Teachers & organizers" })
+        .getByRole("listitem")
+        .first(),
+    ).toContainText("You");
+    await expect(
+      page.getByRole("list", { name: "Students" }).getByRole("listitem"),
+    ).toHaveCount(participantCount - 1);
     await expect(page.locator("body")).not.toContainText(
       "00000000-0000-4000-8000",
     );
@@ -522,13 +532,20 @@ test("P4-06 moderator lowers one hand then the remaining FIFO queue", async ({
     name: "Open classroom roster",
   });
   await rosterTrigger.click();
+  // ROOM-PEOPLE-03: the row's hand key appears on hover (the click hovers).
   await page.getByRole("button", { name: "Lower Student 1's hand" }).click();
   await expect(
     page.getByRole("button", { name: "Lower Student 1's hand" }),
   ).toHaveCount(0);
-  await expect(page.getByText("Hand raised, position 1")).toBeVisible();
-  await page.getByRole("button", { name: "Lower all hands" }).click();
+  await expect(page.getByText("Hand raised, position 1")).toHaveCount(1);
+  await page
+    .getByRole("group", { name: "Host actions" })
+    .getByRole("button", { name: "Lower all hands (1)" })
+    .click();
   await expect(page.getByText(/Hand raised, position/)).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Host actions" })).toHaveCount(
+    0,
+  );
 
   const calls = (await readFixtureState(page))?.calls;
   expect(calls?.map(({ kind }) => kind)).toEqual([
@@ -548,9 +565,7 @@ test("P4-06 reflows at 320 CSS pixels and 200% with Axe, forced colors, and redu
   });
 
   await page.getByRole("button", { name: "Open classroom roster" }).click();
-  await expect(
-    page.getByRole("list", { name: "Participants in classroom order" }),
-  ).toBeVisible();
+  await expect(page.getByRole("list", { name: "Students" })).toBeVisible();
   expect(
     await page.evaluate(
       () =>
@@ -563,15 +578,19 @@ test("P4-06 reflows at 320 CSS pixels and 200% with Axe, forced colors, and redu
     "animation-name",
     "none",
   );
-  await expect(page.locator(".media-p406-roster li").first()).toHaveCSS(
+  // ROOM-PEOPLE-03: groups carry the system border; row actions always show.
+  await expect(page.locator(".media-p406-people-group").first()).toHaveCSS(
     "border-top-width",
     "2px",
   );
+  await expect(
+    page.locator(".media-p406-people-row__actions").first(),
+  ).toHaveCSS("opacity", "1");
 
   await page.getByRole("button", { name: "Close" }).last().click();
-  await expect(
-    page.getByRole("heading", { name: "Classroom roster" }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "People (50)" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Send a reaction" }).click();
   await expect(
     page.getByRole("menu", { name: "Choose a reaction" }),

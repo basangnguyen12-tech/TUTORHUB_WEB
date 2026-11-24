@@ -15,7 +15,7 @@ import {
 import {
   Lock,
   MicOff,
-  MoreHorizontal,
+  MoreVertical,
   Unlock,
   UserMinus,
   UserPlus,
@@ -306,17 +306,25 @@ export function ClassroomParticipantModerationMenu({
     <span className="media-p407-participant-actions">
       <Menu modal={false}>
         <MenuTrigger asChild>
+          {/*
+            ROOM-PEOPLE-03: a ⋮ key that the People row reveals on hover or
+            keyboard focus (always shown for touch and forced colors); its
+            accessible name always carries the person's name.
+          */}
           <IconButton
+            className="media-p406-people-action media-p407-participant-trigger"
+            data-people-tip={t("media.people.moreActions")}
             disabled={disabled || busy}
             label={t("media.p407.participantMenu", { name: displayName })}
             ref={trigger}
             size="sm"
             variant="quiet"
           >
-            <MoreHorizontal />
+            <MoreVertical />
           </IconButton>
         </MenuTrigger>
         <MenuContent
+          align="end"
           aria-label={t("media.p407.participantMenu", { name: displayName })}
           className="media-p407-participant-menu"
           data-theme="dark"

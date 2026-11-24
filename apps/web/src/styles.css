@@ -6258,56 +6258,646 @@ textarea:focus-visible {
   }
 }
 
-.media-p406-roster,
-.media-p406-roster-state {
-  margin: 16px 0;
-}
-
-.media-p406-roster-summary,
-.media-p406-hand-state {
+/*
+ * ROOM-PEOPLE-03 — People inspector structure (Google Meet × Teams × Zoom):
+ * slim header, 36px search, scrolling body with collapsible bordered groups
+ * of 52px rows, and a pinned host footer. ClassroomRoomStage.css adds the
+ * room's Liquid Glass; these rules keep the fixtures that load only this
+ * stylesheet usable and accessible.
+ */
+.th-dialog-content.th-drawer-content.media-p406-roster-drawer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.media-p406-roster-summary > span {
-  color: var(--color-text-muted);
-  font-size: 13px;
-}
-
-.media-p406-roster ol {
-  display: grid;
-  max-height: min(62vh, 640px);
+  flex-direction: column;
+  gap: 0;
   padding: 0;
-  margin: 12px 0;
-  gap: 8px;
-  list-style-position: inside;
-  overflow-y: auto;
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 
-.media-p406-roster li {
-  padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+.media-p406-roster-drawer__header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 56px;
+  padding: 12px 56px 6px 16px;
+}
+
+.media-p406-roster-drawer .media-p406-roster-drawer__title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-p406-roster-drawer .th-dialog-close {
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+}
+
+.media-p406-people {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.media-p406-people__search {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 36px;
+  margin: 2px 16px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
   background: var(--color-surface-raised);
 }
 
-.media-p406-roster li > div:first-child {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3px 8px;
+.media-p406-people__search:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
 }
 
-.media-p406-roster li strong {
+.media-p406-people__search-icon {
+  position: absolute;
+  left: 11px;
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.media-p406-people__search-input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0 38px 0 35px;
+  border: 0;
+  border-radius: inherit;
+  appearance: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.media-p406-people__search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.media-p406-people__search-input::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.media-p406-people__search-clear.th-icon-button.th-button--sm {
+  position: absolute;
+  right: 3px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 50%;
+}
+
+.media-p406-people__sync {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 16px 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.media-p406-people__sync[data-state="error"] {
+  color: var(--color-warning);
+}
+
+.media-p406-people__sync .th-button--sm {
+  min-height: 24px;
+  padding: 0 8px;
+}
+
+.media-p406-people__sync-icon {
+  width: 13px;
+  height: 13px;
+  animation: media-p406-people-spin 1s linear infinite;
+}
+
+.media-p406-people__body {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0 12px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.media-p406-people__footer {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.media-p406-people__footer .th-button--sm {
+  min-height: 32px;
+  border-radius: 999px;
+}
+
+.media-p406-people-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.media-p406-people-section,
+.media-p406-roster {
+  margin: 0;
+}
+
+.media-p406-people-section__label {
+  margin: 10px 4px 6px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.media-p406-people-group {
+  margin-bottom: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.media-p406-people-group__heading {
+  margin: 0;
+  font: inherit;
+}
+
+.media-p406-people-group__toggle {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.media-p406-people-group__toggle:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.media-p406-people-group__label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.media-p406-roster li span {
+.media-p406-people-group__dot,
+.media-p406-people-group__count {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.media-p406-people-group__chevron {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--color-text-muted);
+  transition: transform 200ms ease;
+}
+
+.media-p406-people-group__toggle[aria-expanded="false"]
+  .media-p406-people-group__chevron {
+  transform: rotate(180deg);
+}
+
+.media-p406-people-list {
+  display: grid;
+  padding: 0 4px 4px;
+  margin: 0;
+  list-style: none;
+}
+
+.media-p406-people-list[hidden] {
+  display: none;
+}
+
+.media-p406-people-row {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 52px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 10px;
+}
+
+.media-p406-people-row--waiting {
+  min-height: 48px;
+  gap: 10px;
+}
+
+.media-p406-people-row:hover {
+  background: var(--color-surface-subtle);
+}
+
+.media-p406-people-avatar {
+  --avatar-from: #2f63d8;
+  --avatar-to: #5b3fd6;
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: linear-gradient(
+    160deg,
+    var(--avatar-from) 0%,
+    var(--avatar-to) 100%
+  );
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  place-items: center;
+}
+
+/* The camera-off tile's six tones, so one person reads alike everywhere. */
+.media-p406-people-avatar[data-tone="1"] {
+  --avatar-from: #0b7490;
+  --avatar-to: #1f5fcf;
+}
+
+.media-p406-people-avatar[data-tone="2"] {
+  --avatar-from: #7a37d8;
+  --avatar-to: #b02a9a;
+}
+
+.media-p406-people-avatar[data-tone="3"] {
+  --avatar-from: #06775a;
+  --avatar-to: #0b6c86;
+}
+
+.media-p406-people-avatar[data-tone="4"] {
+  --avatar-from: #b0480c;
+  --avatar-to: #bd2446;
+}
+
+.media-p406-people-avatar[data-tone="5"] {
+  --avatar-from: #4338ca;
+  --avatar-to: #0b5f94;
+}
+
+.media-p406-people-row__text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.media-p406-people-row__name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.media-p406-people-row__display {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-p406-people-row__self {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.media-p406-people-row__meta {
+  overflow: hidden;
   color: var(--color-text-muted);
   font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-p406-people-row__connection[data-connection="reconnecting"] {
+  color: var(--color-warning);
+}
+
+.media-p406-people-row__status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+}
+
+.media-p406-people-hand {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.media-p406-people-hand svg,
+.media-p406-people-mic svg {
+  width: 15px;
+  height: 15px;
+}
+
+.media-p406-people-mic {
+  display: inline-flex;
+}
+
+.media-p406-people-speaking {
+  display: inline-flex;
+  height: 14px;
+  align-items: center;
+  gap: 2px;
+}
+
+.media-p406-people-speaking > span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-accent);
+  animation: media-p406-people-speak 900ms ease-in-out infinite;
+  transform-origin: center;
+}
+
+.media-p406-people-speaking > span:nth-child(2) {
+  animation-delay: -300ms;
+}
+
+.media-p406-people-speaking > span:nth-child(3) {
+  animation-delay: -600ms;
+}
+
+/*
+ * Row actions (⋮, lower hand) appear on hover or keyboard focus like Meet
+ * and Zoom. Opacity (not visibility/display) keeps them in the Tab order
+ * and the accessibility tree; touch screens and forced colors always show
+ * them, and an open menu keeps its trigger visible.
+ */
+.media-p406-people-row__actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+/* A fixed action width keeps every row's status icons in one column. */
+.media-p406-people-row__actions[data-slots="1"] {
+  min-width: 32px;
+}
+
+.media-p406-people-row__actions[data-slots="2"] {
+  min-width: 66px;
+}
+
+.media-p406-people-row:is(:hover, :focus-within)
+  .media-p406-people-row__actions,
+.media-p406-people-row__actions:has(
+  [data-state="open"],
+  [aria-expanded="true"]
+) {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .media-p406-people-row__actions {
+    opacity: 1;
+  }
+}
+
+.media-p406-people-row__waiting-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.media-p406-people-action.th-icon-button.th-button--sm,
+.media-p406-people-more.th-icon-button.th-button--sm {
+  position: relative;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-radius: 50%;
+}
+
+.media-p406-people-action svg,
+.media-p406-people-more svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* A small local tooltip: the room tooltip layer only delegates inside the
+   shell and this drawer is a portal. The accessible name stays aria-label. */
+.media-p406-people-action[data-people-tip]::after {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: calc(100% + 6px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--color-text);
+  color: var(--color-text-inverse);
+  content: attr(data-people-tip);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease 300ms;
+  white-space: nowrap;
+}
+
+.media-p406-people-action[data-people-tip]:is(:hover, :focus-visible):not(
+    [data-state="open"]
+  )::after {
+  opacity: 1;
+}
+
+.media-p407-participant-actions {
+  display: inline-flex;
+}
+
+.media-p406-people-admit.th-button--sm {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.media-p406-people-feedback {
+  padding: 2px 4px;
+  margin: 6px 4px 4px;
+  border-radius: 6px;
+  color: var(--color-success);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.media-p406-people-feedback:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.media-p406-people-state {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.media-p406-people-state__title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.media-p406-people-state__text,
+.media-p406-people-inline-error p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.media-p406-people-inline-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 0 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.media-p406-people-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+}
+
+.media-p406-people-empty__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.media-p406-people-empty__text {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.media-p406-roster > .media-p406-people-empty__text {
+  padding: 12px 4px;
+}
+
+.media-p406-people-skeleton {
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+}
+
+.media-p406-people-skeleton__row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 10px;
+}
+
+.media-p406-people-skeleton__row > .th-skeleton:first-child {
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+@keyframes media-p406-people-speak {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes media-p406-people-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 480px) {
+  .media-p406-people__search {
+    margin-inline: 12px;
+  }
+
+  .media-p406-people__body {
+    padding-inline: 8px;
+  }
 }
 
 .media-p407-room-controls {
@@ -6340,12 +6930,6 @@ textarea:focus-visible {
   color: var(--color-danger);
 }
 
-.media-p407-participant-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 6px;
-}
-
 .media-p407-participant-menu .th-menu-item {
   display: flex;
   align-items: center;
@@ -6356,12 +6940,6 @@ textarea:focus-visible {
   width: 16px;
   height: 16px;
   flex: 0 0 auto;
-}
-
-.media-p406-hand-state {
-  padding-top: 8px;
-  border-top: 1px solid var(--color-border);
-  margin-top: 8px;
 }
 
 @keyframes media-p406-reaction-arrive {
@@ -6377,16 +6955,56 @@ textarea:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .media-p406-reaction-cluster {
+  .media-p406-reaction-cluster,
+  .media-p406-people-speaking > span,
+  .media-p406-people__sync-icon {
     animation: none;
+  }
+
+  .media-p406-people-group__chevron,
+  .media-p406-people-row__actions,
+  .media-p406-people-action[data-people-tip]::after {
+    transition: none;
   }
 }
 
 @media (forced-colors: active) {
   .media-p406-reaction-cluster,
-  .media-p406-roster li,
   .media-p407-room-controls {
     border: 2px solid CanvasText;
+  }
+
+  /* People: system borders, Highlight hover, row actions always shown. */
+  .media-p406-people-group,
+  .media-p406-people__search {
+    border: 2px solid CanvasText;
+  }
+
+  .media-p406-people-row__actions {
+    opacity: 1;
+  }
+
+  .media-p406-people-row:hover {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .media-p406-people-avatar,
+  .media-p406-people-hand {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .media-p406-people-speaking > span {
+    background: CanvasText;
+  }
+
+  .media-p406-people-action[data-people-tip]::after {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
   }
 }
 

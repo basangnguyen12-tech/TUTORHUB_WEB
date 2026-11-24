@@ -7,15 +7,24 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTitle,
-  EmptyState,
-  ErrorState,
-  ForbiddenState,
+  IconButton,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
   Skeleton,
   SkeletonGroup,
-  StatusBadge,
 } from "@tutorhub/ui";
-import { Check, RefreshCw, UserRoundX } from "lucide-react";
-import { createContext, useRef, useState, type ReactNode } from "react";
+import { ChevronUp, MoreVertical, UserRoundX } from "lucide-react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   mediaLobbyIdempotencyKey,
   useMediaAdmissions,
@@ -25,6 +34,7 @@ import {
 } from "../app/mediaLobby";
 import { useI18n } from "../app/i18n";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
+import { chatAvatarTone } from "../features/media/classroomChatMedia";
 
 interface MediaLobbyPanelProps {
   enabled: boolean;
@@ -42,6 +52,23 @@ interface MediaLobbyPanelProps {
  */
 // eslint-disable-next-line react-refresh/only-export-components -- Shared waiting-count contract; ClassroomLiveKitRoom forwards a fixed prop set, so the shell reads this context instead of a new prop.
 export const MediaLobbyWaitingCountContext = createContext(0);
+
+/**
+ * ROOM-PEOPLE-03: the People panel's search box filters this waiting group
+ * too. The room page builds the `lobby` node itself, so the panel hands the
+ * accent-insensitive matcher down through context (same pattern as the
+ * waiting count) and hears back how many waiting rows still match.
+ */
+export interface MediaLobbyFilter {
+  readonly active: boolean;
+  readonly matches: (displayName: string) => boolean;
+  readonly onMatchCountChange?: (count: number) => void;
+}
+
+// eslint-disable-next-line react-refresh/only-export-components -- Shared filter contract between the classroom People panel and the page-owned lobby node.
+export const MediaLobbyFilterContext = createContext<MediaLobbyFilter | null>(
+  null,
+);
 
 /**
  * Observes the same admissions query as {@link MediaLobbyPanel} (identical
@@ -82,6 +109,14 @@ function waitingAdmissions(
   return (page?.items ?? []).filter((item) => item.status === "waiting");
 }
 
+/**
+ * ROOM-PEOPLE-03 — the People panel's "Waiting to join" group (Google Meet
+ * pattern): hidden entirely while nobody waits, one slim row per request with
+ * an inline Admit and a ⋮ menu holding Deny (still confirmed). Admissions keep
+ * their exact CAS, idempotency and fail-closed handling; the server polls, so
+ * there is no manual refresh. A polite live region (always mounted) announces
+ * new requests while the panel is open.
+ */
 export function MediaLobbyPanel({
   enabled,
   roomInstanceID,
@@ -91,13 +126,20 @@ export function MediaLobbyPanel({
   tenantID,
 }: MediaLobbyPanelProps) {
   const { t } = useI18n();
-  const heading = useRef<HTMLHeadingElement>(null);
+  const filter = useContext(MediaLobbyFilterContext);
+  const sectionLabelID = useId();
+  const listID = useId();
+  const groupToggle = useRef<HTMLButtonElement>(null);
+  const feedbackLine = useRef<HTMLParagraphElement>(null);
   const idempotencyKeys = useRef(new Map<string, string>());
   const [denyTarget, setDenyTarget] = useState<MediaAdmissionItem | null>(null);
   const [feedback, setFeedback] = useState<{
     action: "admit" | "deny";
     displayName: string;
   } | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
+  const [seenWaitingCount, setSeenWaitingCount] = useState<number | null>(null);
   const admissions = useMediaAdmissions(
     tenantID,
     spaceID,
@@ -108,10 +150,6 @@ export function MediaLobbyPanel({
   );
   const resolve = useResolveMediaAdmission(tenantID, spaceID, roomInstanceID);
 
-  if (!enabled) {
-    return null;
-  }
-
   const commandForbidden =
     resolve.error instanceof APIRequestError && resolve.error.status === 403;
   const concealed =
@@ -119,7 +157,36 @@ export function MediaLobbyPanel({
   const forbidden =
     admissions.error instanceof APIRequestError &&
     admissions.error.status === 403;
-  const waiting = waitingAdmissions(admissions.data);
+  const waiting = concealed ? [] : waitingAdmissions(admissions.data);
+  const visibleWaiting = filter?.active
+    ? waiting.filter((item) => filter.matches(item.display_name))
+    : waiting;
+  const queueReady = enabled && admissions.isSuccess && !concealed;
+
+  // A new request (the queue grew since the panel last looked) re-opens the
+  // group and is announced once; the first observation stays silent because
+  // the stage banner and the Dock badge already said it.
+  if (queueReady && seenWaitingCount !== waiting.length) {
+    if (seenWaitingCount !== null && waiting.length > seenWaitingCount) {
+      setCollapsed(false);
+      setAnnouncement(
+        t("media.people.waitingAnnouncement", { count: waiting.length }),
+      );
+    }
+    setSeenWaitingCount(waiting.length);
+  }
+
+  const reportMatchCount = filter?.onMatchCountChange;
+  const matchCount = enabled ? visibleWaiting.length : 0;
+  useEffect(() => {
+    reportMatchCount?.(matchCount);
+  }, [matchCount, reportMatchCount]);
+  useEffect(() => () => reportMatchCount?.(0), [reportMatchCount]);
+
+  if (!enabled) {
+    return null;
+  }
+
   const actionPending = (admissionID: string) =>
     resolve.isPending && resolve.variables?.admissionID === admissionID;
 
@@ -148,36 +215,41 @@ export function MediaLobbyPanel({
           idempotencyKeys.current.delete(commandKey);
           setDenyTarget(null);
           setFeedback({ action, displayName: item.display_name });
-          globalThis.requestAnimationFrame(() => heading.current?.focus());
+          // The resolved row leaves the list: keep focus in the group, or on
+          // the confirmation when the group has just emptied.
+          globalThis.requestAnimationFrame(() => {
+            const toggle = groupToggle.current;
+            if (toggle?.isConnected) toggle.focus();
+            else feedbackLine.current?.focus();
+          });
         },
       },
     );
   };
 
+  const showError = admissions.isError || commandForbidden;
+  const showLoading = admissions.isPending && !showError;
+  const showGroup = showLoading || showError || visibleWaiting.length > 0;
+  const count = visibleWaiting.length;
+
   return (
-    <section aria-labelledby="media-lobby-title" className="media-p404-lobby">
-      <div className="media-p404-panel-heading">
-        <div>
-          <h2 id="media-lobby-title" ref={heading} tabIndex={-1}>
-            {t("media.p404.lobby.title")}
-          </h2>
-          <p>{t("media.p404.lobby.description")}</p>
-        </div>
-        <Button
-          disabled={admissions.isPending}
-          leadingIcon={<RefreshCw />}
-          loading={admissions.isRefetching}
-          loadingLabel={t("media.p404.refreshing")}
-          onClick={() => void admissions.refetch()}
-          size="sm"
-          variant="secondary"
-        >
-          {t("media.p404.refresh")}
-        </Button>
-      </div>
+    <div className="media-p406-people-waiting">
+      <p
+        aria-atomic="true"
+        aria-live="polite"
+        className="media-p406-people-sr-only"
+        role="status"
+      >
+        {announcement}
+      </p>
 
       {feedback && !concealed && (
-        <p className="media-p404-feedback" role="status">
+        <p
+          className="media-p406-people-feedback"
+          ref={feedbackLine}
+          role="status"
+          tabIndex={-1}
+        >
           {t(
             feedback.action === "admit"
               ? "media.p404.lobby.admitted"
@@ -187,99 +259,170 @@ export function MediaLobbyPanel({
         </p>
       )}
 
-      {admissions.isPending && (
-        <SkeletonGroup label={t("media.p404.lobby.loading")}>
-          <Skeleton height={72} />
-          <Skeleton height={72} />
-        </SkeletonGroup>
-      )}
-
-      {(admissions.isError || commandForbidden) &&
-        (concealed || forbidden ? (
-          <ForbiddenState
-            actions={
-              <Button
-                onClick={() => void admissions.refetch()}
-                variant="secondary"
-              >
-                {t("state.retry")}
-              </Button>
-            }
-            description={t("media.p404.lobby.forbiddenDescription")}
-            title={t("media.p404.lobby.forbiddenTitle")}
-          />
-        ) : (
-          <ErrorState
-            actions={
-              <Button
-                onClick={() => void admissions.refetch()}
-                variant="secondary"
-              >
-                {t("state.retry")}
-              </Button>
-            }
-            description={t("media.p404.lobby.errorDescription")}
-            title={t("media.p404.lobby.errorTitle")}
-          />
-        ))}
-
-      {admissions.isSuccess && !concealed && waiting.length === 0 && (
-        <EmptyState
-          description={t("media.p404.lobby.emptyDescription")}
-          title={t("media.p404.lobby.emptyTitle")}
-        />
-      )}
-
-      {!concealed && waiting.length > 0 && (
-        <ul
-          aria-label={t("media.p404.lobby.listLabel")}
-          className="media-p404-list"
+      {showGroup && (
+        <section
+          aria-labelledby={sectionLabelID}
+          className="media-p406-people-section"
         >
-          {waiting.map((item) => (
-            <li key={item.id}>
-              <span className="media-p404-identity">
-                <strong>{item.display_name}</strong>
-                <StatusBadge tone="warning">
-                  {t("media.p404.lobby.waiting")}
-                </StatusBadge>
-              </span>
-              <span className="media-p404-row-actions">
+          <h3 className="media-p406-people-section__label" id={sectionLabelID}>
+            {t("media.people.waitingSection")}
+          </h3>
+          <div className="media-p406-people-group" data-group="waiting">
+            {showError ? (
+              <div className="media-p406-people-state" role="alert">
+                <h4 className="media-p406-people-state__title">
+                  {t(
+                    concealed || forbidden
+                      ? "media.p404.lobby.forbiddenTitle"
+                      : "media.p404.lobby.errorTitle",
+                  )}
+                </h4>
+                <p className="media-p406-people-state__text">
+                  {t(
+                    concealed || forbidden
+                      ? "media.p404.lobby.forbiddenDescription"
+                      : "media.p404.lobby.errorDescription",
+                  )}
+                </p>
                 <Button
-                  aria-label={t("media.p404.lobby.admitNamed", {
-                    name: item.display_name,
-                  })}
-                  disabled={resolve.isPending}
-                  leadingIcon={<Check />}
-                  loading={actionPending(item.id)}
-                  loadingLabel={t("media.p404.lobby.resolving")}
-                  onClick={() => command("admit", item)}
-                  size="sm"
-                >
-                  {t("media.p404.lobby.admit")}
-                </Button>
-                <Button
-                  aria-label={t("media.p404.lobby.denyNamed", {
-                    name: item.display_name,
-                  })}
-                  disabled={resolve.isPending}
-                  leadingIcon={<UserRoundX />}
                   onClick={() => {
                     resolve.reset();
-                    setDenyTarget(item);
+                    void admissions.refetch();
                   }}
                   size="sm"
-                  variant="danger"
+                  variant="secondary"
                 >
-                  {t("media.p404.lobby.deny")}
+                  {t("state.retry")}
                 </Button>
-              </span>
-            </li>
-          ))}
-        </ul>
+              </div>
+            ) : showLoading ? (
+              <SkeletonGroup
+                className="media-p406-people-skeleton"
+                label={t("media.people.waitingLoading")}
+              >
+                <span className="media-p406-people-skeleton__row">
+                  <Skeleton height={32} width={32} />
+                  <Skeleton height={12} width="55%" />
+                </span>
+              </SkeletonGroup>
+            ) : (
+              <>
+                <h4 className="media-p406-people-group__heading">
+                  <button
+                    aria-controls={listID}
+                    aria-expanded={!collapsed}
+                    className="media-p406-people-group__toggle"
+                    onClick={() => setCollapsed((value) => !value)}
+                    ref={groupToggle}
+                    type="button"
+                  >
+                    <span className="media-p406-people-group__label">
+                      {t("media.people.waitingGroup")}
+                    </span>{" "}
+                    <span
+                      aria-hidden="true"
+                      className="media-p406-people-group__dot"
+                    >
+                      ·
+                    </span>{" "}
+                    <span className="media-p406-people-group__count">
+                      {count}
+                    </span>
+                    <ChevronUp
+                      aria-hidden="true"
+                      className="media-p406-people-group__chevron"
+                    />
+                  </button>
+                </h4>
+                <ul
+                  aria-label={t("media.p404.lobby.listLabel")}
+                  className="media-p406-people-list"
+                  hidden={collapsed}
+                  id={listID}
+                >
+                  {visibleWaiting.map((item) => (
+                    <li
+                      className="media-p406-people-row media-p406-people-row--waiting"
+                      key={item.id}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="media-p406-people-avatar"
+                        data-tone={chatAvatarTone(item.display_name)}
+                      >
+                        {avatarInitial(item.display_name)}
+                      </span>
+                      <span className="media-p406-people-row__text">
+                        <span className="media-p406-people-row__name">
+                          <span
+                            className="media-p406-people-row__display"
+                            title={item.display_name}
+                          >
+                            {item.display_name}
+                          </span>
+                        </span>
+                      </span>
+                      <span className="media-p406-people-row__waiting-actions">
+                        <Button
+                          aria-label={t("media.p404.lobby.admitNamed", {
+                            name: item.display_name,
+                          })}
+                          className="media-p406-people-admit"
+                          disabled={resolve.isPending}
+                          loading={actionPending(item.id)}
+                          loadingLabel={t("media.p404.lobby.resolving")}
+                          onClick={() => command("admit", item)}
+                          size="sm"
+                          variant="quiet"
+                        >
+                          {t("media.people.admit")}
+                        </Button>
+                        <Menu modal={false}>
+                          <MenuTrigger asChild>
+                            <IconButton
+                              className="media-p406-people-more"
+                              disabled={resolve.isPending}
+                              label={t("media.people.waitingMenu", {
+                                name: item.display_name,
+                              })}
+                              size="sm"
+                              variant="quiet"
+                            >
+                              <MoreVertical />
+                            </IconButton>
+                          </MenuTrigger>
+                          <MenuContent
+                            align="end"
+                            aria-label={t("media.people.waitingMenu", {
+                              name: item.display_name,
+                            })}
+                            className="media-p407-participant-menu"
+                            data-theme="dark"
+                          >
+                            <MenuItem
+                              onSelect={() => {
+                                resolve.reset();
+                                setDenyTarget(item);
+                              }}
+                              tone="danger"
+                            >
+                              <UserRoundX aria-hidden="true" />
+                              {t("media.p404.lobby.deny")}
+                            </MenuItem>
+                          </MenuContent>
+                        </Menu>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </section>
       )}
 
-      {resolve.isError && !denyTarget && (
-        <div className="media-p404-error" role="alert">
+      {resolve.isError && !denyTarget && !commandForbidden && (
+        <div className="media-p406-people-inline-error" role="alert">
           <p>{t(mediaLobbyMutationErrorKey(resolve.error))}</p>
           <Button
             onClick={() => {
@@ -303,7 +446,10 @@ export function MediaLobbyPanel({
         }}
         open={Boolean(denyTarget && !concealed)}
       >
-        <DialogContent closeLabel={t("media.p404.closeDialog")}>
+        <DialogContent
+          closeLabel={t("media.p404.closeDialog")}
+          data-theme="dark"
+        >
           <DialogTitle>{t("media.p404.lobby.denyTitle")}</DialogTitle>
           <DialogDescription>
             {t("media.p404.lobby.denyDescription", {
@@ -335,8 +481,13 @@ export function MediaLobbyPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </div>
   );
+}
+
+/** The camera-off tile's initial, so a person reads the same in both places. */
+function avatarInitial(name: string): string {
+  return (Array.from(name.trim())[0] ?? "?").toLocaleUpperCase();
 }
 
 function mediaLobbyMutationErrorKey(error: unknown) {
