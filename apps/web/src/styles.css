@@ -5785,12 +5785,15 @@ textarea:focus-visible {
 }
 
 .whiteboard-engine-bar {
+  position: relative;
+  z-index: 3;
   display: flex;
   min-height: 2rem;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
 }
 
 .whiteboard-connection-status {
@@ -5906,6 +5909,255 @@ textarea:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* ---- WHITEBOARD-PAPER-01: paper backdrop and paper picker ------------- */
+
+.whiteboard-semantic-actions {
+  align-items: center;
+  justify-content: flex-end;
+  margin-inline-start: auto;
+}
+
+/* Paper is painted on a canvas under a transparent Excalidraw surface. */
+.whiteboard-paper-backdrop {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.whiteboard-engine-canvas > .excalidraw {
+  z-index: 1;
+  background: transparent !important;
+}
+
+.whiteboard-engine-canvas .excalidraw .Island {
+  box-shadow:
+    0 0 0 1px rgb(15 23 42 / 8%),
+    0 1px 2px rgb(15 23 42 / 14%),
+    0 8px 22px -8px rgb(15 23 42 / 32%);
+}
+
+.whiteboard-engine-canvas[data-paper-surface="dark"] .excalidraw .Island {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 14%),
+    0 2px 6px rgb(0 0 0 / 38%),
+    0 14px 30px -8px rgb(0 0 0 / 60%);
+}
+
+.whiteboard-paper-picker {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.whiteboard-paper-swatch {
+  display: inline-block;
+  flex: none;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / 16%);
+}
+
+.whiteboard-paper-swatch--chip {
+  width: 20px;
+  height: 14px;
+}
+
+.whiteboard-paper-swatch--card {
+  width: 52px;
+  height: 36px;
+  border-radius: 6px;
+}
+
+.whiteboard-paper-trigger,
+.whiteboard-paper-readonly {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.whiteboard-paper-trigger {
+  cursor: pointer;
+}
+
+.whiteboard-paper-trigger:hover {
+  border-color: var(--color-accent);
+}
+
+.whiteboard-paper-trigger:focus-visible,
+.whiteboard-paper-theme-option:focus-visible,
+.whiteboard-paper-card:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.whiteboard-paper-trigger-label,
+.whiteboard-paper-readonly > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.whiteboard-paper-trigger-caret {
+  font-size: 0.6875rem;
+  opacity: 0.8;
+}
+
+.whiteboard-paper-readonly {
+  margin: 0;
+  padding-inline-end: var(--space-3);
+  border-style: dashed;
+}
+
+.whiteboard-paper-readonly .whiteboard-paper-swatch--chip {
+  width: 18px;
+  height: 13px;
+}
+
+.whiteboard-paper-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: grid;
+  width: min(352px, calc(100vw - 24px));
+  max-height: min(70vh, 30rem);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 16px;
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text);
+}
+
+.whiteboard-paper-popover-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.whiteboard-paper-popover-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+/* macOS-style recessed two-option switch (light | dark paper). */
+.whiteboard-paper-theme-switch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-subtle);
+  box-shadow: inset 0 1px 2px rgb(15 23 42 / 14%);
+}
+
+.whiteboard-paper-theme-option {
+  min-height: 1.75rem;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.whiteboard-paper-theme-option[aria-pressed="true"] {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-raised);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 18%);
+  color: var(--color-text);
+}
+
+.whiteboard-paper-theme-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.whiteboard-paper-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.whiteboard-paper-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.whiteboard-paper-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.whiteboard-paper-card:hover {
+  border-color: var(--color-border-strong);
+}
+
+.whiteboard-paper-card[aria-pressed="true"] {
+  border-color: #2563eb;
+  box-shadow: inset 0 0 0 1px #2563eb;
+}
+
+.whiteboard-paper-card-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.whiteboard-paper-card-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 @media (max-width: 42rem) {
   .media-p506-tool-drawer {
     width: calc(100vw - 16px);
@@ -5918,6 +6170,18 @@ textarea:focus-visible {
 
   .whiteboard-semantic-navigation > button {
     flex: 1 1 10rem;
+  }
+
+  .whiteboard-paper-card {
+    padding-inline: 2px;
+    font-size: 0.6875rem;
+  }
+}
+
+@media (max-width: 22rem) {
+  .whiteboard-paper-swatch--card {
+    width: 44px;
+    height: 30px;
   }
 }
 
@@ -5948,6 +6212,54 @@ textarea:focus-visible {
 
   .whiteboard-private-alpha-quick-start summary:focus-visible,
   .whiteboard-private-alpha-support:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .whiteboard-paper-trigger,
+  .whiteboard-paper-readonly,
+  .whiteboard-paper-popover,
+  .whiteboard-paper-theme-switch,
+  .whiteboard-paper-theme-option,
+  .whiteboard-paper-card {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .whiteboard-paper-theme-option[aria-pressed="true"],
+  .whiteboard-paper-card[aria-pressed="true"] {
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  .whiteboard-paper-theme-option:disabled {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
+  .whiteboard-paper-card-check {
+    border: 1px solid CanvasText;
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .whiteboard-paper-hint {
+    color: CanvasText;
+  }
+
+  /* Paper previews are decorative pictures of the paper: keep their colours. */
+  .whiteboard-paper-swatch {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .whiteboard-paper-trigger:focus-visible,
+  .whiteboard-paper-theme-option:focus-visible,
+  .whiteboard-paper-card:focus-visible {
     outline-color: Highlight;
   }
 }

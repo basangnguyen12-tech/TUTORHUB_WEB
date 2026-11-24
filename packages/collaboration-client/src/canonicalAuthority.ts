@@ -70,11 +70,43 @@ export interface CanonicalAuthorityScope {
   generation: number;
 }
 
-export interface CanonicalPageV1 extends JsonObject {
+/**
+ * Classroom paper styles stored as optional TutorHub page metadata
+ * (ADR-0034). Unset on pages created before the paper picker existed, so their
+ * canonical JSON and semantic hash stay byte-identical.
+ */
+export const WHITEBOARD_PAPER_MODES = [
+  "plain",
+  "lined",
+  "grid",
+  "notebook",
+  "dots",
+  "music",
+  "canvas",
+  "blueprint",
+  "blackboard",
+] as const;
+export type WhiteboardPaperMode = (typeof WHITEBOARD_PAPER_MODES)[number];
+
+const WHITEBOARD_PAPER_MODE_SET: ReadonlySet<string> = new Set(
+  WHITEBOARD_PAPER_MODES,
+);
+
+export function isWhiteboardPaperMode(
+  value: unknown,
+): value is WhiteboardPaperMode {
+  return typeof value === "string" && WHITEBOARD_PAPER_MODE_SET.has(value);
+}
+
+// A type alias (not an interface extending `JsonObject`) so the optional
+// paper fields stay assignable to `JsonValue` under `strict`.
+export type CanonicalPageV1 = {
   backgroundColor: string;
   id: string;
   name: string;
-}
+  paperDark?: boolean;
+  paperMode?: WhiteboardPaperMode;
+};
 
 export interface CanonicalElementV1 extends JsonObject {
   height: number;
@@ -109,6 +141,8 @@ export interface ExcalidrawSceneProjection {
   page: {
     id: string;
     name: string;
+    paperDark?: boolean;
+    paperMode?: WhiteboardPaperMode;
   };
 }
 
@@ -340,9 +374,13 @@ export class CanonicalExcalidrawAuthority {
     this.assertInitializedScope();
     const initialHash = this.getSemanticHash();
     const initialLocalSignature = this.getLocalActorSemanticSignature();
+    const initialPageState = this.roots.page.get("state");
     while (this.undoManager.canUndo()) {
       this.undoManager.undo();
-      if (this.getLocalActorSemanticSignature() !== initialLocalSignature) {
+      if (
+        this.getLocalActorSemanticSignature() !== initialLocalSignature ||
+        this.roots.page.get("state") !== initialPageState
+      ) {
         return true;
       }
     }
@@ -353,9 +391,13 @@ export class CanonicalExcalidrawAuthority {
     this.assertInitializedScope();
     const initialHash = this.getSemanticHash();
     const initialLocalSignature = this.getLocalActorSemanticSignature();
+    const initialPageState = this.roots.page.get("state");
     while (this.undoManager.canRedo()) {
       this.undoManager.redo();
-      if (this.getLocalActorSemanticSignature() !== initialLocalSignature) {
+      if (
+        this.getLocalActorSemanticSignature() !== initialLocalSignature ||
+        this.roots.page.get("state") !== initialPageState
+      ) {
         return true;
       }
     }
@@ -417,14 +459,20 @@ export function excalidrawSceneToCanonical(
     throw new CanonicalSceneError("scene_invalid");
   }
 
+  const canonicalPage: JsonObject = {
+    backgroundColor: appState.viewBackgroundColor ?? null,
+    id: page.id ?? null,
+    name: page.name ?? null,
+  };
+  // Optional paper metadata is forwarded only when present so pages without
+  // it keep their exact pre-existing canonical shape (and semantic hash).
+  if (page.paperMode !== undefined) canonicalPage.paperMode = page.paperMode;
+  if (page.paperDark !== undefined) canonicalPage.paperDark = page.paperDark;
+
   return validateCanonicalScene({
     elements: normalized.elements,
     files: normalized.files ?? {},
-    page: {
-      backgroundColor: appState.viewBackgroundColor,
-      id: page.id,
-      name: page.name,
-    },
+    page: canonicalPage,
     schemaVersion: CANONICAL_EXCALIDRAW_SCHEMA_VERSION,
   });
 }
@@ -433,16 +481,23 @@ export function canonicalSceneToExcalidraw(
   scene: unknown,
 ): ExcalidrawSceneProjection {
   const canonical = validateCanonicalScene(scene);
+  const page: ExcalidrawSceneProjection["page"] = {
+    id: canonical.page.id,
+    name: canonical.page.name,
+  };
+  if (canonical.page.paperMode !== undefined) {
+    page.paperMode = canonical.page.paperMode;
+  }
+  if (canonical.page.paperDark !== undefined) {
+    page.paperDark = canonical.page.paperDark;
+  }
   return {
     appState: {
       viewBackgroundColor: canonical.page.backgroundColor,
     },
     elements: cloneJson(canonical.elements),
     files: cloneJson(canonical.files),
-    page: {
-      id: canonical.page.id,
-      name: canonical.page.name,
-    },
+    page,
   };
 }
 
@@ -505,7 +560,7 @@ export function validateCanonicalScene(
   if (!isJsonObject(normalized.page)) {
     throw new CanonicalSceneError("scene_invalid");
   }
-  const { backgroundColor, id, name } = normalized.page;
+  const { backgroundColor, id, name, paperDark, paperMode } = normalized.page;
   validateIdentifier(id, "scene_invalid");
   if (
     typeof backgroundColor !== "string" ||
@@ -517,11 +572,23 @@ export function validateCanonicalScene(
   ) {
     throw new CanonicalSceneError("scene_invalid");
   }
+  if (paperMode !== undefined && !isWhiteboardPaperMode(paperMode)) {
+    throw new CanonicalSceneError("scene_invalid");
+  }
+  if (paperDark !== undefined && typeof paperDark !== "boolean") {
+    throw new CanonicalSceneError("scene_invalid");
+  }
+
+  // Exactly `{ backgroundColor, id, name }` unless paper metadata is present:
+  // never a `paperMode: undefined` key or an implicit "plain" default.
+  const page: CanonicalPageV1 = { backgroundColor, id, name };
+  if (paperMode !== undefined) page.paperMode = paperMode;
+  if (paperDark !== undefined) page.paperDark = paperDark;
 
   const canonical: CanonicalExcalidrawSceneV1 = {
     elements,
     files,
-    page: { backgroundColor, id, name },
+    page,
     schemaVersion: CANONICAL_EXCALIDRAW_SCHEMA_VERSION,
   };
   const bytes = new TextEncoder().encode(stableStringify(canonical)).byteLength;

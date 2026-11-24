@@ -18,7 +18,45 @@ interface FixtureOptions {
    * English copy, server roster names, chat, whiteboard and host controls,
    * with cameras off so the avatars show. Defaults keep the P4-05 fixture.
    */
-  studio?: { language: "en" | "vi" };
+  studio?: {
+    language: "en" | "vi";
+    /**
+     * WHITEBOARD-PAPER-01: mount the production `CanonicalExcalidrawCanvas`
+     * over a real local `CanonicalExcalidrawAuthority` (Y.Doc, no grant, no
+     * socket) instead of the static whiteboard placeholder.
+     */
+    whiteboard?: "paper";
+  };
+}
+
+interface PaperFixtureElement {
+  id: string;
+  strokeColor?: unknown;
+  type: string;
+}
+
+interface PaperFixtureAuthority {
+  getScene(): {
+    elements: PaperFixtureElement[];
+    page: Record<string, unknown>;
+  };
+  initialize(scene: unknown): void;
+}
+
+interface BrowserWhiteboardEngineModule {
+  CanonicalExcalidrawCanvas: unknown;
+}
+
+interface BrowserCollaborationModule {
+  CanonicalExcalidrawAuthority: new (
+    document: unknown,
+    scope: { documentId: string; generation: number; tenantId: string },
+    actorId: string,
+  ) => PaperFixtureAuthority;
+}
+
+interface BrowserYjsModule {
+  Doc: new () => unknown;
 }
 
 interface MediaProbeState {
@@ -89,6 +127,7 @@ declare global {
       participantCount: number;
     };
     __p405MediaProbe?: MediaProbeState;
+    __paperFixtureAuthority?: PaperFixtureAuthority;
   }
 }
 
@@ -355,22 +394,159 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
         null,
         vietnamese ? "Chưa có tin nhắn." : "No messages yet.",
       );
+      let whiteboardContent: unknown = React.createElement("div", {
+        className: "room-studio-fixture-board",
+        style: {
+          flex: "1 1 auto",
+          minHeight: "0",
+          borderRadius: "10px",
+          background:
+            "repeating-linear-gradient(#ffffff 0 31px, #e5e7eb 31px 32px)",
+        },
+      });
+      if (studio.whiteboard === "paper") {
+        const enginePath =
+          "/src/features/collaboration/LazyWhiteboardEngine.tsx";
+        const engineSource = await fetch(enginePath).then((response) =>
+          response.text(),
+        );
+        const collaborationPath = engineSource.match(
+          /from "([^"]*collaboration-client[^"]*)"/,
+        )?.[1];
+        if (!collaborationPath) {
+          throw new Error("Could not resolve the collaboration client module.");
+        }
+        const authorityPath = collaborationPath.replace(
+          /index\.ts(\?[^"]*)?$/,
+          "canonicalAuthority.ts",
+        );
+        const authoritySource = await fetch(authorityPath).then((response) =>
+          response.text(),
+        );
+        const yjsPath = authoritySource.match(
+          /from "([^"]*\/yjs\.js\?v=[^"]+)"/,
+        )?.[1];
+        if (!yjsPath) throw new Error("Could not resolve the Yjs module.");
+        const [engine, collaboration, Y] = await Promise.all([
+          dynamicImport<BrowserWhiteboardEngineModule>(enginePath),
+          dynamicImport<BrowserCollaborationModule>(collaborationPath),
+          dynamicImport<BrowserYjsModule>(yjsPath),
+        ]);
+        const authority = new collaboration.CanonicalExcalidrawAuthority(
+          new Y.Doc(),
+          {
+            documentId: "board-paper-fixture",
+            generation: 1,
+            tenantId: "tenant-paper-fixture",
+          },
+          "teacher-paper-fixture",
+        );
+        const ink = (sequence: number, element: Record<string, unknown>) => ({
+          angle: 0,
+          backgroundColor: "transparent",
+          boundElements: null,
+          fillStyle: "solid",
+          frameId: null,
+          groupIds: [],
+          index: null,
+          isDeleted: false,
+          link: null,
+          locked: false,
+          opacity: 100,
+          roughness: 1,
+          roundness: null,
+          seed: 4_200 + sequence,
+          strokeStyle: "solid",
+          strokeWidth: 2,
+          updated: 1_788_000_000_000 + sequence,
+          version: 1,
+          versionNonce: 8_400 + sequence,
+          ...element,
+        });
+        const title = vietnamese ? "Bài 3 · Phân số" : "Lesson 3 · Fractions";
+        authority.initialize({
+          elements: [
+            ink(1, {
+              autoResize: true,
+              containerId: null,
+              fontFamily: 2,
+              fontSize: 28,
+              height: 35,
+              id: "paper-title",
+              lineHeight: 1.25,
+              originalText: title,
+              strokeColor: "#c2255c",
+              text: title,
+              textAlign: "left",
+              type: "text",
+              verticalAlign: "top",
+              width: 280,
+              x: 110,
+              y: 40,
+            }),
+            ink(2, {
+              backgroundColor: "#a5d8ff",
+              fillStyle: "hachure",
+              height: 110,
+              id: "paper-box",
+              strokeColor: "#1971c2",
+              type: "rectangle",
+              width: 220,
+              x: 110,
+              y: 120,
+            }),
+            ink(3, {
+              elbowed: false,
+              endArrowhead: "arrow",
+              endBinding: null,
+              height: 0,
+              id: "paper-arrow",
+              lastCommittedPoint: null,
+              points: [
+                [0, 0],
+                [52, 0],
+              ],
+              startArrowhead: null,
+              startBinding: null,
+              strokeColor: "#e8590c",
+              type: "arrow",
+              width: 52,
+              x: 344,
+              y: 175,
+            }),
+            ink(4, {
+              backgroundColor: "#b2f2bb",
+              fillStyle: "solid",
+              height: 110,
+              id: "paper-circle",
+              strokeColor: "#2f9e44",
+              type: "ellipse",
+              width: 140,
+              x: 410,
+              y: 120,
+            }),
+          ],
+          files: {},
+          page: {
+            backgroundColor: "#ffffff",
+            id: "page-paper-fixture",
+            name: title,
+          },
+          schemaVersion: 1,
+        });
+        window.__paperFixtureAuthority = authority;
+        whiteboardContent = React.createElement(
+          engine.CanonicalExcalidrawCanvas,
+          { authority, connectionStatus: "connected", readOnly: false },
+        );
+      }
       studioProps.tools = [
         {
           id: "whiteboard",
           icon: React.createElement(icons.PenTool),
           label: vietnamese ? "Mở bảng trắng" : "Open whiteboard",
           title: vietnamese ? "Bảng trắng" : "Whiteboard",
-          content: React.createElement("div", {
-            className: "room-studio-fixture-board",
-            style: {
-              flex: "1 1 auto",
-              minHeight: "0",
-              borderRadius: "10px",
-              background:
-                "repeating-linear-gradient(#ffffff 0 31px, #e5e7eb 31px 32px)",
-            },
-          }),
+          content: whiteboardContent,
         },
       ];
     }
@@ -1282,4 +1458,271 @@ test("ROOM-STUDIO-02 reflows the studio room at 320 CSS pixels with forced color
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
   ).toEqual([]);
+});
+
+// WHITEBOARD-PAPER-01: classroom paper modes on the production canvas, chosen
+// from a Liquid Glass popover. Set WHITEBOARD_PAPER_SCREENSHOT_DIR (for
+// example `.tmp/whiteboard-paper-01`) to save the acceptance screenshots.
+const whiteboardPaperScreenshotDir =
+  process.env.WHITEBOARD_PAPER_SCREENSHOT_DIR?.trim() || "";
+
+async function saveWhiteboardPaperScreenshot(page: Page, name: string) {
+  if (!whiteboardPaperScreenshotDir) return;
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${whiteboardPaperScreenshotDir}/${name}` });
+}
+
+/** Device-pixel columns on the middle row of the backdrop that match `rgb`. */
+async function backdropColumns(
+  page: Page,
+  rgb: readonly [number, number, number],
+) {
+  return page
+    .getByTestId("whiteboard-paper-backdrop")
+    .evaluate((canvas, target) => {
+      const element = canvas as HTMLCanvasElement;
+      const context = element.getContext("2d");
+      if (!context) return { columns: [] as number[], ratio: 1 };
+      const row = Math.floor(element.height / 2);
+      const { data } = context.getImageData(0, row, element.width, 1);
+      const columns: number[] = [];
+      for (let x = 0; x < element.width; x += 1) {
+        const offset = x * 4;
+        if (
+          Math.abs((data[offset] ?? 0) - target[0]) <= 6 &&
+          Math.abs((data[offset + 1] ?? 0) - target[1]) <= 6 &&
+          Math.abs((data[offset + 2] ?? 0) - target[2]) <= 6
+        ) {
+          columns.push(x);
+        }
+      }
+      return { columns, ratio: element.width / element.clientWidth };
+    }, rgb);
+}
+
+async function readFixtureScene(page: Page) {
+  return page.evaluate(() => {
+    const scene = window.__paperFixtureAuthority?.getScene();
+    return {
+      elements: (scene?.elements ?? []).map((element) => ({
+        id: element.id,
+        strokeColor: element.strokeColor,
+        type: element.type,
+      })),
+      page: scene?.page ?? {},
+    };
+  });
+}
+
+async function freedrawColours(page: Page) {
+  return (await readFixtureScene(page)).elements
+    .filter((element) => element.type === "freedraw")
+    .map((element) => element.strokeColor);
+}
+
+async function drawFreehandStroke(page: Page, offsetY: number) {
+  // Excalidraw draws its tool icon over the visually hidden radio input.
+  await page.getByRole("radio", { name: "Draw" }).click({ force: true });
+  await expect(page.getByRole("radio", { name: "Draw" })).toBeChecked();
+  const box = await page
+    .getByRole("region", { name: "Bề mặt bảng trắng tương tác" })
+    .boundingBox();
+  if (!box) throw new Error("The whiteboard canvas has no box.");
+  const startX = box.x + box.width * 0.55;
+  const startY = box.y + box.height * 0.6 + offsetY;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  for (let step = 1; step <= 12; step += 1) {
+    await page.mouse.move(startX + step * 14, startY + Math.sin(step) * 18);
+  }
+  await page.mouse.up();
+  // Back to the selection tool with nothing selected: Excalidraw's own
+  // drawing-properties panel (an upstream unnamed colour-picker dialog) is
+  // outside this task's scope and closes with it.
+  await page.getByRole("radio", { name: "Selection" }).click({ force: true });
+  await page.keyboard.press("Escape");
+}
+
+async function expectNoShellViolations(page: Page) {
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+}
+
+test("WHITEBOARD-PAPER-01 picks classroom paper from a Liquid Glass popover and keeps it anchored", async ({
+  page,
+}) => {
+  // Hermetic: Excalidraw may ask a CDN for optional fonts; stay on localhost.
+  await page.route(
+    /^https?:\/\/(?!127\.0\.0\.1[:/]|localhost[:/])[^/]+\//,
+    (route) => route.abort(),
+  );
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 2,
+    studio: { language: "vi", whiteboard: "paper" },
+  });
+  await loadRoomStudioStyles(page);
+  await page.getByRole("button", { name: "Mở bảng trắng" }).click();
+
+  const canvasRegion = page.getByRole("region", {
+    name: "Bề mặt bảng trắng tương tác",
+  });
+  await expect(canvasRegion).toBeVisible();
+  await expect(
+    page.locator(".whiteboard-engine-canvas > .excalidraw"),
+  ).toHaveCSS("z-index", "1");
+  const backdrop = page.getByTestId("whiteboard-paper-backdrop");
+  await expect(backdrop).toHaveAttribute("aria-hidden", "true");
+  await expect(backdrop).toHaveAttribute("data-paper-mode", "plain");
+  await expect(page.getByRole("radio", { name: "Selection" })).toHaveCount(1);
+
+  // Teacher trigger: a glass pill naming the current paper.
+  const trigger = page.getByTestId("whiteboard-paper-trigger");
+  await expect(trigger).toHaveAccessibleName("Giấy: Bảng trắng (Trơn)");
+  await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+  expect((await readGlass(trigger)).backdropFilter).toMatch(/blur\(18px\)/);
+
+  await trigger.click();
+  const popover = page.getByRole("dialog", { name: "Chọn chế độ giấy" });
+  await expect(popover).toBeVisible();
+  const glass = await readGlass(popover);
+  expect(glass.backdropFilter).toMatch(/blur\(30px\)/);
+  expect(glass.boxShadow).toMatch(/inset/);
+  await expect(popover.locator("button[data-paper-mode]")).toHaveCount(9);
+  await expect(
+    popover.locator("button[data-paper-mode] .whiteboard-paper-card-name"),
+  ).toHaveText([
+    "Bảng trắng (Trơn)",
+    "Kẻ ngang",
+    "Ô ly vuông",
+    "Vở học sinh",
+    "Chấm bi",
+    "Khuông nhạc",
+    "Giấy vẽ (Canvas)",
+    "Bản thiết kế",
+    "Bảng phấn",
+  ]);
+  await expect(popover.getByRole("radio")).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "Selection" })).toHaveCount(1);
+  const lightTone = popover.getByRole("button", { name: "Nền sáng" });
+  const darkTone = popover.getByRole("button", { name: "Nền tối" });
+  await expect(lightTone).toHaveAttribute("aria-pressed", "true");
+  await expect(darkTone).toHaveAttribute("aria-pressed", "false");
+  const popoverBox = await popover.boundingBox();
+  expect(popoverBox!.width).toBeLessThanOrEqual(352.5);
+  expect(popoverBox!.x).toBeGreaterThanOrEqual(0);
+  expect(popoverBox!.x + popoverBox!.width).toBeLessThanOrEqual(1_440);
+  await expectNoShellViolations(page);
+
+  const choose = async (name: string, mode: string) => {
+    const card = popover.getByRole("button", { name, exact: true });
+    await card.click();
+    await expect(card).toHaveAttribute("aria-pressed", "true");
+    await expect(backdrop).toHaveAttribute("data-paper-mode", mode);
+    await expect
+      .poll(async () => (await readFixtureScene(page)).page.paperMode)
+      .toBe(mode);
+  };
+
+  await choose("Vở học sinh", "notebook");
+  await expect(trigger).toHaveAccessibleName("Giấy: Vở học sinh");
+  expect((await readFixtureScene(page)).page).toEqual({
+    backgroundColor: "#fdfdfd",
+    id: "page-paper-fixture",
+    name: "Bài 3 · Phân số",
+    paperDark: false,
+    paperMode: "notebook",
+  });
+  await expectNoShellViolations(page);
+  await saveWhiteboardPaperScreenshot(page, "01-paper-popover-vi-1440x900.png");
+
+  // Escape closes the non-modal popover and returns focus to the trigger.
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await saveWhiteboardPaperScreenshot(
+    page,
+    "02-paper-notebook-vi-1440x900.png",
+  );
+
+  // The red margin is anchored to scene x = 80: a pan moves it with the ink.
+  const margin = [252, 165, 165] as const;
+  const before = await backdropColumns(page, margin);
+  expect(before.columns.length).toBeGreaterThanOrEqual(1);
+  expect(before.columns.length).toBeLessThanOrEqual(3 * before.ratio);
+  const box = await canvasRegion.boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.wheel(-90, 0);
+  await expect
+    .poll(async () => (await backdropColumns(page, margin)).columns[0] ?? -1)
+    .toBeGreaterThan((before.columns[0] ?? 0) + 60 * before.ratio);
+  const after = await backdropColumns(page, margin);
+  expect(
+    Math.abs(
+      (after.columns[0] ?? 0) - (before.columns[0] ?? 0) - 90 * before.ratio,
+    ),
+  ).toBeLessThanOrEqual(2 * before.ratio);
+
+  for (const [name, mode, file] of [
+    ["Khuông nhạc", "music", "03-paper-music-vi-1440x900.png"],
+    ["Bản thiết kế", "blueprint", "04-paper-blueprint-vi-1440x900.png"],
+    ["Giấy vẽ (Canvas)", "canvas", "06-paper-canvas-vi-1440x900.png"],
+  ] as const) {
+    await trigger.click();
+    await choose(name, mode);
+    await page.keyboard.press("Escape");
+    await expect(popover).toHaveCount(0);
+    await saveWhiteboardPaperScreenshot(page, file);
+  }
+
+  // Blackboard is a fixed dark surface: the next stroke is chalk white while
+  // existing elements keep their colours.
+  await trigger.click();
+  await choose("Bảng phấn", "blackboard");
+  await expect(darkTone).toBeDisabled();
+  await expect(popover).toHaveAccessibleDescription(
+    "Bản thiết kế và Bảng phấn luôn giữ màu nền đặc trưng.",
+  );
+  await expectNoShellViolations(page);
+  await page.keyboard.press("Escape");
+  await expect(canvasRegion).toHaveAttribute("data-paper-surface", "dark");
+  await drawFreehandStroke(page, 0);
+  await expect.poll(() => freedrawColours(page)).toEqual(["#ffffff"]);
+  const blackboardScene = await readFixtureScene(page);
+  expect(
+    blackboardScene.elements.find((element) => element.id === "paper-box")
+      ?.strokeColor,
+  ).toBe("#1971c2");
+  expect(blackboardScene.page).toMatchObject({
+    backgroundColor: "#1b3d2b",
+    paperMode: "blackboard",
+  });
+  await expectNoShellViolations(page);
+  await saveWhiteboardPaperScreenshot(
+    page,
+    "05-paper-blackboard-vi-1440x900.png",
+  );
+
+  // Dark grid keeps chalk; returning to light paper restores the default ink.
+  await trigger.click();
+  await choose("Ô ly vuông", "grid");
+  await darkTone.click();
+  await expect(darkTone).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(async () => (await readFixtureScene(page)).page.paperDark)
+    .toBe(true);
+  await saveWhiteboardPaperScreenshot(
+    page,
+    "07-paper-popover-dark-grid-vi-1440x900.png",
+  );
+  await lightTone.click();
+  await expect(canvasRegion).toHaveAttribute("data-paper-surface", "light");
+  await page.keyboard.press("Escape");
+  await drawFreehandStroke(page, 60);
+  await expect
+    .poll(() => freedrawColours(page))
+    .toEqual(["#ffffff", "#1e1e1e"]);
+  await expectNoShellViolations(page);
 });

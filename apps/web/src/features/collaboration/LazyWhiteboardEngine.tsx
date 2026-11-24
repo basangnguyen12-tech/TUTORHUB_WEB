@@ -17,6 +17,7 @@ import type {
 } from "@tutorhub/api-client";
 import { Button } from "@tutorhub/ui";
 import {
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -28,6 +29,27 @@ import {
 } from "react";
 import { useI18n } from "../../app/i18n";
 import { requestWhiteboardGrant } from "../../app/whiteboards";
+import {
+  adaptInkForSurface,
+  isDarkPaperSurface,
+  readPaperSelection,
+  resolvePaperBaseColor,
+  type WhiteboardPaperSelection,
+} from "./whiteboardPaper";
+import {
+  WhiteboardPaperBackdrop,
+  type WhiteboardPaperBackdropHandle,
+} from "./WhiteboardPaperBackdrop";
+import { WhiteboardPaperPicker } from "./WhiteboardPaperPicker";
+
+/**
+ * Excalidraw draws on a transparent canvas above the TutorHub paper backdrop;
+ * the canonical page keeps the real opaque `backgroundColor`.
+ */
+const EXCALIDRAW_TRANSPARENT_BACKGROUND = "transparent";
+const EXCALIDRAW_UI_OPTIONS = {
+  canvasActions: { changeViewBackgroundColor: false, toggleTheme: false },
+} as const;
 
 export default function LazyWhiteboardEngine({
   actorID,
@@ -188,6 +210,7 @@ export function CanonicalExcalidrawCanvas({
   const [semanticRevision, setSemanticRevision] = useState(0);
   const [semanticOpen, setSemanticOpen] = useState(false);
   const applyingRemoteRef = useRef(false);
+  const backdropHandleRef = useRef<WhiteboardPaperBackdropHandle>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const semanticHeadingRef = useRef<HTMLHeadingElement>(null);
   const semanticTriggerRef = useRef<HTMLButtonElement>(null);
@@ -197,6 +220,72 @@ export function CanonicalExcalidrawCanvas({
     () => authority.getProjection(),
     [authority],
   );
+  const [paper, setPaper] = useState<WhiteboardPaperSelection>(() =>
+    readPaperSelection(authority.getScene().page),
+  );
+  const darkSurface = isDarkPaperSurface(paper.mode, paper.dark);
+  // Excalidraw's default ink (#1e1e1e) targets light paper.
+  const inkSurfaceDarkRef = useRef(false);
+
+  // Paper follows the canonical page for every role, including students who
+  // never write: a teacher's change arrives through the same subscription.
+  useEffect(() => {
+    const sync = (page: Parameters<typeof readPaperSelection>[0]) => {
+      const next = readPaperSelection(page);
+      setPaper((current) =>
+        current.mode === next.mode && current.dark === next.dark
+          ? current
+          : next,
+      );
+    };
+    sync(authority.getScene().page);
+    return authority.subscribe((scene) => sync(scene.page));
+  }, [authority]);
+
+  const changePaper = useCallback(
+    (next: WhiteboardPaperSelection) => {
+      if (readOnly) return;
+      const scene = authority.getScene();
+      authority.replaceScene({
+        ...scene,
+        page: {
+          ...scene.page,
+          backgroundColor: resolvePaperBaseColor(next.mode, next.dark),
+          paperDark: next.dark,
+          paperMode: next.mode,
+        },
+      });
+      setPaper(next);
+    },
+    [authority, readOnly],
+  );
+
+  // Smart ink: when the surface flips light ↔ dark, retarget the *next*
+  // stroke colour (default ink ↔ chalk). Existing elements are never touched.
+  useEffect(() => {
+    if (api === null || readOnly) return;
+    if (inkSurfaceDarkRef.current === darkSurface) return;
+    inkSurfaceDarkRef.current = darkSurface;
+    const nextInk = adaptInkForSurface(
+      api.getAppState().currentItemStrokeColor,
+      darkSurface,
+    );
+    if (nextInk !== null) {
+      api.updateScene({ appState: { currentItemStrokeColor: nextInk } });
+    }
+  }, [api, darkSurface, readOnly]);
+
+  // Anchor the paper to Excalidraw's initial viewport once the API is ready;
+  // later pans/zooms arrive through `onScrollChange` without React renders.
+  useEffect(() => {
+    if (api === null) return;
+    const { scrollX, scrollY, zoom } = api.getAppState();
+    backdropHandleRef.current?.setViewport({
+      scrollX,
+      scrollY,
+      zoom: zoom.value,
+    });
+  }, [api]);
 
   useEffect(() => {
     const root = canvasRef.current;
@@ -222,9 +311,11 @@ export function CanonicalExcalidrawCanvas({
     if (api === null) return;
     const applyAuthority = () => {
       const projection = authority.getProjection();
+      // Excalidraw always runs with a transparent background; compare against
+      // the canonical page colour, never the runtime "transparent".
       const current = excalidrawSceneToCanonical({
         appState: {
-          viewBackgroundColor: api.getAppState().viewBackgroundColor,
+          viewBackgroundColor: projection.appState.viewBackgroundColor,
         },
         elements: api
           .getSceneElements()
@@ -244,7 +335,7 @@ export function CanonicalExcalidrawCanvas({
       );
       api.updateScene({
         appState: {
-          viewBackgroundColor: projection.appState.viewBackgroundColor,
+          viewBackgroundColor: EXCALIDRAW_TRANSPARENT_BACKGROUND,
         },
         elements:
           projection.elements as unknown as readonly ExcalidrawElement[],
@@ -287,6 +378,11 @@ export function CanonicalExcalidrawCanvas({
           {readOnly ? ` · ${t("whiteboard.readOnly")}` : ""}
         </p>
         <div className="whiteboard-semantic-actions">
+          <WhiteboardPaperPicker
+            onChange={changePaper}
+            paper={paper}
+            readOnly={readOnly}
+          />
           <Button
             aria-controls={semanticPanelID}
             aria-expanded={semanticOpen}
@@ -306,16 +402,23 @@ export function CanonicalExcalidrawCanvas({
         aria-describedby={semanticDescriptionID}
         aria-label={t("whiteboard.canvasLabel")}
         className="whiteboard-engine-canvas"
+        data-paper-mode={paper.mode}
+        data-paper-surface={darkSurface ? "dark" : "light"}
         ref={canvasRef}
         role="region"
         tabIndex={-1}
       >
+        <WhiteboardPaperBackdrop
+          dark={paper.dark}
+          mode={paper.mode}
+          viewportRef={backdropHandleRef}
+        />
         <Excalidraw
+          UIOptions={EXCALIDRAW_UI_OPTIONS}
           excalidrawAPI={setAPI}
           initialData={{
             appState: {
-              viewBackgroundColor:
-                initialProjection.appState.viewBackgroundColor,
+              viewBackgroundColor: EXCALIDRAW_TRANSPARENT_BACKGROUND,
             },
             elements:
               initialProjection.elements as unknown as readonly ExcalidrawElement[],
@@ -323,12 +426,26 @@ export function CanonicalExcalidrawCanvas({
           }}
           isCollaborating
           onChange={(elements, appState, files) => {
+            if (
+              api !== null &&
+              appState.viewBackgroundColor !== EXCALIDRAW_TRANSPARENT_BACKGROUND
+            ) {
+              // e.g. a scene opened from a file: keep the paper visible.
+              api.updateScene({
+                appState: {
+                  viewBackgroundColor: EXCALIDRAW_TRANSPARENT_BACKGROUND,
+                },
+              });
+            }
             if (readOnly || applyingRemoteRef.current) return;
+            const projection = authority.getProjection();
             const canonical = excalidrawSceneToCanonical({
-              appState: { viewBackgroundColor: appState.viewBackgroundColor },
+              appState: {
+                viewBackgroundColor: projection.appState.viewBackgroundColor,
+              },
               elements: elements.filter((element) => !element.isDeleted),
               files,
-              page: authority.getProjection().page,
+              page: projection.page,
             });
             if (semanticHash(canonical) !== authority.getSemanticHash()) {
               authority.replaceScene(canonical);
@@ -336,6 +453,14 @@ export function CanonicalExcalidrawCanvas({
               setSemanticRevision((value) => value + 1);
             }
           }}
+          onScrollChange={(scrollX, scrollY, zoom) => {
+            backdropHandleRef.current?.setViewport({
+              scrollX,
+              scrollY,
+              zoom: zoom.value,
+            });
+          }}
+          theme="light"
           viewModeEnabled={readOnly}
         />
       </div>

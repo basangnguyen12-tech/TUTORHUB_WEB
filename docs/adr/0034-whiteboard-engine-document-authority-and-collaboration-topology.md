@@ -136,8 +136,13 @@ Mỗi document generation có đúng một writer topology và một causal hist
   exact Gate B provider candidate và không tạo authority thứ hai. Excalidraw internal history không
   được nối thành writer/history cạnh tranh; undo/redo chỉ đi qua actor-scoped transaction origin và
   `Y.UndoManager`. Element register giữ revision/tombstone riêng theo actor để local undo không xóa
-  remote value của cùng element. Free private-alpha hosting đã được chọn nhưng vẫn chờ provider-backed
-  persistence/recovery/operations gate; production HA vẫn deferred.
+  remote value của cùng element. Page metadata (`tutorhub.excalidraw.page.v1`, `schemaVersion = 1`)
+  giữ `id`, `name`, `backgroundColor` và các trường tùy chọn tương thích ngược `paperMode` (allowlist:
+  `plain`, `lined`, `grid`, `notebook`, `dots`, `music`, `blueprint`, `blackboard`, `canvas`) cùng
+  `paperDark` (`boolean`) để đồng bộ chế độ giấy bảng học giữa giáo viên (`edit`/`present`) và học sinh
+  (`view`), đi qua cùng Neon checkpoint và B2 portable snapshot mà không phá hash của tài liệu cũ.
+  Free private-alpha hosting đã được chọn nhưng vẫn chờ provider-backed persistence/recovery/operations
+  gate; production HA vẫn deferred.
 - **Held fallback — tldraw:** official-sync prototype chỉ là comparison/provider-exit evidence,
   không nằm trong active implementation hoặc production bundle. Nếu một owner/ADR mới kích hoạt lại,
   tldraw store + official sync phải là canonical document/history và không được ghép Yjs,

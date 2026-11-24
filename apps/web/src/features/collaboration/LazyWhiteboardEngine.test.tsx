@@ -7,26 +7,79 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import type { WhiteboardDocument } from "@tutorhub/api-client";
-import type { CanonicalElementV1 } from "@tutorhub/collaboration-client";
+import {
+  canonicalSceneToExcalidraw,
+  semanticHash,
+  validateCanonicalScene,
+  WHITEBOARD_PAPER_MODES,
+  type CanonicalElementV1,
+  type CanonicalExcalidrawSceneV1,
+  type CanonicalPageV1,
+} from "@tutorhub/collaboration-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
 import LazyWhiteboardEngine, {
   CanonicalExcalidrawCanvas,
   type WhiteboardCanvasAuthority,
 } from "./LazyWhiteboardEngine";
+import { resolvePaperBaseColor } from "./whiteboardPaper";
+
+interface FakeExcalidrawAppState {
+  currentItemStrokeColor: string;
+  scrollX: number;
+  scrollY: number;
+  viewBackgroundColor: string;
+  zoom: { value: number };
+}
+
+interface FakeExcalidrawAPI {
+  addFiles: ReturnType<typeof vi.fn>;
+  appState: FakeExcalidrawAppState;
+  getAppState: () => FakeExcalidrawAppState;
+  getFiles: () => Record<string, never>;
+  getSceneElements: () => never[];
+  history: { clear: ReturnType<typeof vi.fn> };
+  updateScene: ReturnType<typeof vi.fn>;
+}
+
+interface CapturedExcalidrawProps {
+  UIOptions?: unknown;
+  excalidrawAPI?: (api: unknown) => void;
+  initialData?: { appState?: { viewBackgroundColor?: string } };
+  onScrollChange?: (
+    scrollX: number,
+    scrollY: number,
+    zoom: { value: number },
+  ) => void;
+  theme?: string;
+}
 
 const engineMocks = vi.hoisted(() => ({
+  api: null as null | FakeExcalidrawAPI,
   createSession: vi.fn(),
+  excalidrawProps: null as null | CapturedExcalidrawProps,
   grant: vi.fn(),
   status: null as null | ((status: string) => void),
   terminal: null as null | ((reason: string) => void),
 }));
 
-vi.mock("@excalidraw/excalidraw", () => ({
-  Excalidraw: () => <div>Excalidraw canvas</div>,
-}));
+vi.mock("@excalidraw/excalidraw", async () => {
+  const { useEffect } = await import("react");
+  return {
+    Excalidraw: (props: CapturedExcalidrawProps) => {
+      engineMocks.excalidrawProps = props;
+      useEffect(() => {
+        if (engineMocks.api !== null) props.excalidrawAPI?.(engineMocks.api);
+        // Mount-only, like Excalidraw's own API handoff.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return <div>Excalidraw canvas</div>;
+    },
+  };
+});
 
 vi.mock("@tutorhub/collaboration-client", async (importOriginal) => {
   const original =
@@ -108,8 +161,88 @@ const semanticAuthority: WhiteboardCanvasAuthority = {
   undo: () => true,
 };
 
+function createFakeExcalidrawAPI(
+  currentItemStrokeColor = "#1e1e1e",
+): FakeExcalidrawAPI {
+  const appState: FakeExcalidrawAppState = {
+    currentItemStrokeColor,
+    scrollX: 0,
+    scrollY: 0,
+    viewBackgroundColor: "transparent",
+    zoom: { value: 1 },
+  };
+  return {
+    addFiles: vi.fn(),
+    appState,
+    getAppState: () => appState,
+    getFiles: () => ({}),
+    getSceneElements: () => [],
+    history: { clear: vi.fn() },
+    updateScene: vi.fn(
+      (update: { appState?: Partial<FakeExcalidrawAppState> }) => {
+        Object.assign(appState, update.appState ?? {});
+      },
+    ),
+  };
+}
+
+/** In-memory canonical authority with the real validation and hashing. */
+function createMemoryAuthority(page: Partial<CanonicalPageV1> = {}) {
+  let scene: CanonicalExcalidrawSceneV1 = validateCanonicalScene({
+    elements: [],
+    files: {},
+    page: { backgroundColor: "#ffffff", id: "page-1", name: "Page 1", ...page },
+    schemaVersion: 1,
+  });
+  const listeners = new Set<(next: CanonicalExcalidrawSceneV1) => void>();
+  const publish = (next: unknown) => {
+    scene = validateCanonicalScene(next);
+    listeners.forEach((listener) => listener(scene));
+  };
+  const authority = {
+    getProjection: () => canonicalSceneToExcalidraw(scene),
+    getScene: () => scene,
+    getSemanticHash: () => semanticHash(scene),
+    redo: () => false,
+    replaceScene: vi.fn(publish),
+    subscribe: (listener: (next: CanonicalExcalidrawSceneV1) => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    undo: () => false,
+  } satisfies WhiteboardCanvasAuthority;
+  return {
+    authority,
+    /** A remote (teacher) change arriving through the shared document. */
+    receiveRemotePage: (nextPage: Partial<CanonicalPageV1>) =>
+      publish({ ...scene, page: { ...scene.page, ...nextPage } }),
+  };
+}
+
+function lastReplacedPage(
+  authority: ReturnType<typeof createMemoryAuthority>["authority"],
+) {
+  const call = authority.replaceScene.mock.lastCall as
+    [CanonicalExcalidrawSceneV1] | undefined;
+  return call?.[0].page;
+}
+
+function strokeUpdates(api: FakeExcalidrawAPI): string[] {
+  return api.updateScene.mock.calls
+    .map(
+      ([update]) =>
+        (update as { appState?: { currentItemStrokeColor?: string } }).appState
+          ?.currentItemStrokeColor,
+    )
+    .filter((value): value is string => typeof value === "string");
+}
+
 describe("LazyWhiteboardEngine", () => {
   beforeEach(() => {
+    engineMocks.api = null;
+    engineMocks.excalidrawProps = null;
     engineMocks.grant.mockClear();
     engineMocks.createSession.mockClear();
     engineMocks.status = null;
@@ -345,5 +478,238 @@ describe("LazyWhiteboardEngine", () => {
     expect(
       screen.getByRole("region", { name: "Interactive whiteboard canvas" }),
     ).toHaveFocus();
+  });
+
+  it("keeps Excalidraw transparent above the paper backdrop with theme switching disabled", () => {
+    const { authority } = createMemoryAuthority();
+    engineMocks.api = createFakeExcalidrawAPI();
+    render(
+      <I18nProvider initialLanguage="en">
+        <CanonicalExcalidrawCanvas
+          authority={authority}
+          connectionStatus="connected"
+          readOnly={false}
+        />
+      </I18nProvider>,
+    );
+
+    const props = engineMocks.excalidrawProps;
+    expect(props?.theme).toBe("light");
+    expect(props?.initialData?.appState?.viewBackgroundColor).toBe(
+      "transparent",
+    );
+    expect(props?.UIOptions).toEqual({
+      canvasActions: { changeViewBackgroundColor: false, toggleTheme: false },
+    });
+    const backdrop = screen.getByTestId("whiteboard-paper-backdrop");
+    expect(backdrop).toHaveAttribute("aria-hidden", "true");
+    expect(backdrop).toHaveAttribute("data-paper-mode", "plain");
+    // Pan/zoom frames go straight to the backdrop without touching the doc.
+    act(() => props?.onScrollChange?.(-120, 48, { value: 2 }));
+    expect(authority.replaceScene).not.toHaveBeenCalled();
+    // A page without paper fields stays untouched: no replace, no ink change.
+    expect(strokeUpdates(engineMocks.api)).toEqual([]);
+  });
+
+  it("lets a teacher choose every paper and flips the next ink between dark and light surfaces", () => {
+    const { authority } = createMemoryAuthority();
+    const api = createFakeExcalidrawAPI("#1E1E1E");
+    engineMocks.api = api;
+    render(
+      <I18nProvider initialLanguage="en">
+        <CanonicalExcalidrawCanvas
+          authority={authority}
+          connectionStatus="connected"
+          readOnly={false}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByTestId("whiteboard-paper-readonly")).toBeNull();
+    const trigger = screen.getByTestId("whiteboard-paper-trigger");
+    expect(trigger).toHaveAccessibleName("Paper: Plain Whiteboard");
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const dialog = screen.getByRole("dialog", { name: "Choose paper style" });
+    expect(within(dialog).queryAllByRole("radio")).toHaveLength(0);
+    const cards = dialog.querySelectorAll("button[data-paper-mode]");
+    expect(
+      Array.from(cards, (card) => card.getAttribute("data-paper-mode")),
+    ).toEqual([...WHITEBOARD_PAPER_MODES]);
+    expect(within(dialog).getByRole("button", { name: /Plain/ })).toHaveFocus();
+    expect(
+      within(dialog).getByRole("button", { name: "Light" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    const card = (name: string) => within(dialog).getByRole("button", { name });
+    const expectPaper = (mode: string, dark: boolean) => {
+      expect(lastReplacedPage(authority)).toEqual({
+        backgroundColor: resolvePaperBaseColor(
+          mode as (typeof WHITEBOARD_PAPER_MODES)[number],
+          dark,
+        ),
+        id: "page-1",
+        name: "Page 1",
+        paperDark: dark,
+        paperMode: mode,
+      });
+      expect(screen.getByTestId("whiteboard-paper-backdrop")).toHaveAttribute(
+        "data-paper-mode",
+        mode,
+      );
+    };
+
+    for (const [name, mode] of [
+      ["Notebook", "notebook"],
+      ["Grid", "grid"],
+      ["Music Sheet", "music"],
+      ["Art Canvas", "canvas"],
+      ["Dots", "dots"],
+      ["Lined", "lined"],
+    ] as const) {
+      fireEvent.click(card(name));
+      expectPaper(mode, false);
+      expect(card(name)).toHaveAttribute("aria-pressed", "true");
+      expect(trigger).toHaveAccessibleName(`Paper: ${name}`);
+    }
+    // Light paper keeps the default ink.
+    expect(strokeUpdates(api)).toEqual([]);
+    expect(api.appState.currentItemStrokeColor).toBe("#1E1E1E");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Dark" }));
+    expectPaper("lined", true);
+    expect(strokeUpdates(api)).toEqual(["#ffffff"]);
+    expect(
+      within(dialog).getByRole("button", { name: "Dark" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(card("Art Canvas"));
+    expectPaper("canvas", true);
+    expect(lastReplacedPage(authority)?.backgroundColor).toBe("#232220");
+
+    fireEvent.click(card("Blueprint"));
+    expectPaper("blueprint", true);
+    expect(
+      within(dialog).getByRole("button", { name: "Light" }),
+    ).toBeDisabled();
+    expect(dialog).toHaveAccessibleDescription(
+      "Blueprint and Blackboard always keep their own surface colour.",
+    );
+
+    fireEvent.click(card("Blackboard"));
+    expectPaper("blackboard", true);
+    expect(lastReplacedPage(authority)?.backgroundColor).toBe("#1b3d2b");
+    // Still a dark surface: no extra ink change.
+    expect(strokeUpdates(api)).toEqual(["#ffffff"]);
+
+    fireEvent.click(card("Notebook"));
+    expectPaper("notebook", true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Light" }));
+    expectPaper("notebook", false);
+    expect(strokeUpdates(api)).toEqual(["#ffffff", "#1e1e1e"]);
+    expect(api.appState.currentItemStrokeColor).toBe("#1e1e1e");
+
+    // Blackboard is dark even with paperDark = false.
+    fireEvent.click(card("Blackboard"));
+    expectPaper("blackboard", false);
+    expect(strokeUpdates(api)).toEqual(["#ffffff", "#1e1e1e", "#ffffff"]);
+
+    fireEvent.keyDown(card("Blackboard"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+  });
+
+  it("never recolours a custom ink and closes the paper popover on an outside press", () => {
+    const { authority } = createMemoryAuthority();
+    const api = createFakeExcalidrawAPI("#e03131");
+    engineMocks.api = api;
+    render(
+      <I18nProvider initialLanguage="vi">
+        <CanonicalExcalidrawCanvas
+          authority={authority}
+          connectionStatus="connected"
+          readOnly={false}
+        />
+      </I18nProvider>,
+    );
+    const trigger = screen.getByTestId("whiteboard-paper-trigger");
+    expect(trigger).toHaveAccessibleName("Giấy: Bảng trắng (Trơn)");
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Chọn chế độ giấy" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Bảng phấn" }));
+    expect(lastReplacedPage(authority)?.paperMode).toBe("blackboard");
+    expect(strokeUpdates(api)).toEqual([]);
+    expect(api.appState.currentItemStrokeColor).toBe("#e03131");
+    expect(trigger).toHaveAccessibleName("Giấy: Bảng phấn");
+
+    fireEvent.pointerDown(screen.getByText("Excalidraw canvas"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows students a read-only paper badge that follows the teacher's paper live", () => {
+    const { authority, receiveRemotePage } = createMemoryAuthority();
+    const api = createFakeExcalidrawAPI();
+    engineMocks.api = api;
+    render(
+      <I18nProvider initialLanguage="en">
+        <CanonicalExcalidrawCanvas
+          authority={authority}
+          connectionStatus="connected"
+          readOnly
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.queryByTestId("whiteboard-paper-trigger")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Paper:/ }),
+    ).not.toBeInTheDocument();
+    const badge = screen.getByTestId("whiteboard-paper-readonly");
+    expect(badge.tagName).toBe("P");
+    expect(badge).toHaveTextContent("Paper: Plain Whiteboard");
+
+    act(() =>
+      receiveRemotePage({
+        backgroundColor: "#fdfdfd",
+        paperDark: false,
+        paperMode: "notebook",
+      }),
+    );
+    expect(badge).toHaveTextContent("Paper: Notebook");
+    expect(badge).toHaveAttribute("data-paper-mode", "notebook");
+    expect(screen.getByTestId("whiteboard-paper-backdrop")).toHaveAttribute(
+      "data-paper-mode",
+      "notebook",
+    );
+
+    act(() =>
+      receiveRemotePage({
+        backgroundColor: "#1e293b",
+        paperDark: true,
+        paperMode: "grid",
+      }),
+    );
+    expect(badge).toHaveTextContent("Paper: Grid · Dark");
+    expect(
+      screen.getByRole("region", { name: "Interactive whiteboard canvas" }),
+    ).toHaveAttribute("data-paper-surface", "dark");
+
+    act(() =>
+      receiveRemotePage({
+        backgroundColor: "#1b3d2b",
+        paperDark: true,
+        paperMode: "blackboard",
+      }),
+    );
+    expect(badge).toHaveTextContent("Paper: Blackboard");
+    expect(badge).not.toHaveTextContent("Dark");
+    // Students never write the document or retarget ink.
+    expect(authority.replaceScene).not.toHaveBeenCalled();
+    expect(strokeUpdates(api)).toEqual([]);
   });
 });

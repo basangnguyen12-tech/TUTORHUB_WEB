@@ -1806,6 +1806,145 @@
   white-space: nowrap;
 }
 
+/* ---- WHITEBOARD-PAPER-01: paper picker in Liquid Glass ---------------- */
+
+.media-p405-room .whiteboard-paper-trigger,
+.media-p405-room .whiteboard-paper-readonly {
+  min-height: 30px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  background: var(--room-glass-thin);
+  -webkit-backdrop-filter: var(--room-blur-thin);
+  backdrop-filter: var(--room-blur-thin);
+  box-shadow: var(--room-shadow-pill);
+  color: #e5e7eb;
+  font-size: 12.5px;
+  letter-spacing: -0.003em;
+}
+
+.media-p405-room .whiteboard-paper-trigger {
+  transition:
+    background-color 160ms var(--room-ease-spring),
+    border-color 160ms var(--room-ease-spring),
+    transform 160ms var(--room-ease-spring);
+}
+
+.media-p405-room .whiteboard-paper-trigger:hover {
+  border-color: rgb(255 255 255 / 20%);
+  background: var(--room-keycap-hover);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-paper-trigger:active {
+  transform: scale(var(--room-press-scale));
+}
+
+.media-p405-room .whiteboard-paper-trigger[aria-expanded="true"] {
+  border-color: var(--room-sapphire-rim);
+  background: var(--room-sapphire);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-paper-swatch {
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 22%),
+    0 1px 2px rgb(0 0 0 / 32%);
+}
+
+/* A Control Center module hanging from the tool titlebar. */
+.media-p405-room .whiteboard-paper-popover {
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--room-rim-strong);
+  border-radius: 20px;
+  background: var(--room-glass-popover);
+  -webkit-backdrop-filter: var(--room-blur-popover);
+  backdrop-filter: var(--room-blur-popover);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 20%),
+    0 2px 6px rgb(0 0 0 / 28%),
+    0 28px 60px -12px rgb(0 0 0 / 66%);
+  color: #e5e7eb;
+}
+
+.media-p405-room .whiteboard-paper-popover-title {
+  color: #f3f4f6;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+}
+
+.media-p405-room .whiteboard-paper-hint {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.media-p405-room .whiteboard-paper-theme-switch {
+  border: 0;
+  background: var(--room-groove-track);
+  box-shadow: var(--room-groove-track-shadow);
+}
+
+.media-p405-room .whiteboard-paper-theme-option {
+  color: #d1d5db;
+  font-size: 12px;
+  transition:
+    background-color 160ms var(--room-ease-spring),
+    color 160ms var(--room-ease-spring);
+}
+
+.media-p405-room .whiteboard-paper-theme-option[aria-pressed="true"] {
+  border-color: rgb(255 255 255 / 10%);
+  background: var(--room-groove-knob);
+  box-shadow: var(--room-groove-knob-shadow);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-paper-card {
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 14px;
+  background: var(--room-keycap);
+  box-shadow: var(--room-shadow-keycap);
+  color: #e5e7eb;
+  font-size: 11.5px;
+  letter-spacing: -0.003em;
+  transition:
+    background-color 160ms var(--room-ease-spring),
+    border-color 160ms var(--room-ease-spring),
+    transform 160ms var(--room-ease-spring);
+}
+
+.media-p405-room .whiteboard-paper-card:hover {
+  border-color: rgb(255 255 255 / 18%);
+  background: var(--room-keycap-hover);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-paper-card:active {
+  transform: scale(var(--room-press-scale));
+}
+
+.media-p405-room .whiteboard-paper-card[aria-pressed="true"] {
+  border-color: #60a5fa;
+  background: var(--room-sapphire);
+  box-shadow:
+    inset 0 0 0 1px #60a5fa,
+    var(--room-sapphire-shadow);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-paper-card-check {
+  background: #2563eb;
+  box-shadow: 0 0 0 2px rgb(22 25 34 / 90%);
+}
+
+.media-p405-room .whiteboard-paper-trigger:focus-visible,
+.media-p405-room .whiteboard-paper-theme-option:focus-visible,
+.media-p405-room .whiteboard-paper-card:focus-visible {
+  outline: 2px solid var(--room-focus-ring);
+  outline-offset: 2px;
+}
+
 /* Split view: central tool stage + 256px camera strip on the right. */
 .media-p405-room .media-p405-classroom--tool-stage {
   grid-template-columns: minmax(0, 1fr) 256px;
@@ -2329,6 +2468,50 @@
     border: 2px solid CanvasText;
     box-shadow: none;
   }
+
+  .media-p405-room
+    :is(
+      .whiteboard-paper-trigger,
+      .whiteboard-paper-readonly,
+      .whiteboard-paper-popover,
+      .whiteboard-paper-theme-switch,
+      .whiteboard-paper-theme-option,
+      .whiteboard-paper-card
+    ) {
+    border: 1px solid CanvasText;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+  }
+
+  .media-p405-room
+    :is(
+      .whiteboard-paper-trigger[aria-expanded="true"],
+      .whiteboard-paper-theme-option[aria-pressed="true"],
+      .whiteboard-paper-card[aria-pressed="true"]
+    ) {
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  .media-p405-room .whiteboard-paper-theme-option:disabled {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
+  .media-p405-room
+    :is(.whiteboard-paper-hint, .whiteboard-paper-popover-title) {
+    color: CanvasText;
+  }
+
+  .media-p405-room .whiteboard-paper-card-check {
+    background: Highlight;
+    box-shadow: none;
+    color: HighlightText;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2352,6 +2535,20 @@
       .media-p506-tool-stage__header .th-button
     ) {
     transition: none;
+  }
+
+  .media-p405-room
+    :is(
+      .whiteboard-paper-trigger,
+      .whiteboard-paper-theme-option,
+      .whiteboard-paper-card
+    ) {
+    transition: none;
+  }
+
+  .media-p405-room
+    :is(.whiteboard-paper-trigger, .whiteboard-paper-card):active {
+    transform: none;
   }
 
   .media-p405-room

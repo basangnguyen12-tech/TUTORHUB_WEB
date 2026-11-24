@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
+  canonicalSceneToExcalidraw,
   CanonicalExcalidrawAuthority,
+  CanonicalSceneError,
+  excalidrawSceneToCanonical,
+  semanticHash,
+  validateCanonicalScene,
+  WHITEBOARD_PAPER_MODES,
   type CanonicalAuthorityScope,
   type CanonicalElementV1,
+  type CanonicalExcalidrawSceneV1,
 } from "./canonicalAuthority.js";
 
 const scope: CanonicalAuthorityScope = {
@@ -118,6 +125,260 @@ describe("P5-COLLAB-12 canonical convergence and actor-local history", () => {
     );
   }, 15_000);
 });
+
+describe("WHITEBOARD-PAPER-01 optional page paper metadata", () => {
+  // Golden hashes captured from the build that predates paperMode/paperDark:
+  // existing documents, fixtures and B2 snapshots must keep them bit for bit.
+  const LEGACY_EMPTY_HASH = "fnv1a64:7a4a512a7b8a73e1";
+  const LEGACY_TEXT_HASH = "fnv1a64:32048562f4a9921b";
+
+  it("keeps the canonical page shape and semantic hash of scenes without paper fields", () => {
+    const legacy = legacyScene("page-p512", "P5-12");
+    const canonical = validateCanonicalScene(legacy);
+    expect(Object.keys(canonical.page).sort()).toEqual([
+      "backgroundColor",
+      "id",
+      "name",
+    ]);
+    expect(semanticHash(legacy)).toBe(LEGACY_EMPTY_HASH);
+    expect(
+      semanticHash({
+        elements: [
+          {
+            height: 40,
+            id: "element-1",
+            text: "TutorHub",
+            type: "text",
+            width: 120,
+            x: 10,
+            y: 20,
+          },
+        ],
+        files: {},
+        page: { backgroundColor: "#ffffff", id: "page-1", name: "Lesson" },
+        schemaVersion: 1,
+      }),
+    ).toBe(LEGACY_TEXT_HASH);
+
+    // Explicit `undefined` never materialises a key or an implicit "plain".
+    const explicitUndefined = validateCanonicalScene({
+      ...legacy,
+      page: { ...legacy.page, paperDark: undefined, paperMode: undefined },
+    });
+    expect("paperMode" in explicitUndefined.page).toBe(false);
+    expect("paperDark" in explicitUndefined.page).toBe(false);
+    expect(semanticHash(explicitUndefined)).toBe(LEGACY_EMPTY_HASH);
+
+    const projection = canonicalSceneToExcalidraw(legacy);
+    expect(Object.keys(projection.page).sort()).toEqual(["id", "name"]);
+    expect(semanticHash(excalidrawSceneToCanonical(projection))).toBe(
+      LEGACY_EMPTY_HASH,
+    );
+
+    const teacher = createPeer("teacher-legacy");
+    teacher.authority.initialize(legacy);
+    expect(teacher.authority.getSemanticHash()).toBe(LEGACY_EMPTY_HASH);
+    const student = createPeer(
+      "student-legacy",
+      teacher.authority.encodeProviderState(),
+    );
+    expect(student.authority.getScene().page).toEqual(legacy.page);
+    expect(student.authority.getSemanticHash()).toBe(LEGACY_EMPTY_HASH);
+  });
+
+  it("round-trips every paper mode and paperDark value from a teacher Y.Doc to a student Y.Doc", () => {
+    const teacher = createPeer("teacher-paper");
+    teacher.authority.initialize(legacyScene());
+    const student = createPeer(
+      "student-paper",
+      teacher.authority.encodeProviderState(),
+    );
+    teacher.authority.putElement(rectangle("paper-ink", 40));
+    student.authority.applyRemoteUpdate(
+      teacher.authority.encodeProviderState(),
+    );
+
+    for (const paperMode of WHITEBOARD_PAPER_MODES) {
+      for (const paperDark of [false, true]) {
+        const watermark = student.authority.encodeCausalWatermark();
+        const current = teacher.authority.getScene();
+        teacher.authority.replaceScene({
+          ...current,
+          page: {
+            ...current.page,
+            backgroundColor: paperDark ? "#1e293b" : "#fdfdfd",
+            paperDark,
+            paperMode,
+          },
+        });
+        student.authority.applyRemoteUpdate(
+          Y.encodeStateAsUpdate(teacher.document, watermark),
+        );
+
+        const received = student.authority.getScene();
+        expect(received.page.paperMode).toBe(paperMode);
+        expect(received.page.paperDark).toBe(paperDark);
+        expect(received.elements.map((element) => element.id)).toEqual([
+          "paper-ink",
+        ]);
+        expect(student.authority.getSemanticHash()).toBe(
+          teacher.authority.getSemanticHash(),
+        );
+
+        const projection = student.authority.getProjection();
+        expect(projection.page).toEqual({
+          id: "page-paper",
+          name: "Paper lesson",
+          paperDark,
+          paperMode,
+        });
+        expect(excalidrawSceneToCanonical(projection)).toEqual(received);
+      }
+    }
+
+    // A late joiner restored from the full provider state sees the same paper.
+    const restored = createPeer(
+      "restore-paper",
+      teacher.authority.encodeProviderState(),
+    );
+    expect(restored.authority.getScene().page).toEqual({
+      backgroundColor: "#1e293b",
+      id: "page-paper",
+      name: "Paper lesson",
+      paperDark: true,
+      paperMode: "blackboard",
+    });
+  });
+
+  it("keeps paperMode and paperDark independent and optional", () => {
+    const base = legacyScene();
+    const modeOnly = validateCanonicalScene({
+      ...base,
+      page: { ...base.page, paperMode: "grid" },
+    });
+    expect(modeOnly.page).toEqual({
+      backgroundColor: "#ffffff",
+      id: "page-paper",
+      name: "Paper lesson",
+      paperMode: "grid",
+    });
+    const darkOnly = validateCanonicalScene({
+      ...base,
+      page: { ...base.page, paperDark: true },
+    });
+    expect(darkOnly.page).toEqual({
+      backgroundColor: "#ffffff",
+      id: "page-paper",
+      name: "Paper lesson",
+      paperDark: true,
+    });
+    expect(semanticHash(modeOnly)).not.toBe(semanticHash(base));
+    expect(semanticHash(darkOnly)).not.toBe(semanticHash(base));
+  });
+
+  it.each([
+    ["an unknown paper mode", { paperMode: "hexagonal" }],
+    ["a non-string paper mode", { paperMode: 7 }],
+    ["a null paper mode", { paperMode: null }],
+    ["a mixed-case paper mode", { paperMode: "Grid" }],
+    ["a string paperDark", { paperDark: "yes" }],
+    ["a numeric paperDark", { paperDark: 1 }],
+    ["a null paperDark", { paperDark: null }],
+  ])("fails closed on %s", (_name, override) => {
+    const base = legacyScene();
+    const scene = { ...base, page: { ...base.page, ...override } };
+    expectSceneInvalid(() => validateCanonicalScene(scene));
+    expectSceneInvalid(() =>
+      excalidrawSceneToCanonical({
+        appState: { viewBackgroundColor: "#ffffff" },
+        elements: [],
+        files: {},
+        page: { id: "page-paper", name: "Paper lesson", ...override },
+      }),
+    );
+    const teacher = createPeer("teacher-invalid");
+    teacher.authority.initialize(base);
+    expectSceneInvalid(() => teacher.authority.replaceScene(scene));
+    expect(teacher.authority.getSemanticHash()).toBe(semanticHash(base));
+  });
+
+  it("rejects a remote update that stores an unsupported paper mode", () => {
+    const teacher = createPeer("teacher-remote");
+    teacher.authority.initialize(legacyScene());
+    const student = createPeer(
+      "student-remote",
+      teacher.authority.encodeProviderState(),
+    );
+    const watermark = student.authority.encodeCausalWatermark();
+    teacher.document
+      .getMap<string>("tutorhub.excalidraw.page.v1")
+      .set(
+        "state",
+        JSON.stringify({ ...legacyScene().page, paperMode: "hexagonal" }),
+      );
+    let thrown: unknown;
+    try {
+      student.authority.applyRemoteUpdate(
+        Y.encodeStateAsUpdate(teacher.document, watermark),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(CanonicalSceneError);
+    expect((thrown as CanonicalSceneError).code).toBe("scene_invalid");
+    expect(student.authority.getScene().page).toEqual(legacyScene().page);
+  });
+
+  it("undoes and redoes a paper mode change in a single step without reverting prior strokes", () => {
+    const teacher = createPeer("teacher-paper-undo");
+    teacher.authority.initialize(legacyScene());
+    teacher.authority.putElement(rectangle("stroke-before-paper", 64));
+
+    const beforePaper = teacher.authority.getScene();
+    teacher.authority.replaceScene({
+      ...beforePaper,
+      page: {
+        ...beforePaper.page,
+        backgroundColor: "#fdfdfd",
+        paperDark: false,
+        paperMode: "notebook",
+      },
+    });
+    expect(teacher.authority.getScene().page.paperMode).toBe("notebook");
+    expect(sceneIds(teacher)).toEqual(["stroke-before-paper"]);
+
+    expect(teacher.authority.undo()).toBe(true);
+    expect(teacher.authority.getScene().page.paperMode).toBeUndefined();
+    expect(sceneIds(teacher)).toEqual(["stroke-before-paper"]);
+
+    expect(teacher.authority.redo()).toBe(true);
+    expect(teacher.authority.getScene().page.paperMode).toBe("notebook");
+    expect(sceneIds(teacher)).toEqual(["stroke-before-paper"]);
+  });
+});
+
+function legacyScene(
+  id = "page-paper",
+  name = "Paper lesson",
+): CanonicalExcalidrawSceneV1 {
+  return {
+    elements: [],
+    files: {},
+    page: { backgroundColor: "#ffffff", id, name },
+    schemaVersion: 1,
+  };
+}
+
+function expectSceneInvalid(action: () => unknown): void {
+  let thrown: unknown;
+  try {
+    action();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(CanonicalSceneError);
+  expect((thrown as CanonicalSceneError).code).toBe("scene_invalid");
+}
 
 function createPeer(actorId: string, initialState?: Uint8Array): Peer {
   const document = new Y.Doc();

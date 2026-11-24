@@ -3,7 +3,11 @@ import type {
   CanonicalExcalidrawSceneV1,
   CollaborationConnectionStatus,
 } from "@tutorhub/collaboration-client";
-import { semanticHash } from "@tutorhub/collaboration-client";
+import {
+  canonicalSceneToExcalidraw,
+  semanticHash,
+  validateCanonicalScene,
+} from "@tutorhub/collaboration-client";
 import {
   Button,
   Drawer,
@@ -126,17 +130,14 @@ function createHarnessAuthority(): WhiteboardCanvasAuthority {
   };
   const listeners = new Set<(next: CanonicalExcalidrawSceneV1) => void>();
   return {
-    getProjection: () => ({
-      appState: { viewBackgroundColor: scene.page.backgroundColor },
-      elements: scene.elements,
-      files: scene.files,
-      page: { id: scene.page.id, name: scene.page.name },
-    }),
+    // The canonical projection carries the optional paper fields, so a
+    // paper chosen in the harness survives the next Excalidraw change.
+    getProjection: () => canonicalSceneToExcalidraw(scene),
     getScene: () => scene,
     getSemanticHash: () => semanticHash(scene),
     redo: () => false,
-    replaceScene: (next: CanonicalExcalidrawSceneV1) => {
-      scene = next;
+    replaceScene: (next: unknown) => {
+      scene = validateCanonicalScene(next);
       listeners.forEach((listener) => listener(scene));
     },
     subscribe: (listener) => {

@@ -25,7 +25,7 @@ The adapter is implemented in
 | Canonical root | CRDT type | Meaning |
 | --- | --- | --- |
 | `tutorhub.excalidraw.metadata.v1` | `Y.Map` | schema version and exact tenant/document/generation binding |
-| `tutorhub.excalidraw.page.v1` | `Y.Map` | page id, name and background color |
+| `tutorhub.excalidraw.page.v1` | `Y.Map` | page id, name, background color, and optional paper mode (`paperMode`, `paperDark`) |
 | `tutorhub.excalidraw.elements.v1` | `Y.Map<actor/element, envelope>` | actor-scoped revision/tombstone register |
 | `tutorhub.excalidraw.element-order.v1` | `Y.Array<elementId>` | deterministic Excalidraw z-order |
 | `tutorhub.excalidraw.files.v1` | `Y.Map<fileId, stable JSON>` | supported Excalidraw image-file metadata/payload |
@@ -33,7 +33,9 @@ The adapter is implemented in
 Supported element types are `rectangle`, `ellipse`, `diamond`, `line`, `arrow`, `freedraw`, `text`,
 `image` and `frame`. The adapter preserves JSON fields for the supported element/file subset, including
 text-container links, arrow bindings and image references. Page background maps to
-`appState.viewBackgroundColor`; page id/name remain TutorHub page metadata.
+`appState.viewBackgroundColor`; page id/name and optional backward-compatible `paperMode` (`plain`,
+`lined`, `grid`, `notebook`, `dots`, `music`, `blueprint`, `blackboard`, `canvas`) / `paperDark`
+(`boolean`) remain TutorHub page metadata omitted when unset so pre-existing canonical hashes stay unchanged.
 
 Each element envelope contains actor id, element id, monotonic revision, tombstone and the supported
 element JSON. Resolution selects the highest revision then actor id deterministically. Concurrent

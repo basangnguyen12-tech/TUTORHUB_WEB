@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CanonicalExcalidrawSceneV1 } from "./canonicalAuthority.js";
+import {
+  semanticHash,
+  WHITEBOARD_PAPER_MODES,
+  type CanonicalExcalidrawSceneV1,
+} from "./canonicalAuthority.js";
 import {
   exportPortableScene,
   importPortableScene,
@@ -38,6 +42,60 @@ describe("portable Excalidraw scene", () => {
     expect(() => exportPortableScene(scene)).toThrowError(
       "portable_active_content_denied",
     );
+  });
+
+  it("keeps the portable envelope of a scene without paper fields unchanged", () => {
+    const scene = createScene();
+    const bytes = exportPortableScene(scene, "2026-08-22T00:00:00.000Z");
+    const envelope = JSON.parse(new TextDecoder().decode(bytes)) as {
+      scene: CanonicalExcalidrawSceneV1;
+      semanticHash: string;
+    };
+    expect(envelope.semanticHash).toBe("fnv1a64:32048562f4a9921b");
+    expect(Object.keys(envelope.scene.page).sort()).toEqual([
+      "backgroundColor",
+      "id",
+      "name",
+    ]);
+  });
+
+  it.each(
+    WHITEBOARD_PAPER_MODES.flatMap((paperMode) =>
+      [false, true].map((paperDark) => [paperMode, paperDark] as const),
+    ),
+  )(
+    "round-trips paper mode %s (paperDark %s) through the portable envelope",
+    (paperMode, paperDark) => {
+      const base = createScene();
+      const scene: CanonicalExcalidrawSceneV1 = {
+        ...base,
+        page: { ...base.page, paperDark, paperMode },
+      };
+      const bytes = exportPortableScene(scene, "2026-08-22T00:00:00.000Z");
+      const imported = importPortableScene(bytes);
+      expect(imported).toEqual(scene);
+      expect(imported.page.paperMode).toBe(paperMode);
+      expect(imported.page.paperDark).toBe(paperDark);
+      expect(semanticHash(imported)).toBe(semanticHash(scene));
+    },
+  );
+
+  it.each([
+    ["unknown paper mode", { paperMode: "hexagonal" }],
+    ["string paperDark", { paperDark: "yes" }],
+  ])("refuses to export or import a %s", (_name, override) => {
+    const base = createScene();
+    const scene = { ...base, page: { ...base.page, ...override } };
+    expect(() => exportPortableScene(scene)).toThrowError("scene_invalid");
+
+    const valid = exportPortableScene(base, "2026-08-22T00:00:00.000Z");
+    const tampered = JSON.parse(new TextDecoder().decode(valid)) as {
+      scene: { page: Record<string, unknown> };
+    };
+    Object.assign(tampered.scene.page, override);
+    expect(() =>
+      importPortableScene(new TextEncoder().encode(JSON.stringify(tampered))),
+    ).toThrowError("portable_corrupt");
   });
 
   it("rejects an oversized import before parsing", () => {
