@@ -48,6 +48,13 @@ describe("ClassroomModerationControls", () => {
 
     const lock = screen.getByRole("button", { name: "Lock room" });
     expect(lock).toHaveAttribute("aria-pressed", "false");
+    // ROOM-MEET-DOCK-04: the label stays the name and feeds the room tooltip;
+    // only the classroom stylesheet hides the label span visually.
+    expect(lock).toHaveAttribute("data-tooltip", "Lock room");
+    expect(lock).toHaveAttribute("data-tooltip-side", "bottom");
+    expect(lock.querySelector(".media-p405-button-label")).toHaveTextContent(
+      "Lock room",
+    );
     fireEvent.click(lock);
     await waitFor(() =>
       expect(controls.onSetRoomLocked).toHaveBeenCalledWith(true),
@@ -74,6 +81,10 @@ describe("ClassroomModerationControls", () => {
     expect(screen.getByRole("button", { name: "Unlock room" })).toHaveAttribute(
       "aria-pressed",
       "true",
+    );
+    expect(screen.getByRole("button", { name: "Unlock room" })).toHaveAttribute(
+      "data-tooltip",
+      "Unlock room",
     );
     expect(
       screen.getByText(

@@ -37,9 +37,9 @@ import {
   ChevronRight,
   Grid2X2,
   Hand,
-  LogOut,
   Mic,
   MicOff,
+  PhoneOff,
   Pin,
   PinOff,
   Presentation,
@@ -51,6 +51,7 @@ import {
   MessageCircle,
   UserRound,
   Users,
+  X,
 } from "lucide-react";
 import {
   ConnectionQuality,
@@ -73,6 +74,7 @@ import {
   useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 import {
@@ -1341,6 +1343,26 @@ export function ClassroomMediaShell({
   );
   const participantCount =
     signals?.projection?.roster.length ?? cameraItems.length;
+  // ROOM-MEET-DOCK-04: each icon-only control's accessible name doubles as
+  // its floating tooltip, so both always follow the control's live state.
+  const microphoneLabel = t(
+    isMicrophoneEnabled
+      ? "media.p405.microphoneOn"
+      : "media.p405.microphoneOff",
+  );
+  const cameraLabel = t(
+    isCameraEnabled ? "media.p405.cameraOn" : "media.p405.cameraOff",
+  );
+  const screenShareLabel = t(
+    isScreenShareEnabled ? "media.p405.shareStop" : "media.p405.shareStart",
+  );
+  const handLabel = t(
+    selfHand ? "media.p406.lowerOwnHand" : "media.p406.raiseHand",
+  );
+  const rosterLabel =
+    waitingCount > 0
+      ? t("media.p406.openRosterWaiting", { count: waitingCount })
+      : t("media.p406.openRoster");
 
   return (
     <div
@@ -1377,19 +1399,23 @@ export function ClassroomMediaShell({
               <span>{t("media.room.listenOnly")}</span>
             )}
             {canPublishCameraMicrophone ? (
+              // ROOM-MEET-DOCK-04: an icon-only header key; the full state
+              // stays the accessible name and shows in the room tooltip.
               <button
                 aria-expanded={effectsOpen && effectsAvailable}
                 aria-haspopup="dialog"
                 className={`media-p405-effects-badge${
                   effectsActive ? " media-p405-effects-badge--on" : ""
                 }`}
+                data-tooltip={effectsLabel}
+                data-tooltip-side="bottom"
                 disabled={controlsTerminated}
                 onClick={(event) => toggleEffectsDrawer(event.currentTarget)}
                 type="button"
               >
                 <span>
                   <Sparkles aria-hidden="true" />
-                  {effectsLabel}
+                  <span className="media-p405-sr-only">{effectsLabel}</span>
                 </span>
               </button>
             ) : (
@@ -1538,8 +1564,18 @@ export function ClassroomMediaShell({
               <h2 id={`media-p506-stage-title-${activeTool.id}`} tabIndex={-1}>
                 {activeTool.title}
               </h2>
-              <Button onClick={closeActiveTool} size="sm" variant="secondary">
-                {t("media.p405.close")}
+              <Button
+                className="media-p506-tool-stage__close"
+                data-tooltip={t("media.p405.close")}
+                data-tooltip-side="bottom"
+                leadingIcon={<X />}
+                onClick={closeActiveTool}
+                size="sm"
+                variant="secondary"
+              >
+                <span className="media-p405-button-label">
+                  {t("media.p405.close")}
+                </span>
               </Button>
             </header>
             <div className="media-p506-tool-stage__body">
@@ -1700,13 +1736,10 @@ export function ClassroomMediaShell({
               <IconButton
                 className="media-p405-dock-button media-p405-dock-button--av"
                 data-media-control="microphone"
+                data-tooltip={microphoneLabel}
                 disabled={pendingControl !== null || controlsTerminated}
                 id="media-p405-control-microphone"
-                label={t(
-                  isMicrophoneEnabled
-                    ? "media.p405.microphoneOn"
-                    : "media.p405.microphoneOff",
-                )}
+                label={microphoneLabel}
                 loading={pendingControl === "microphone"}
                 onClick={() =>
                   void runControl("microphone", () =>
@@ -1717,25 +1750,19 @@ export function ClassroomMediaShell({
                 tabIndex={toolbarTabIndex("microphone")}
                 variant={isMicrophoneEnabled ? "secondary" : "danger"}
               >
-                <DockGlyph
-                  caption={t("media.room.dock.mic")}
-                  icon={isMicrophoneEnabled ? <Mic /> : <MicOff />}
-                />
+                <DockIcon icon={isMicrophoneEnabled ? <Mic /> : <MicOff />} />
               </IconButton>
               <IconButton
                 className="media-p405-dock-button media-p405-dock-button--av"
                 data-media-control="camera"
+                data-tooltip={cameraLabel}
                 disabled={
                   pendingControl !== null ||
                   controlsTerminated ||
                   degradationStage === "audio-only"
                 }
                 id="media-p405-control-camera"
-                label={t(
-                  isCameraEnabled
-                    ? "media.p405.cameraOn"
-                    : "media.p405.cameraOff",
-                )}
+                label={cameraLabel}
                 loading={pendingControl === "camera"}
                 onClick={() =>
                   void runControl("camera", () =>
@@ -1746,10 +1773,7 @@ export function ClassroomMediaShell({
                 tabIndex={toolbarTabIndex("camera")}
                 variant={isCameraEnabled ? "secondary" : "danger"}
               >
-                <DockGlyph
-                  caption={t("media.room.dock.camera")}
-                  icon={isCameraEnabled ? <Camera /> : <CameraOff />}
-                />
+                <DockIcon icon={isCameraEnabled ? <Camera /> : <CameraOff />} />
               </IconButton>
               <DockDivider />
             </>
@@ -1758,13 +1782,10 @@ export function ClassroomMediaShell({
             <IconButton
               className="media-p405-dock-button"
               data-media-control="screen-share"
+              data-tooltip={screenShareLabel}
               disabled={pendingControl !== null || controlsTerminated}
               id="media-p405-control-screen-share"
-              label={t(
-                isScreenShareEnabled
-                  ? "media.p405.shareStop"
-                  : "media.p405.shareStart",
-              )}
+              label={screenShareLabel}
               loading={pendingControl === "screen-share"}
               onClick={() =>
                 void runControl("screen-share", () =>
@@ -1775,12 +1796,7 @@ export function ClassroomMediaShell({
               tabIndex={toolbarTabIndex("screen-share")}
               variant={isScreenShareEnabled ? "danger" : "secondary"}
             >
-              <DockGlyph
-                caption={t(
-                  isScreenShareEnabled
-                    ? "media.room.dock.shareStop"
-                    : "media.room.dock.share",
-                )}
+              <DockIcon
                 icon={
                   isScreenShareEnabled ? <ScreenShareOff /> : <ScreenShare />
                 }
@@ -1791,6 +1807,7 @@ export function ClassroomMediaShell({
             aria-expanded={devicePanelOpen}
             className="media-p405-dock-button"
             data-media-control="devices"
+            data-tooltip={t("media.p405.devices")}
             disabled={controlsTerminated}
             id="media-p405-control-devices"
             label={t("media.p405.devices")}
@@ -1799,10 +1816,7 @@ export function ClassroomMediaShell({
             tabIndex={toolbarTabIndex("devices")}
             variant="secondary"
           >
-            <DockGlyph
-              caption={t("media.room.dock.devices")}
-              icon={<Settings2 />}
-            />
+            <DockIcon icon={<Settings2 />} />
           </IconButton>
 
           {canPublishCameraMicrophone && (
@@ -1814,6 +1828,7 @@ export function ClassroomMediaShell({
               aria-haspopup="dialog"
               className="media-p405-dock-button"
               data-media-control="effects"
+              data-tooltip={t("media.fx.openEffects")}
               disabled={controlsTerminated}
               id="media-p405-control-effects"
               label={t("media.fx.openEffects")}
@@ -1822,10 +1837,7 @@ export function ClassroomMediaShell({
               tabIndex={toolbarTabIndex("effects")}
               variant={effectsActive ? "primary" : "secondary"}
             >
-              <DockGlyph
-                caption={t("media.room.dock.effects")}
-                icon={<Sparkles />}
-              />
+              <DockIcon icon={<Sparkles />} />
             </IconButton>
           )}
           {canPublishCameraMicrophone && effectsActive && (
@@ -1839,13 +1851,12 @@ export function ClassroomMediaShell({
               aria-pressed={Boolean(selfHand)}
               className="media-p405-dock-button"
               data-media-control="hand"
+              data-tooltip={handLabel}
               disabled={
                 signals.mutating || signals.loading || controlsTerminated
               }
               id="media-p406-control-hand"
-              label={t(
-                selfHand ? "media.p406.lowerOwnHand" : "media.p406.raiseHand",
-              )}
+              label={handLabel}
               loading={signals.mutating}
               onClick={() =>
                 void runSignalAction(
@@ -1859,12 +1870,7 @@ export function ClassroomMediaShell({
               tabIndex={toolbarTabIndex("hand")}
               variant={selfHand ? "primary" : "secondary"}
             >
-              <DockGlyph
-                caption={t(
-                  selfHand ? "media.room.dock.lower" : "media.room.dock.raise",
-                )}
-                icon={<Hand />}
-              />
+              <DockIcon icon={<Hand />} />
             </IconButton>
           )}
 
@@ -1874,6 +1880,7 @@ export function ClassroomMediaShell({
                 <IconButton
                   className="media-p405-dock-button"
                   data-media-control="reaction"
+                  data-tooltip={t("media.p406.reactions")}
                   disabled={signals.mutating || controlsTerminated}
                   id="media-p406-control-reaction"
                   label={t("media.p406.reactions")}
@@ -1881,10 +1888,7 @@ export function ClassroomMediaShell({
                   tabIndex={toolbarTabIndex("reaction")}
                   variant="secondary"
                 >
-                  <DockGlyph
-                    caption={t("media.room.dock.react")}
-                    icon={<Smile />}
-                  />
+                  <DockIcon icon={<Smile />} />
                 </IconButton>
               </MenuTrigger>
               <MenuContent
@@ -1916,16 +1920,14 @@ export function ClassroomMediaShell({
                 <IconButton
                   className="media-p405-dock-button"
                   data-media-control="chat"
+                  data-tooltip={t("media.p408.openChat")}
                   id="media-p408-control-chat"
                   label={t("media.p408.openChat")}
                   onFocus={() => setToolbarFocusKey("chat")}
                   tabIndex={toolbarTabIndex("chat")}
                   variant="secondary"
                 >
-                  <DockGlyph
-                    caption={t("media.room.dock.chat")}
-                    icon={<MessageCircle />}
-                  />
+                  <DockIcon icon={<MessageCircle />} />
                 </IconButton>
               </DrawerTrigger>
               <DrawerContent
@@ -1950,6 +1952,10 @@ export function ClassroomMediaShell({
                 aria-expanded={open}
                 className="media-p405-dock-button"
                 data-media-control={`tool-${tool.id}`}
+                data-tooltip={tool.label}
+                // The tool opens on the stage, never over this key, so its
+                // name stays available while the tool is expanded.
+                data-tooltip-expanded="show"
                 id={`media-p506-control-${tool.id}`}
                 key={tool.id}
                 label={tool.label}
@@ -1958,10 +1964,7 @@ export function ClassroomMediaShell({
                 tabIndex={toolbarTabIndex(`tool-${tool.id}`)}
                 variant={open ? "primary" : "secondary"}
               >
-                <DockGlyph
-                  caption={t(toolCaptionKey(tool.id))}
-                  icon={tool.icon}
-                />
+                <DockIcon icon={tool.icon} />
               </IconButton>
             );
           })}
@@ -1972,23 +1975,15 @@ export function ClassroomMediaShell({
                 <IconButton
                   className="media-p405-dock-button media-p406-roster-control"
                   data-media-control="roster"
+                  data-tooltip={rosterLabel}
                   disabled={controlsTerminated}
                   id="media-p406-control-roster"
-                  label={
-                    waitingCount > 0
-                      ? t("media.p406.openRosterWaiting", {
-                          count: waitingCount,
-                        })
-                      : t("media.p406.openRoster")
-                  }
+                  label={rosterLabel}
                   onFocus={() => setToolbarFocusKey("roster")}
                   tabIndex={toolbarTabIndex("roster")}
                   variant={waitingCount > 0 ? "primary" : "secondary"}
                 >
-                  <DockGlyph
-                    caption={t("media.room.dock.people")}
-                    icon={<Users />}
-                  />
+                  <DockIcon icon={<Users />} />
                   {waitingCount > 0 && (
                     <span className="media-p406-roster-badge">
                       {waitingCount > 99 ? "99+" : waitingCount}
@@ -2045,6 +2040,7 @@ export function ClassroomMediaShell({
                   aria-pressed={projection.mode === mode}
                   className="media-p405-layout-button"
                   data-media-control={`layout-${mode}`}
+                  data-tooltip={t(layoutModeKey(mode))}
                   disabled={mode === "presentation" && !presenterID}
                   id={`media-p405-layout-${mode}`}
                   key={mode}
@@ -2064,7 +2060,6 @@ export function ClassroomMediaShell({
                 </IconButton>
               ))}
             </div>
-            <DockCaption>{t("media.room.dock.layout")}</DockCaption>
           </div>
         </div>
 
@@ -2152,30 +2147,343 @@ export function ClassroomMediaShell({
           </DrawerContent>
         </Drawer>
       )}
+      <RoomTooltipLayer containerRef={shellRef} />
     </div>
   );
 }
 
 /**
- * ROOM-STUDIO-02 Dock content: icon plus a short caption. The caption is
- * decorative (`aria-hidden`); the button keeps its full accessible label.
- * It stays visually hidden unless the room stylesheet reveals it on wide
- * screens, so hosts that only load the base styles keep 40px icon buttons.
+ * ROOM-MEET-DOCK-04 Dock content: the icon only (Google Meet). The button's
+ * accessible label names it and the room tooltip shows that same label on
+ * hover or keyboard focus, so no caption text sits under the icon.
  */
-function DockGlyph({ caption, icon }: { caption: string; icon: ReactNode }) {
+function DockIcon({ icon }: { icon: ReactNode }) {
+  return <span className="media-p405-dock-icon">{icon}</span>;
+}
+
+/** Elements that show the room tooltip (see `RoomTooltipLayer`). */
+const ROOM_TOOLTIP_TARGET = "[data-tooltip], .whiteboard-paper-trigger";
+/** Regions that act as app bars: their tooltips hang below the control. */
+const ROOM_TOOLTIP_BOTTOM_REGIONS =
+  ".media-p405-header, .media-p506-tool-stage__header, .whiteboard-tool-header, .whiteboard-engine-bar";
+const ROOM_TOOLTIP_HOVER_DELAY_MS = 140;
+const ROOM_TOOLTIP_WARM_WINDOW_MS = 400;
+const ROOM_TOOLTIP_EDGE_PX = 8;
+const ROOM_TOOLTIP_GAP_ABOVE_PX = 10;
+const ROOM_TOOLTIP_GAP_BELOW_PX = 8;
+const ROOM_TOOLTIP_TOP_ZONE_PX = 48;
+
+type RoomTooltipSide = "top" | "bottom";
+
+interface RoomTooltipState {
+  readonly side: RoomTooltipSide;
+  readonly target: HTMLElement;
+  readonly text: string;
+  /** Shown by a warm hand-off or keyboard focus: no entrance motion. */
+  readonly instant: boolean;
+}
+
+function roomTooltipTarget(
+  node: EventTarget | null,
+  container: HTMLElement,
+): HTMLElement | null {
+  if (!(node instanceof Element)) return null;
+  const target = node.closest<HTMLElement>(ROOM_TOOLTIP_TARGET);
+  return target && container.contains(target) ? target : null;
+}
+
+function roomTooltipText(target: HTMLElement): string {
+  const explicit = target.dataset.tooltip?.trim();
+  if (explicit) return explicit;
+  // The whiteboard paper picker names itself in its own label span (which the
+  // room stylesheet hides visually), so its tooltip reads that live label.
   return (
-    <>
-      <span className="media-p405-dock-icon">{icon}</span>
-      <DockCaption>{caption}</DockCaption>
-    </>
+    target
+      .querySelector(".whiteboard-paper-trigger-label")
+      ?.textContent?.trim() ?? ""
   );
 }
 
-function DockCaption({ children }: { children: string }) {
+/**
+ * A tooltip never covers a popover, menu, drawer or disclosure its control
+ * has opened (WCAG 1.4.13): an expanded control is silent unless it opts in
+ * because what it expands lives elsewhere (`data-tooltip-expanded="show"`).
+ */
+function roomTooltipSuppressed(target: HTMLElement): boolean {
+  if (!target.isConnected) return true;
+  const expanded =
+    target.getAttribute("aria-expanded") === "true" ||
+    target.dataset.state === "open";
+  if (expanded && target.dataset.tooltipExpanded !== "show") return true;
+  const disclosure = target.parentElement;
+  if (
+    target.tagName === "SUMMARY" &&
+    disclosure instanceof HTMLDetailsElement &&
+    disclosure.open
+  ) {
+    return true;
+  }
+  return roomTooltipText(target) === "";
+}
+
+function roomTooltipSide(target: HTMLElement): RoomTooltipSide {
+  const declared = target.dataset.tooltipSide;
+  if (declared === "top" || declared === "bottom") return declared;
+  if (target.closest(ROOM_TOOLTIP_BOTTOM_REGIONS)) return "bottom";
+  return target.getBoundingClientRect().top < ROOM_TOOLTIP_TOP_ZONE_PX
+    ? "bottom"
+    : "top";
+}
+
+/**
+ * Keyboard focus shows the tooltip; a click's focus does not. Engines that do
+ * not resolve `:focus-visible` for a focus move fall back to the modality the
+ * layer tracks itself (the last input was a key, not a pointer press).
+ */
+function roomTooltipFocusVisible(
+  target: HTMLElement,
+  keyboardModality: boolean,
+): boolean {
+  try {
+    if (target.matches(":focus-visible")) return true;
+  } catch {
+    // An engine without `:focus-visible` uses the tracked modality.
+  }
+  return keyboardModality;
+}
+
+/**
+ * ROOM-MEET-DOCK-04 — one floating tooltip for every icon-only room control
+ * (Google Meet timing, Material plain-tooltip shape). Controls only carry
+ * `data-tooltip` (and optionally `data-tooltip-side`); this layer listens by
+ * delegation on the shell, so no Radix trigger is wrapped, no ref or roving
+ * tabindex changes, and screen readers keep the control's own name (the
+ * tooltip is `aria-hidden` and duplicates that name).
+ *
+ * Timing: a first mouse hover waits 140ms so a sweep across the Dock stays
+ * quiet; within 400ms of a tooltip closing the next one moves over at once;
+ * keyboard focus (`:focus-visible`) shows it at once; touch never shows it.
+ * It hides on Escape (focus stays), on any press, on scroll or resize, and
+ * as soon as its control opens a popover, menu or drawer.
+ */
+export function RoomTooltipLayer({
+  containerRef,
+}: {
+  containerRef: RefObject<HTMLElement | null>;
+}) {
+  const [tooltip, setTooltip] = useState<RoomTooltipState | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
+    const ownerDocument = container.ownerDocument;
+    const view = ownerDocument.defaultView ?? window;
+    let shown: HTMLElement | null = null;
+    let pending: HTMLElement | null = null;
+    let timer: number | null = null;
+    let dismissed: HTMLElement | null = null;
+    let lastHiddenAt = Number.NEGATIVE_INFINITY;
+    let keyboardModality = false;
+    let observer: MutationObserver | null = null;
+
+    const clearPending = () => {
+      if (timer !== null) view.clearTimeout(timer);
+      timer = null;
+      pending = null;
+    };
+    const warm = () =>
+      shown !== null ||
+      Date.now() - lastHiddenAt <= ROOM_TOOLTIP_WARM_WINDOW_MS;
+    const hide = (warm: boolean) => {
+      clearPending();
+      observer?.disconnect();
+      observer = null;
+      if (!shown) return;
+      shown = null;
+      if (warm) lastHiddenAt = Date.now();
+      setTooltip(null);
+    };
+    const show = (target: HTMLElement, instant: boolean) => {
+      clearPending();
+      if (roomTooltipSuppressed(target)) {
+        if (shown === target) hide(false);
+        return;
+      }
+      observer?.disconnect();
+      shown = target;
+      setTooltip({
+        instant,
+        side: roomTooltipSide(target),
+        target,
+        text: roomTooltipText(target),
+      });
+      // Follow the control's live state: a new name updates the text (Turn
+      // microphone off ↔ on); opening its popover hides the tooltip.
+      observer = new MutationObserver(() => {
+        if (shown !== target) return;
+        if (roomTooltipSuppressed(target)) {
+          hide(false);
+          return;
+        }
+        const text = roomTooltipText(target);
+        setTooltip((current) =>
+          current?.target === target && current.text !== text
+            ? { ...current, text }
+            : current,
+        );
+      });
+      observer.observe(target, {
+        attributeFilter: ["aria-expanded", "data-state", "data-tooltip"],
+        attributes: true,
+        characterData: true,
+        childList: true,
+        subtree: true,
+      });
+      if (target.parentElement instanceof HTMLDetailsElement) {
+        observer.observe(target.parentElement, {
+          attributeFilter: ["open"],
+          attributes: true,
+        });
+      }
+    };
+
+    const onPointerOver = (event: PointerEvent) => {
+      // jsdom and older engines may omit pointerType: treat that as a mouse.
+      if (event.pointerType === "touch") return;
+      const target = roomTooltipTarget(event.target, container);
+      if (!target || target === shown || target === pending) return;
+      if (target === dismissed || roomTooltipSuppressed(target)) return;
+      if (warm()) {
+        show(target, true);
+        return;
+      }
+      clearPending();
+      pending = target;
+      timer = view.setTimeout(() => {
+        timer = null;
+        pending = null;
+        show(target, false);
+      }, ROOM_TOOLTIP_HOVER_DELAY_MS);
+    };
+    const onPointerOut = (event: PointerEvent) => {
+      const target = roomTooltipTarget(event.target, container);
+      if (!target) return;
+      const next = event.relatedTarget;
+      if (next instanceof Node && target.contains(next)) return;
+      if (target === dismissed) dismissed = null;
+      if (target === pending) clearPending();
+      if (target === shown) hide(true);
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      const target = roomTooltipTarget(event.target, container);
+      if (!target || target === shown) return;
+      if (!roomTooltipFocusVisible(target, keyboardModality)) return;
+      dismissed = null;
+      show(target, warm());
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      const target = roomTooltipTarget(event.target, container);
+      if (!target || target !== shown) return;
+      const next = event.relatedTarget;
+      if (next instanceof Node && target.contains(next)) return;
+      hide(true);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      keyboardModality = false;
+      const target = roomTooltipTarget(event.target, container);
+      if (target) dismissed = target;
+      hide(false);
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!event.altKey && !event.ctrlKey && !event.metaKey) {
+        keyboardModality = true;
+      }
+      if (event.key !== "Escape" || !shown) return;
+      // WCAG 1.4.13 dismissible: hide the open tooltip without moving focus or
+      // closing an open non-modal drawer underneath on the same Escape press.
+      event.preventDefault();
+      event.stopPropagation();
+      dismissed = shown;
+      hide(false);
+    };
+    const onViewportChange = () => hide(false);
+
+    container.addEventListener("pointerover", onPointerOver);
+    container.addEventListener("pointerout", onPointerOut);
+    container.addEventListener("focusin", onFocusIn);
+    container.addEventListener("focusout", onFocusOut);
+    ownerDocument.addEventListener("pointerdown", onPointerDown, true);
+    ownerDocument.addEventListener("keydown", onKeyDown, true);
+    view.addEventListener("scroll", onViewportChange, true);
+    view.addEventListener("resize", onViewportChange);
+    return () => {
+      clearPending();
+      observer?.disconnect();
+      container.removeEventListener("pointerover", onPointerOver);
+      container.removeEventListener("pointerout", onPointerOut);
+      container.removeEventListener("focusin", onFocusIn);
+      container.removeEventListener("focusout", onFocusOut);
+      ownerDocument.removeEventListener("pointerdown", onPointerDown, true);
+      ownerDocument.removeEventListener("keydown", onKeyDown, true);
+      view.removeEventListener("scroll", onViewportChange, true);
+      view.removeEventListener("resize", onViewportChange);
+    };
+  }, [containerRef]);
+
+  // Place the pill once its text is laid out: centred on the control, kept
+  // 8px inside the viewport, flipped when the preferred side has no room.
+  useLayoutEffect(() => {
+    const node = tooltipRef.current;
+    if (!node || !tooltip) return;
+    const root = node.ownerDocument.documentElement;
+    const view = node.ownerDocument.defaultView ?? window;
+    const viewportWidth = root.clientWidth || view.innerWidth;
+    const viewportHeight = root.clientHeight || view.innerHeight;
+    const anchor = tooltip.target.getBoundingClientRect();
+    // offsetWidth/Height ignore the entrance transform but round the text's
+    // sub-pixel box, so reserve that remainder to keep the 8px clamp exact.
+    const width = node.offsetWidth + 1;
+    const height = node.offsetHeight;
+    const above = anchor.top - ROOM_TOOLTIP_GAP_ABOVE_PX - height;
+    const below = anchor.bottom + ROOM_TOOLTIP_GAP_BELOW_PX;
+    let side = tooltip.side;
+    if (side === "top" && above < ROOM_TOOLTIP_EDGE_PX) side = "bottom";
+    else if (
+      side === "bottom" &&
+      below + height > viewportHeight - ROOM_TOOLTIP_EDGE_PX &&
+      above >= ROOM_TOOLTIP_EDGE_PX
+    ) {
+      side = "top";
+    }
+    const maxLeft = Math.max(
+      ROOM_TOOLTIP_EDGE_PX,
+      viewportWidth - ROOM_TOOLTIP_EDGE_PX - width,
+    );
+    const left = Math.min(
+      Math.max(
+        anchor.left + anchor.width / 2 - width / 2,
+        ROOM_TOOLTIP_EDGE_PX,
+      ),
+      maxLeft,
+    );
+    node.style.left = `${Math.round(left)}px`;
+    node.style.top = `${Math.round(side === "top" ? above : below)}px`;
+    node.dataset.side = side;
+  }, [tooltip]);
+
   return (
-    <span aria-hidden="true" className="media-p405-dock-caption">
-      {children}
-    </span>
+    <div
+      aria-hidden="true"
+      className="media-p405-tooltip"
+      data-instant={tooltip?.instant ? "true" : undefined}
+      data-state={tooltip ? "open" : "closed"}
+      data-testid="room-tooltip"
+      hidden={!tooltip}
+      ref={tooltipRef}
+    >
+      {tooltip?.text ?? ""}
+    </div>
   );
 }
 
@@ -2551,6 +2859,11 @@ function DeviceSelect({
   );
 }
 
+/**
+ * ROOM-MEET-DOCK-04: Leave is a Google Meet end-call pill. Its words stay the
+ * accessible name (and the tooltip) but are hidden visually by the room's own
+ * utility, never `.visually-hidden` (Excalidraw restyles that class).
+ */
 function LeaveRoomDialog({ onLeave }: { onLeave: () => void }) {
   const { t } = useI18n();
   return (
@@ -2558,11 +2871,12 @@ function LeaveRoomDialog({ onLeave }: { onLeave: () => void }) {
       <DialogTrigger asChild>
         <Button
           className="media-p405-dock-leave"
+          data-tooltip={t("media.p405.leave")}
           id="media-p405-control-leave"
-          leadingIcon={<LogOut />}
+          leadingIcon={<PhoneOff />}
           variant="danger"
         >
-          {t("media.p405.leave")}
+          <span className="media-p405-sr-only">{t("media.p405.leave")}</span>
         </Button>
       </DialogTrigger>
       <DialogContent closeLabel={t("media.p405.leaveCancel")} data-theme="dark">
@@ -2738,13 +3052,6 @@ function degradationStatusKey(
 
 function roomStatusKey(status: ClassroomConnectionStatus): TranslationKey {
   return `media.room.${status}` as TranslationKey;
-}
-
-function toolCaptionKey(toolID: ClassroomToolID): TranslationKey {
-  switch (toolID) {
-    case "whiteboard":
-      return "media.room.dock.board";
-  }
 }
 
 function layoutModeKey(mode: ClassroomLayoutMode): TranslationKey {

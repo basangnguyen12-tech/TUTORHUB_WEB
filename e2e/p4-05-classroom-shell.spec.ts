@@ -977,7 +977,7 @@ async function stageOverflow(page: Page) {
     .evaluate((stage) => stage.scrollHeight - stage.clientHeight);
 }
 
-test("ROOM-STUDIO-02 centres one large 16:9 tile under a captioned floating Dock", async ({
+test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Dock", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1_440, height: 900 });
@@ -1005,69 +1005,80 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under a captioned floating Dock
     page.getByText("Đã kết nối / 1 người tham gia", { exact: true }),
   ).toBeVisible();
 
-  // Dock: centred, captioned, split into four clusters, nothing overflows.
+  // Dock (ROOM-MEET-DOCK-04): centred, icon-only Google Meet keys split into
+  // four clusters, no caption under any icon, nothing overflows.
   const footer = page.locator(".media-p405-footer");
   const footerBox = await footer.boundingBox();
   expect(
     Math.abs(footerBox!.x + footerBox!.width / 2 - 720),
   ).toBeLessThanOrEqual(2);
+  expect(footerBox!.height).toBeGreaterThanOrEqual(56);
+  expect(footerBox!.height).toBeLessThanOrEqual(58.5);
   const toolbar = page.getByRole("toolbar", { name: "Điều khiển phòng học" });
-  for (const caption of [
-    "Micro",
-    "Camera",
-    "Chia sẻ",
+  await expect(page.locator(".media-p405-dock-caption")).toHaveCount(0);
+  const dockNames = [
+    "Tắt micro",
+    "Bật camera",
+    "Chia sẻ màn hình",
     "Thiết bị",
-    "Hiệu ứng",
+    "Nền và hiệu ứng",
     "Giơ tay",
-    "Cảm xúc",
-    "Trò chuyện",
-    "Bảng trắng",
-    "Thành viên",
-    "Bố cục",
-  ]) {
-    await expect(
-      toolbar.locator(".media-p405-dock-caption", { hasText: caption }),
-    ).toBeVisible();
+    "Gửi reaction",
+    "Mở trò chuyện trong phòng",
+    "Mở bảng trắng",
+    "Mở danh sách lớp học",
+  ];
+  for (const name of dockNames) {
+    const key = toolbar.getByRole("button", { name, exact: true });
+    await expect(key).toBeVisible();
+    await expect(key).toHaveAttribute("data-tooltip", name);
+    const box = await key.boundingBox();
+    expect(Math.round(box!.width)).toBe(44);
+    expect(Math.round(box!.height)).toBe(44);
+    await expect(key).toHaveCSS("border-top-left-radius", "999px");
   }
-  // Captions sit cleanly underneath their icons (never pulled out of flow).
+  // Layout: a 44px stadium groove of three 38px round keys, no caption.
+  const layoutPillBox = await toolbar
+    .locator(".media-p405-layout-pill")
+    .boundingBox();
+  expect(Math.round(layoutPillBox!.height)).toBe(44);
+  for (const name of ["Lưới", "Người đang nói", "Trình bày"]) {
+    const box = await toolbar
+      .getByRole("button", { name, exact: true })
+      .boundingBox();
+    expect(Math.round(box!.width)).toBe(38);
+    expect(Math.round(box!.height)).toBe(38);
+  }
   const micButton = toolbar.getByRole("button", {
     name: "Tắt micro",
     exact: true,
   });
-  const micIconBox = await micButton
-    .locator(".media-p405-dock-icon")
-    .boundingBox();
-  const micCaptionBox = await micButton
-    .locator(".media-p405-dock-caption")
-    .boundingBox();
-  expect(micCaptionBox!.y).toBeGreaterThanOrEqual(
-    micIconBox!.y + micIconBox!.height - 1,
-  );
-  const layoutPillBox = await toolbar
-    .locator(".media-p405-layout-pill")
-    .boundingBox();
-  const layoutCaptionBox = await toolbar
-    .locator(".media-p405-layout-controls > .media-p405-dock-caption")
-    .boundingBox();
-  expect(layoutCaptionBox!.y).toBeGreaterThanOrEqual(
-    layoutPillBox!.y + layoutPillBox!.height - 1,
-  );
-  // Captions are decorative: the full accessible names are unchanged.
-  await expect(micButton).toBeVisible();
-  await expect(
-    toolbar.getByRole("button", { name: "Bật camera", exact: true }),
-  ).toBeVisible();
   await expect(page.locator(".media-p405-dock-divider:visible")).toHaveCount(3);
+  const dividerBox = await page
+    .locator(".media-p405-dock-divider:visible")
+    .first()
+    .boundingBox();
+  expect(Math.round(dividerBox!.height)).toBe(24);
   expect(
     await footer.evaluate(
       (element) => element.scrollWidth - element.clientWidth,
     ),
   ).toBeLessThanOrEqual(1);
 
+  // Leave: a ruby end-call pill, icon only, still named "Rời phòng".
   const leave = page.getByRole("button", { name: "Rời phòng", exact: true });
   await expect(leave).toHaveCSS("background-color", "rgb(220, 38, 38)");
   await expect(leave).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(leave).toHaveCSS("border-top-left-radius", "999px");
+  await expect(leave.locator(".media-p405-sr-only")).toHaveText("Rời phòng");
+  await expect(leave.locator(".media-p405-sr-only")).toHaveCSS(
+    "position",
+    "absolute",
+  );
   const leaveBox = await leave.boundingBox();
+  expect(Math.round(leaveBox!.height)).toBe(44);
+  expect(leaveBox!.width).toBeGreaterThanOrEqual(58);
+  expect(leaveBox!.width).toBeGreaterThan(leaveBox!.height);
   expect(leaveBox!.x + leaveBox!.width).toBeLessThanOrEqual(
     footerBox!.x + footerBox!.width,
   );
@@ -1111,7 +1122,7 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under a captioned floating Dock
     "transition-timing-function",
     /cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
   );
-  // The header pills share the thin glass and its specular rim.
+  // The header keys share the thin glass and its specular rim.
   const effectsPill = page.locator(".media-p405-effects-badge > span");
   expect((await readGlass(effectsPill)).backdropFilter).toMatch(/blur\(18px\)/);
   expect((await readGlass(effectsPill)).boxShadow).toMatch(/inset/);
@@ -1138,13 +1149,17 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under a captioned floating Dock
   await page.mouse.up();
   await expect(micButton).toHaveAccessibleName("Tắt micro");
 
-  // The captioned Dock still fits one row on a 1024px laptop.
+  // The icon-only Dock fits one 58px row on a 1024px laptop, still captionless.
   await page.setViewportSize({ width: 1_024, height: 768 });
+  await expect(page.locator(".media-p405-dock-caption")).toHaveCount(0);
   await expect(
-    toolbar.locator(".media-p405-dock-caption", { hasText: "Trò chuyện" }),
+    toolbar.getByRole("button", {
+      name: "Mở trò chuyện trong phòng",
+      exact: true,
+    }),
   ).toBeVisible();
   const compactFooter = await footer.boundingBox();
-  expect(compactFooter!.height).toBeLessThanOrEqual(72);
+  expect(compactFooter!.height).toBeLessThanOrEqual(58.5);
   expect(compactFooter!.x).toBeGreaterThanOrEqual(0);
   expect(compactFooter!.x + compactFooter!.width).toBeLessThanOrEqual(1_024);
 });
@@ -1406,11 +1421,8 @@ test("ROOM-STUDIO-02 reflows the studio room at 320 CSS pixels with forced color
         document.documentElement.clientWidth,
     );
   expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
-  // Icon-only pills below 1024px, each a 44px touch target.
-  await expect(page.locator(".media-p405-dock-caption").first()).toHaveCSS(
-    "display",
-    "none",
-  );
+  // Icon-only keys at every width, each a 44px touch target.
+  await expect(page.locator(".media-p405-dock-caption")).toHaveCount(0);
   const controlHeights = await page
     .locator(".media-p405-footer .media-p405-dock-button")
     .evaluateAll((buttons) =>
@@ -1725,4 +1737,391 @@ test("WHITEBOARD-PAPER-01 picks classroom paper from a Liquid Glass popover and 
     .poll(() => freedrawColours(page))
     .toEqual(["#ffffff", "#1e1e1e"]);
   await expectNoShellViolations(page);
+});
+
+// ROOM-MEET-DOCK-04: Google Meet icon-only controls with one floating Liquid
+// Glass tooltip (140ms first hover, 0ms warm hand-off, Escape, never over an
+// open popover, clamped 8px inside the viewport). Set
+// ROOM_MEET_DOCK_SCREENSHOT_DIR (for example `.tmp/dock-meet-04`) to save the
+// acceptance screenshots.
+const roomMeetDockScreenshotDir =
+  process.env.ROOM_MEET_DOCK_SCREENSHOT_DIR?.trim() || "";
+
+async function saveRoomMeetDockScreenshot(page: Page, name: string) {
+  if (!roomMeetDockScreenshotDir) return;
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${roomMeetDockScreenshotDir}/${name}` });
+}
+
+async function horizontalPageOverflow(page: Page) {
+  return page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth,
+  );
+}
+
+/** The tooltip sits on the requested side of `key`, clamped 8px inside. */
+async function expectTooltipBeside(
+  page: Page,
+  key: Locator,
+  side: "above" | "below",
+) {
+  const tooltip = page.getByTestId("room-tooltip");
+  const keyBox = (await key.boundingBox())!;
+  const tipBox = (await tooltip.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  if (side === "above") {
+    expect(
+      Math.abs(tipBox.y + tipBox.height - (keyBox.y - 10)),
+    ).toBeLessThanOrEqual(1.5);
+  } else {
+    expect(
+      Math.abs(tipBox.y - (keyBox.y + keyBox.height + 8)),
+    ).toBeLessThanOrEqual(1.5);
+  }
+  expect(tipBox.x).toBeGreaterThanOrEqual(7.5);
+  expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(viewport.width - 7.5);
+  const centred =
+    Math.abs(tipBox.x + tipBox.width / 2 - (keyBox.x + keyBox.width / 2)) <=
+    1.5;
+  const clamped =
+    Math.abs(tipBox.x - 8) <= 1 ||
+    Math.abs(tipBox.x + tipBox.width - (viewport.width - 8)) <= 1;
+  expect(centred || clamped).toBe(true);
+  expect(await horizontalPageOverflow(page)).toBeLessThanOrEqual(0);
+}
+
+test("ROOM-MEET-DOCK-04 shows a Meet tooltip above Dock keys and hands it off along the Dock", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 1,
+    studio: { language: "vi" },
+  });
+  await loadRoomStudioStyles(page);
+
+  const tooltip = page.getByTestId("room-tooltip");
+  await expect(tooltip).toHaveAttribute("aria-hidden", "true");
+  await expect(tooltip).toBeHidden();
+  const toolbar = page.getByRole("toolbar", { name: "Điều khiển phòng học" });
+  const share = toolbar.getByRole("button", {
+    name: "Chia sẻ màn hình",
+    exact: true,
+  });
+  const board = toolbar.getByRole("button", {
+    name: "Mở bảng trắng",
+    exact: true,
+  });
+  const leave = page.getByRole("button", { name: "Rời phòng", exact: true });
+
+  // First hover: shown after the 140ms intent delay, above the key.
+  await share.hover();
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toHaveText("Chia sẻ màn hình");
+  await expect(tooltip).not.toHaveAttribute("data-instant", "true");
+  await expect(tooltip).toHaveAttribute("data-side", "top");
+  await page.waitForTimeout(200);
+  await expectTooltipBeside(page, share, "above");
+
+  // Material plain tooltip in dark Liquid Glass.
+  const tipStyle = await tooltip.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backdropFilter:
+        style.backdropFilter ||
+        style.getPropertyValue("-webkit-backdrop-filter"),
+      borderRadius: style.borderTopLeftRadius,
+      color: style.color,
+      fontSize: style.fontSize,
+      pointerEvents: style.pointerEvents,
+      position: style.position,
+      whiteSpace: style.whiteSpace,
+    };
+  });
+  expect(tipStyle).toMatchObject({
+    borderRadius: "8px",
+    color: "rgb(248, 250, 252)",
+    fontSize: "12px",
+    pointerEvents: "none",
+    position: "fixed",
+    whiteSpace: "nowrap",
+  });
+  expect(tipStyle.backdropFilter).toMatch(/blur\(14px\)/);
+  // Axe stays clean while the tooltip is open.
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomMeetDockScreenshot(
+    page,
+    "01-dock-solo-hover-share-vi-1440x900.png",
+  );
+
+  // Warm hand-off: sliding to the next keys moves the tooltip at once.
+  await board.hover();
+  await expect(tooltip).toHaveText("Mở bảng trắng");
+  await expect(tooltip).toHaveAttribute("data-instant", "true");
+  await expectTooltipBeside(page, board, "above");
+  await leave.hover();
+  await expect(tooltip).toHaveText("Rời phòng");
+  await expect(tooltip).toHaveAttribute("data-instant", "true");
+  await expectTooltipBeside(page, leave, "above");
+  await saveRoomMeetDockScreenshot(page, "02-dock-hover-leave-vi-1440x900.png");
+
+  // Escape hides it at once (WCAG 1.4.13) and it stays down on that key.
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toBeHidden();
+  await page.waitForTimeout(300);
+  await expect(tooltip).toBeHidden();
+
+  // Keyboard roving shows each control's live name with no delay.
+  await page.mouse.move(720, 300);
+  const microphone = toolbar.getByRole("button", {
+    name: "Tắt micro",
+    exact: true,
+  });
+  await microphone.focus();
+  await page.keyboard.press("ArrowRight");
+  const camera = toolbar.getByRole("button", {
+    name: "Bật camera",
+    exact: true,
+  });
+  await expect(camera).toBeFocused();
+  await expect(tooltip).toHaveText("Bật camera");
+  await expectTooltipBeside(page, camera, "above");
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toBeHidden();
+  await expect(camera).toBeFocused();
+
+  // Opening the device popover hides the tooltip; it never covers it.
+  await page.evaluate(() => {
+    navigator.mediaDevices.getUserMedia = async () => new MediaStream();
+  });
+  const devices = toolbar.getByRole("button", {
+    name: "Thiết bị",
+    exact: true,
+  });
+  await page.mouse.move(720, 300);
+  await page.waitForTimeout(450);
+  await devices.hover();
+  await expect(tooltip).toHaveText("Thiết bị");
+  await devices.click();
+  await expect(devices).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".media-p405-device-panel")).toBeVisible();
+  await expect(tooltip).toBeHidden();
+  await page.mouse.move(720, 300);
+  await devices.hover();
+  await page.waitForTimeout(400);
+  await expect(tooltip).toBeHidden();
+  await devices.click();
+  await expect(devices).toHaveAttribute("aria-expanded", "false");
+
+  // Touch never leaves a tooltip behind.
+  await page.mouse.move(720, 300);
+  await page.waitForTimeout(450);
+  await share.dispatchEvent("pointerover", { pointerType: "touch" });
+  await page.waitForTimeout(400);
+  await expect(tooltip).toBeHidden();
+});
+
+test("ROOM-MEET-DOCK-04 turns the header into 36px icon keys whose tooltips hang below inside the viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 1,
+    studio: { language: "vi" },
+  });
+  await loadRoomStudioStyles(page);
+
+  const tooltip = page.getByTestId("room-tooltip");
+  const effects = page.getByRole("button", {
+    name: "Hiệu ứng: Không dùng",
+    exact: true,
+  });
+  const lock = page.getByRole("button", { name: "Khóa phòng", exact: true });
+  const endRoom = page.getByRole("button", {
+    name: "Kết thúc phòng",
+    exact: true,
+  });
+  for (const key of [
+    page.locator(".media-p405-effects-badge > span"),
+    lock,
+    endRoom,
+  ]) {
+    const box = await key.boundingBox();
+    expect(Math.round(box!.width)).toBe(36);
+    expect(Math.round(box!.height)).toBe(36);
+  }
+  // The text is gone visually but stays each control's accessible name.
+  await expect(lock.locator(".media-p405-button-label")).toHaveCSS(
+    "position",
+    "absolute",
+  );
+  await expect(endRoom).toHaveCSS("background-color", "rgb(220, 38, 38)");
+  const actionsBox = await page
+    .locator(".media-p405-header-actions")
+    .boundingBox();
+  expect(actionsBox!.width).toBeLessThanOrEqual(140);
+
+  await endRoom.hover();
+  await expect(tooltip).toHaveText("Kết thúc phòng");
+  await expect(tooltip).toHaveAttribute("data-side", "bottom");
+  await page.waitForTimeout(200);
+  await expectTooltipBeside(page, endRoom, "below");
+  const tipBox = await tooltip.boundingBox();
+  expect(tipBox!.x + tipBox!.width).toBeLessThanOrEqual(1_432);
+  await saveRoomMeetDockScreenshot(
+    page,
+    "03-header-hover-end-room-vi-1440x900.png",
+  );
+
+  await effects.hover();
+  await expect(tooltip).toHaveText("Hiệu ứng: Không dùng");
+  await expect(tooltip).toHaveAttribute("data-instant", "true");
+  await expectTooltipBeside(page, effects, "below");
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+
+  // Opening the effects drawer from the header key hides its tooltip.
+  await effects.click();
+  await expect(effects).toHaveAttribute("aria-expanded", "true");
+  await expect(tooltip).toBeHidden();
+});
+
+test("ROOM-MEET-DOCK-04 keeps a one-person speaker view free of the empty rail text", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 1,
+    studio: { language: "vi" },
+  });
+  await loadRoomStudioStyles(page);
+
+  await page
+    .getByRole("button", { name: "Người đang nói", exact: true })
+    .click();
+  await expect(page.locator(".media-p405-tile--stage")).toBeVisible();
+  await expect(
+    page.getByText("Chưa có video người tham gia để hiển thị.", {
+      exact: true,
+    }),
+  ).toBeHidden();
+  await expect(page.locator(".media-p405-rail")).toBeHidden();
+  // The stage takes the whole row, so the single speaker stays centred.
+  const stageBox = await page.locator(".media-p405-stage").boundingBox();
+  expect(stageBox!.width).toBeGreaterThanOrEqual(1_400);
+  const tileBox = await page.locator(".media-p405-tile--stage").boundingBox();
+  expect(Math.abs(tileBox!.x + tileBox!.width / 2 - 720)).toBeLessThanOrEqual(
+    16,
+  );
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomMeetDockScreenshot(
+    page,
+    "04-speaker-solo-clean-vi-1440x900.png",
+  );
+});
+
+test("ROOM-MEET-DOCK-04 compacts the whiteboard keys and never covers the paper popover", async ({
+  page,
+}) => {
+  // Hermetic: Excalidraw may ask a CDN for optional fonts; stay on localhost.
+  await page.route(
+    /^https?:\/\/(?!127\.0\.0\.1[:/]|localhost[:/])[^/]+\//,
+    (route) => route.abort(),
+  );
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 1,
+    studio: { language: "vi", whiteboard: "paper" },
+  });
+  await loadRoomStudioStyles(page);
+  // The reference scene: one person, speaker view, whiteboard on stage.
+  await page
+    .getByRole("button", { name: "Người đang nói", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Mở bảng trắng", exact: true })
+    .click();
+  await expect(
+    page.getByRole("region", { name: "Bề mặt bảng trắng tương tác" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Chưa có video người tham gia để hiển thị.", {
+      exact: true,
+    }),
+  ).toBeHidden();
+
+  const tooltip = page.getByTestId("room-tooltip");
+  // Close: a 30px round X key still named "Đóng".
+  const close = page
+    .locator(".media-p506-tool-stage__header")
+    .getByRole("button", { name: "Đóng", exact: true });
+  const closeBox = await close.boundingBox();
+  expect(Math.round(closeBox!.width)).toBe(30);
+  expect(Math.round(closeBox!.height)).toBe(30);
+  await expect(close).toHaveAttribute("data-tooltip", "Đóng");
+  await close.hover();
+  await expect(tooltip).toHaveText("Đóng");
+  await page.waitForTimeout(200);
+  await expectTooltipBeside(page, close, "below");
+
+  // The text view is a 32px icon key with its name as tooltip.
+  const textView = page.getByRole("button", {
+    name: "Đọc bảng trắng dạng văn bản",
+    exact: true,
+  });
+  const textViewBox = await textView.boundingBox();
+  expect(Math.round(textViewBox!.width)).toBe(32);
+  expect(Math.round(textViewBox!.height)).toBe(32);
+  await textView.hover();
+  await expect(tooltip).toHaveText("Đọc bảng trắng dạng văn bản");
+  await expectTooltipBeside(page, textView, "below");
+
+  // Paper: swatch + caret only; the full paper name is the tooltip.
+  const trigger = page.getByTestId("whiteboard-paper-trigger");
+  await expect(trigger).toHaveAccessibleName("Giấy: Bảng trắng (Trơn)");
+  const triggerBox = await trigger.boundingBox();
+  expect(triggerBox!.width).toBeLessThanOrEqual(60);
+  const swatchBox = await trigger
+    .locator(".whiteboard-paper-swatch")
+    .boundingBox();
+  expect(Math.round(swatchBox!.width)).toBe(22);
+  expect(Math.round(swatchBox!.height)).toBe(15);
+  await trigger.hover();
+  await expect(tooltip).toHaveText("Giấy: Bảng trắng (Trơn)");
+  await expectTooltipBeside(page, trigger, "below");
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await saveRoomMeetDockScreenshot(
+    page,
+    "05-whiteboard-hover-paper-vi-1440x900.png",
+  );
+
+  await trigger.click();
+  const popover = page.getByRole("dialog", { name: "Chọn chế độ giấy" });
+  await expect(popover).toBeVisible();
+  await expect(tooltip).toBeHidden();
+  await popover
+    .getByRole("button", { name: "Vở học sinh", exact: true })
+    .click();
+  await expect(trigger).toHaveAccessibleName("Giấy: Vở học sinh");
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await page.mouse.move(720, 450);
+  await page.waitForTimeout(450);
+  await trigger.hover();
+  await expect(tooltip).toHaveText("Giấy: Vở học sinh");
+  await saveRoomMeetDockScreenshot(
+    page,
+    "06-whiteboard-hover-notebook-vi-1440x900.png",
+  );
 });

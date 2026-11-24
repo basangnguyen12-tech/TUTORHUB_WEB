@@ -1,5 +1,6 @@
 import { APIRequestError, type WhiteboardDocument } from "@tutorhub/api-client";
 import { Button } from "@tutorhub/ui";
+import { Info, Pause, Play, Square } from "lucide-react";
 import {
   lazy,
   Suspense,
@@ -209,33 +210,53 @@ function WhiteboardDocumentView({
               {t("whiteboard.open")}
             </Button>
           ) : null}
+          {/*
+            ROOM-MEET-DOCK-04: icon + label everywhere; inside the classroom
+            stylesheet the label is hidden visually (32px round keys) and the
+            room tooltip reads `data-tooltip`. The label stays the name.
+          */}
           {capabilities.can_suspend ? (
             <Button
+              className="whiteboard-action"
+              data-tooltip={t("whiteboard.suspend")}
               disabled={mutationPending}
+              leadingIcon={<Pause />}
               onClick={() => onTransition("suspend")}
               size="sm"
               variant="secondary"
             >
-              {t("whiteboard.suspend")}
+              <span className="whiteboard-action-label">
+                {t("whiteboard.suspend")}
+              </span>
             </Button>
           ) : null}
           {capabilities.can_resume ? (
             <Button
+              className="whiteboard-action"
+              data-tooltip={t("whiteboard.resume")}
               disabled={mutationPending}
+              leadingIcon={<Play />}
               onClick={() => onTransition("resume")}
               size="sm"
             >
-              {t("whiteboard.resume")}
+              <span className="whiteboard-action-label">
+                {t("whiteboard.resume")}
+              </span>
             </Button>
           ) : null}
           {capabilities.can_close ? (
             <Button
+              className="whiteboard-action"
+              data-tooltip={t("whiteboard.close")}
               disabled={mutationPending}
+              leadingIcon={<Square />}
               onClick={() => onTransition("close")}
               size="sm"
               variant="danger"
             >
-              {t("whiteboard.close")}
+              <span className="whiteboard-action-label">
+                {t("whiteboard.close")}
+              </span>
             </Button>
           ) : null}
           <WhiteboardTrialDisclosure />
@@ -271,7 +292,15 @@ function WhiteboardTrialDisclosure() {
   const { t } = useI18n();
   return (
     <details className="whiteboard-trial-disclosure">
-      <summary>{t("whiteboard.trialInfo")}</summary>
+      <summary
+        className="whiteboard-action"
+        data-tooltip={t("whiteboard.trialInfo")}
+      >
+        <Info aria-hidden="true" className="whiteboard-action-icon" />
+        <span className="whiteboard-action-label">
+          {t("whiteboard.trialInfo")}
+        </span>
+      </summary>
       <PrivateAlphaNotice />
     </details>
   );

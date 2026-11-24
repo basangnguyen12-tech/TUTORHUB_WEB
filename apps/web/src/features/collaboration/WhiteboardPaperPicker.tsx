@@ -125,6 +125,7 @@ export function WhiteboardPaperPicker({
         aria-haspopup="dialog"
         className="whiteboard-paper-trigger"
         data-testid="whiteboard-paper-trigger"
+        data-tooltip={t("whiteboard.paper.trigger", { mode: modeName })}
         onClick={() => setOpen((value) => !value)}
         ref={triggerRef}
         type="button"

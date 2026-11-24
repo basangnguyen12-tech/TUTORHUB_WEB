@@ -16,6 +16,7 @@ import type {
   WhiteboardDocument,
 } from "@tutorhub/api-client";
 import { Button } from "@tutorhub/ui";
+import { FileText } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -383,9 +384,16 @@ export function CanonicalExcalidrawCanvas({
             paper={paper}
             readOnly={readOnly}
           />
+          {/*
+            ROOM-MEET-DOCK-04: inside the classroom stylesheet this becomes a
+            32px icon key; the label stays its name and its room tooltip.
+          */}
           <Button
             aria-controls={semanticPanelID}
             aria-expanded={semanticOpen}
+            className="whiteboard-action"
+            data-tooltip={t("whiteboard.readSemantic")}
+            leadingIcon={<FileText />}
             onClick={() => {
               setSemanticOpen(true);
               semanticHeadingRef.current?.focus();
@@ -394,7 +402,9 @@ export function CanonicalExcalidrawCanvas({
             size="sm"
             variant="secondary"
           >
-            {t("whiteboard.readSemantic")}
+            <span className="whiteboard-action-label">
+              {t("whiteboard.readSemantic")}
+            </span>
           </Button>
         </div>
       </div>

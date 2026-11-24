@@ -410,6 +410,11 @@ describe("LazyWhiteboardEngine", () => {
     expect(fallback).toHaveClass("whiteboard-semantic-fallback--collapsed");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(trigger).toHaveAttribute("aria-controls", fallback.id);
+    // ROOM-MEET-DOCK-04: a compact text-view key named by its label.
+    expect(trigger).toHaveAttribute("data-tooltip", "Read whiteboard as text");
+    expect(trigger.querySelector(".whiteboard-action-label")).toHaveTextContent(
+      "Read whiteboard as text",
+    );
     expect(
       screen.getByRole("region", { name: "Interactive whiteboard canvas" }),
     ).toHaveAccessibleDescription(

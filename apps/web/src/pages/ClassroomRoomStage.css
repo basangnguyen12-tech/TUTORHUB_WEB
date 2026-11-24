@@ -299,7 +299,8 @@
 }
 
 /* Effects badge and listen-only badge: thin-vibrancy glass pills. */
-.media-p405-room .media-p405-header-badges span {
+.media-p405-room .media-p405-header-badges > span,
+.media-p405-room .media-p405-effects-badge > span {
   display: inline-flex;
   min-height: 32px;
   align-items: center;
@@ -323,9 +324,54 @@
     color 160ms var(--room-ease-spring);
 }
 
+/*
+ * ROOM-MEET-DOCK-04: header keys are 36px icon-only circles (Google Meet's
+ * top-right cluster). The full name is visually hidden inside each key and
+ * shown by the room tooltip below it.
+ */
+.media-p405-room .media-p405-effects-badge {
+  position: relative;
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.media-p405-room .media-p405-effects-badge > span {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  justify-content: center;
+  padding: 0;
+}
+
 .media-p405-room .media-p405-effects-badge svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
+}
+
+/* An effect is on: a small lit dot on the sapphire key. */
+.media-p405-room .media-p405-effects-badge--on > span::after {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #93c5fd;
+  box-shadow:
+    0 0 0 2px rgb(22 25 34 / 90%),
+    0 0 6px rgb(147 197 253 / 70%);
+  content: "";
+}
+
+.media-p405-room .media-p405-effects-badge:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .media-p405-room .media-p405-effects-badge:hover:not(:disabled) > span {
@@ -360,13 +406,48 @@
 }
 
 .media-p405-room .media-p407-room-actions .th-button {
-  min-height: 32px;
-  padding: 0 14px;
+  position: relative;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
   border-radius: 999px;
   box-shadow: var(--room-shadow-pill);
   font-size: 12.5px;
   font-weight: 600;
   letter-spacing: -0.003em;
+}
+
+.media-p405-room .media-p407-room-actions .th-button__icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+/*
+ * ROOM-MEET-DOCK-04: room-only visually hidden labels. Outside the room
+ * stylesheet (fixtures that load only the base styles) the text stays
+ * visible; inside, the icon keys keep it as their accessible name.
+ */
+.media-p405-room
+  :is(
+    .media-p405-button-label,
+    .whiteboard-action-label,
+    .whiteboard-paper-trigger-label
+  ) {
+  position: absolute;
+  width: 1px;
+  min-width: 0;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .media-p405-room .media-p407-room-actions .th-button--secondary {
@@ -918,8 +999,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  --room-dock-radius: 22px;
-  padding: 6px 10px;
+  /* 44px keys + 6px padding + 1px rim: a 58px Meet-height Dock. */
+  --room-dock-radius: 29px;
+  padding: 6px 8px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: var(--room-dock-radius);
   background: transparent;
@@ -949,33 +1031,43 @@
   gap: 4px;
 }
 
-.media-p405-room .media-p405-dock-divider,
-.media-p405-room .media-p405-dock-caption {
+/*
+ * ROOM-MEET-DOCK-04 — Google Meet icon-only Dock in Liquid Glass. No caption
+ * sits under any icon at any width: every key is a 44px circle, the layout
+ * switch a 44px stadium groove, Leave a ruby end-call pill, and each name
+ * shows in the room tooltip on hover or keyboard focus.
+ */
+.media-p405-room .media-p405-dock-divider {
   display: none;
 }
 
-/* Every Dock control: a 44px rounded icon pill (touch-size). */
+@media (min-width: 768px) {
+  .media-p405-room .media-p405-footer .media-p405-dock-divider {
+    display: block;
+    width: 1px;
+    height: 24px;
+    flex: 0 0 auto;
+    margin: 0 4px;
+    background: var(--room-divider);
+  }
+}
+
+/* Every Dock control: a 44px circular key (touch-size). */
 .media-p405-room .media-p405-dock-button.th-icon-button {
   position: relative;
-  width: auto;
+  width: 44px;
   min-width: 44px;
   height: 44px;
   min-height: 44px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 13px;
-  background: transparent;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 6%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 5%);
   box-shadow: none;
   color: #e5e7eb;
 }
 
-.media-p405-room .media-p405-dock-button .th-icon-button__icon {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
+.media-p405-room .media-p405-dock-button .th-icon-button__icon,
 .media-p405-room .media-p405-dock-icon {
   display: inline-flex;
   align-items: center;
@@ -990,8 +1082,8 @@
 }
 
 .media-p405-room .media-p405-dock-button.th-icon-button:hover:not(:disabled) {
-  border-color: rgb(255 255 255 / 8%);
-  background: rgb(255 255 255 / 9%);
+  border-color: rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 11%);
   color: #fff;
 }
 
@@ -1090,33 +1182,37 @@
   place-items: center;
 }
 
-/* Cluster 3: layout as a recessed macOS segmented control. */
+/* Cluster 3: layout as a recessed stadium groove of 38px round keys. */
 .media-p405-room .media-p405-layout-controls {
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
   padding-left: 0;
   border-left: 0;
 }
 
 .media-p405-room .media-p405-layout-pill {
   display: inline-flex;
+  box-sizing: border-box;
+  min-height: 44px;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  border: 1px solid rgb(0 0 0 / 18%);
-  border-radius: 12px;
+  padding: 3px;
+  border: 0;
+  border-radius: 999px;
   background: var(--room-groove-track);
-  box-shadow: var(--room-groove-track-shadow);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 18%),
+    var(--room-groove-track-shadow);
 }
 
 .media-p405-room .media-p405-layout-button.th-icon-button {
-  width: 40px;
-  min-width: 40px;
+  width: 38px;
+  min-width: 38px;
   height: 38px;
   min-height: 38px;
+  padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 999px;
   background: transparent;
   box-shadow: none;
   color: #cbd5e1;
@@ -1142,19 +1238,21 @@
   color: #fff;
 }
 
-/* Cluster 4: Leave, an anodized ruby key. */
+/* Cluster 4: Leave, a Google Meet end-call pill in anodized ruby. */
 .media-p405-room .media-p405-dock-leave.th-button {
+  position: relative;
+  min-width: 58px;
+  height: 44px;
   min-height: 44px;
-  padding: 0 16px;
+  justify-content: center;
+  gap: 0;
+  padding: 0 18px;
   border: 1px solid #dc2626;
-  border-radius: 13px;
+  border-radius: 999px;
   background-color: #dc2626;
   background-image: var(--room-ruby-sheen);
   box-shadow: var(--room-ruby-shadow);
   color: #fff;
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: -0.003em;
 }
 
 .media-p405-room .media-p405-dock-leave.th-button:hover:not(:disabled) {
@@ -1164,8 +1262,9 @@
 }
 
 .media-p405-room .media-p405-dock-leave .th-button__icon svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
 }
 
 /*
@@ -1180,213 +1279,17 @@
   }
 }
 
-/*
- * Captioned Dock (Teams / TutorHub V1): icon over a short caption, clusters
- * split by thin dividers. Shown from 1024px; while the effects drawer takes
- * 372px the captions wait for 1440px so the Dock never wraps.
- */
-@media (min-width: 1440px) {
-  .media-p405-room .media-p405-footer .media-p405-dock-caption {
-    display: block;
-    color: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    line-height: 1.15;
-    white-space: nowrap;
-  }
-
-  .media-p405-room .media-p405-footer .media-p405-dock-divider {
-    display: block;
-    width: 1px;
-    height: 32px;
-    flex: 0 0 auto;
-    margin: 0 6px;
-    background: var(--room-divider);
-  }
-
-  .media-p405-room .media-p405-footer .media-p405-dock-button.th-icon-button {
-    min-width: 58px;
-    height: 54px;
-    min-height: 54px;
-    padding: 6px 7px 5px;
-  }
-
-  .media-p405-room .media-p405-footer .media-p405-layout-controls {
-    color: #d1d5db;
-  }
-
-  .media-p405-room .media-p405-footer .media-p405-layout-button.th-icon-button {
-    width: 36px;
-    min-width: 36px;
-    height: 30px;
-    min-height: 30px;
-    border-radius: 9px;
-  }
-
-  .media-p405-room .media-p405-footer .media-p405-dock-leave.th-button {
-    min-width: 76px;
-    height: 54px;
-    min-height: 54px;
-    flex-direction: column;
-    gap: 4px;
-    padding: 6px 12px 5px;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-  }
-
-  .media-p405-room
-    .media-p405-footer
-    .media-p405-dock-leave
-    .th-button__icon
-    svg {
-    width: 20px;
-    height: 20px;
-  }
-}
-
+/* Laptops while the effects drawer takes 372px: a tighter Dock. */
 @media (min-width: 1024px) and (max-width: 1439.98px) {
-  .media-p405-room
-    .media-p405-shell:not(.media-p405-shell--effects-open)
-    .media-p405-footer
-    .media-p405-dock-caption {
-    display: block;
-    color: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    line-height: 1.15;
-    white-space: nowrap;
-  }
-
-  .media-p405-room
-    .media-p405-shell:not(.media-p405-shell--effects-open)
-    .media-p405-footer
-    .media-p405-dock-divider {
-    display: block;
-    width: 1px;
-    height: 32px;
-    flex: 0 0 auto;
-    margin: 0 4px;
-    background: var(--room-divider);
-  }
-
-  .media-p405-room
-    .media-p405-shell:not(.media-p405-shell--effects-open)
-    .media-p405-footer
-    .media-p405-dock-button.th-icon-button {
-    min-width: 56px;
-    height: 54px;
-    min-height: 54px;
-    padding: 6px 5px 5px;
-  }
-
-  .media-p405-room
-    .media-p405-shell:not(.media-p405-shell--effects-open)
-    .media-p405-footer
-    .media-p405-layout-controls {
-    color: #d1d5db;
-  }
-
-  .media-p405-room
-    .media-p405-shell:not(.media-p405-shell--effects-open)
-    .media-p405-footer
-    .media-p405-layout-button.th-icon-button {
-    width: 34px;
-    min-width: 34px;
-    height: 30px;
-    min-height: 30px;
-    border-radius: 9px;
-  }
-
-  .media-p405-room
-    .media-p405-shell:not(.media-p405-shell--effects-open)
-    .media-p405-footer
-    .media-p405-dock-leave.th-button {
-    min-width: 72px;
-    height: 54px;
-    min-height: 54px;
-    flex-direction: column;
-    gap: 4px;
-    padding: 6px 10px 5px;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-  }
-
-  .media-p405-room
-    .media-p405-shell:not(.media-p405-shell--effects-open)
-    .media-p405-footer
-    .media-p405-dock-leave
-    .th-button__icon
-    svg {
-    width: 20px;
-    height: 20px;
-  }
-}
-
-/*
- * Tablets, and laptops while the effects drawer takes 372px: Leave keeps its
- * text as the accessible name but shows only the icon, so the Dock fits one
- * row; the header may wrap instead of sliding under the drawer.
- */
-@media (min-width: 768px) and (max-width: 1023.98px) {
-  .media-p405-room .media-p405-dock-leave.th-button {
-    position: relative;
-    min-width: 52px;
-    padding: 0 14px;
-  }
-
-  .media-p405-room .media-p405-dock-leave > span:not(.th-button__icon) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-
-@media (min-width: 1024px) and (max-width: 1439.98px) {
-  .media-p405-room
-    .media-p405-shell--effects-open
-    .media-p405-dock-leave.th-button {
-    position: relative;
-    min-width: 52px;
-    padding: 0 14px;
-  }
-
-  .media-p405-room
-    .media-p405-shell--effects-open
-    .media-p405-dock-leave
-    > span:not(.th-button__icon) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
   .media-p405-room .media-p405-shell--effects-open .media-p405-toolbar {
     gap: 2px;
   }
 
   .media-p405-room
     .media-p405-shell--effects-open
-    .media-p405-dock-button.th-icon-button {
-    min-width: 40px;
-    padding: 0 8px;
-  }
-
-  .media-p405-room
-    .media-p405-shell--effects-open
-    .media-p405-layout-button.th-icon-button {
-    width: 36px;
-    min-width: 36px;
+    .media-p405-footer
+    .media-p405-dock-divider {
+    margin: 0 2px;
   }
 
   .media-p405-room .media-p405-shell--effects-open .media-p405-header {
@@ -1945,6 +1848,185 @@
   outline-offset: 2px;
 }
 
+/* ---- ROOM-MEET-DOCK-04: compact whiteboard keys ----------------------
+ * Close (30px), the whiteboard actions and the text view (32px) become
+ * round icon keys; the paper picker shrinks to its paper swatch and caret.
+ * Every name stays the accessible name and shows in the room tooltip.
+ */
+.media-p405-room .media-p506-tool-stage__close.th-button {
+  position: relative;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  gap: 0;
+  padding: 0;
+}
+
+.media-p405-room .media-p506-tool-stage__close .th-button__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.media-p405-room .whiteboard-action.th-button,
+.media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
+  position: relative;
+  display: inline-flex;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.media-p405-room .whiteboard-action .th-button__icon svg,
+.media-p405-room .whiteboard-action-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.media-p405-room .whiteboard-action.th-button--secondary,
+.media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
+  border: 1px solid rgb(255 255 255 / 13%);
+  background: var(--room-glass-thin);
+  box-shadow: var(--room-shadow-pill);
+  color: #e5e7eb;
+}
+
+/* The trial notice keeps its amber hint on the glass key. */
+.media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
+  color: #fcd34d;
+  cursor: pointer;
+}
+
+.media-p405-room .whiteboard-action.th-button--secondary:hover:not(:disabled),
+.media-p405-room
+  .whiteboard-trial-disclosure
+  > summary.whiteboard-action:hover {
+  border-color: rgb(255 255 255 / 20%);
+  background: var(--room-keycap-hover);
+}
+
+.media-p405-room
+  .whiteboard-trial-disclosure[open]
+  > summary.whiteboard-action {
+  border-color: var(--room-sapphire-rim);
+  background: var(--room-sapphire);
+  box-shadow: var(--room-sapphire-shadow);
+}
+
+.media-p405-room .whiteboard-action.th-button--primary,
+.media-p405-room .whiteboard-action.th-button--primary:hover:not(:disabled) {
+  border-color: var(--room-sapphire-rim);
+  background: var(--room-sapphire);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #eff6ff;
+}
+
+.media-p405-room .whiteboard-action.th-button--danger,
+.media-p405-room .whiteboard-action.th-button--danger:hover:not(:disabled) {
+  border-color: #dc2626;
+  background-color: #dc2626;
+  background-image: var(--room-ruby-sheen);
+  box-shadow: var(--room-ruby-shadow-sm);
+  color: #fff;
+}
+
+.media-p405-room .whiteboard-action.th-button--danger:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background-color: #b91c1c;
+}
+
+.media-p405-room .whiteboard-action:focus-visible {
+  outline: 2px solid var(--room-focus-ring);
+  outline-offset: 2px;
+}
+
+.media-p405-room .whiteboard-paper-trigger {
+  position: relative;
+  gap: 5px;
+  padding: 0 9px 0 7px;
+}
+
+.media-p405-room .whiteboard-paper-trigger .whiteboard-paper-swatch--chip {
+  width: 22px;
+  height: 15px;
+}
+
+/* ---- ROOM-MEET-DOCK-04: the room tooltip ------------------------------
+ * A Material plain tooltip in dark Liquid Glass: above Dock keys (10px),
+ * below header and titlebar keys (8px), clamped 8px inside the viewport by
+ * `RoomTooltipLayer`. #f8fafc on the 94% ink reads above 13:1.
+ */
+.media-p405-room .media-p405-tooltip {
+  --room-tooltip-from: translateY(4px) scale(0.97);
+  z-index: 80;
+  padding: 5px 10px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 8px;
+  background: rgb(18 21 29 / 94%);
+  -webkit-backdrop-filter: blur(14px) saturate(170%);
+  backdrop-filter: blur(14px) saturate(170%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  color: #f8fafc;
+  font-family: var(--font-family-sans);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.media-p405-room .media-p405-tooltip[data-side="bottom"] {
+  --room-tooltip-from: translateY(-4px) scale(0.97);
+}
+
+.media-p405-room .media-p405-tooltip[data-state="open"]:not([data-instant]) {
+  animation: room-tooltip-in 130ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes room-tooltip-in {
+  from {
+    opacity: 0;
+    transform: var(--room-tooltip-from);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- ROOM-MEET-DOCK-04: an empty camera rail disappears ---------------
+ * With one person in speaker view the stage already shows them; the rail
+ * would only print "no participant video". Hide it and give the stage the
+ * whole row (or the whole strip beside the whiteboard).
+ */
+.media-p405-room .media-p405-rail:has(> .media-p405-empty) {
+  display: none;
+}
+
+.media-p405-room
+  .media-p405-classroom:not(.media-p405-classroom--tool-stage):has(
+    > .media-p405-rail > .media-p405-empty
+  ) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 960px) {
+  .media-p405-room
+    .media-p405-classroom--tool-stage:has(
+      > .media-p405-rail > .media-p405-empty
+    )
+    > .media-p405-stage {
+    grid-row: 1 / -1;
+  }
+}
+
 /* Split view: central tool stage + 256px camera strip on the right. */
 .media-p405-room .media-p405-classroom--tool-stage {
   grid-template-columns: minmax(0, 1fr) 256px;
@@ -2096,7 +2178,15 @@
   }
 
   .media-p405-room .media-p407-room-actions .th-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
     min-height: 44px;
+  }
+
+  .media-p405-room .media-p405-effects-badge > span {
+    width: 44px;
+    height: 44px;
   }
 
   .media-p405-room .media-p405-footer {
@@ -2132,7 +2222,8 @@
     .media-p405-tile-meta .th-button,
     .media-p407-room-actions .th-button,
     .media-p405-shell > .th-button,
-    .media-p506-tool-stage__header .th-button
+    .media-p506-tool-stage__header .th-button,
+    .whiteboard-action
   ) {
   transition:
     background-color 180ms var(--room-ease-spring),
@@ -2152,7 +2243,8 @@
     .media-p405-tile-meta .th-button,
     .media-p407-room-actions .th-button,
     .media-p405-shell > .th-button,
-    .media-p506-tool-stage__header .th-button
+    .media-p506-tool-stage__header .th-button,
+    .whiteboard-action
   ):hover:not(:disabled) {
   transform: none;
 }
@@ -2166,7 +2258,8 @@
     .media-p405-tile-meta .th-button,
     .media-p407-room-actions .th-button,
     .media-p405-shell > .th-button,
-    .media-p506-tool-stage__header .th-button
+    .media-p506-tool-stage__header .th-button,
+    .whiteboard-action
   ):active:not(:disabled) {
   transform: scale(var(--room-press-scale));
 }
@@ -2291,7 +2384,9 @@
   .media-p405-room .media-p407-room-actions .th-button,
   .media-p405-room .media-p405-shell > .th-button,
   .media-p405-room .media-p405-tile-meta .th-button,
-  .media-p506-tool-stage__header .th-button {
+  .media-p506-tool-stage__header .th-button,
+  .media-p405-room .whiteboard-action.th-button,
+  .media-p405-room .whiteboard-trial-disclosure > summary.whiteboard-action {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     border: 1px solid ButtonText;
@@ -2300,6 +2395,22 @@
     color: ButtonText;
     forced-color-adjust: none;
     opacity: 1;
+  }
+
+  /* The room tooltip: an opaque system pill with a solid rim. */
+  .media-p405-room .media-p405-tooltip {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border: 1px solid CanvasText;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .media-p405-room .media-p405-effects-badge--on > span::after {
+    background: Highlight;
+    box-shadow: none;
   }
 
   .media-p405-room
@@ -2326,7 +2437,8 @@
       .media-p407-room-actions .th-button,
       .media-p405-shell > .th-button,
       .media-p405-tile-meta .th-button,
-      .media-p506-tool-stage__header .th-button
+      .media-p506-tool-stage__header .th-button,
+      .whiteboard-action
     ):hover:not(:disabled) {
     border-color: Highlight;
     background: ButtonFace;
@@ -2356,7 +2468,8 @@
     color: GrayText;
   }
 
-  .media-p405-room .media-p405-header-badges span,
+  .media-p405-room .media-p405-header-badges > span,
+  .media-p405-room .media-p405-effects-badge > span,
   .media-p405-room .media-p405-tile-meta > span,
   .media-p406-lobby-banner,
   .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-role,
@@ -2515,11 +2628,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .media-p405-room .media-p405-tooltip[data-state="open"]:not([data-instant]) {
+    animation: none;
+  }
+
   .media-p405-room .media-p405-shell.media-p405-shell--effects-open,
   .media-p405-room .media-p405-tile,
   .media-p405-room .media-p405-tile::after,
   .media-p405-room .media-p405-tile-meta .th-button,
-  .media-p405-room .media-p405-header-badges span,
+  .media-p405-room .media-p405-header-badges > span,
+  .media-p405-room .media-p405-effects-badge > span,
   .media-p405-room .media-p405-device-panel select,
   .media-p406-reaction-menu .th-menu-item,
   .media-p406-reaction-menu .th-menu-item > span[aria-hidden="true"],
@@ -2532,7 +2650,8 @@
       .media-p405-tile-meta .th-button,
       .media-p407-room-actions .th-button,
       .media-p405-shell > .th-button,
-      .media-p506-tool-stage__header .th-button
+      .media-p506-tool-stage__header .th-button,
+      .whiteboard-action
     ) {
     transition: none;
   }
@@ -2560,7 +2679,8 @@
       .media-p405-tile-meta .th-button,
       .media-p407-room-actions .th-button,
       .media-p405-shell > .th-button,
-      .media-p506-tool-stage__header .th-button
+      .media-p506-tool-stage__header .th-button,
+      .whiteboard-action
     ):is(:hover, :active):not(:disabled),
   .media-p406-reaction-menu
     .th-menu-item[data-highlighted]

@@ -247,6 +247,14 @@ describe("ClassroomWhiteboardTool", () => {
     expect(disclosure?.querySelector("summary")).toHaveTextContent(
       "Trial info",
     );
+    // ROOM-MEET-DOCK-04: an Info key whose label feeds the room tooltip.
+    expect(disclosure?.querySelector("summary")).toHaveAttribute(
+      "data-tooltip",
+      "Trial info",
+    );
+    expect(
+      disclosure?.querySelector("summary .whiteboard-action-icon"),
+    ).toHaveAttribute("aria-hidden", "true");
     expect(
       disclosure?.querySelector(".whiteboard-private-alpha-notice"),
     ).not.toBeNull();
@@ -430,7 +438,12 @@ describe("ClassroomWhiteboardTool", () => {
     });
     const view = renderTool({ autoStart: true });
 
-    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
+    // ROOM-MEET-DOCK-04: Pause icon + label that names the key and its tooltip.
+    const suspend = screen.getByRole("button", { name: "Suspend" });
+    expect(suspend).toHaveAttribute("data-tooltip", "Suspend");
+    expect(suspend).toHaveClass("whiteboard-action");
+    expect(suspend.querySelector(".th-button__icon svg")).not.toBeNull();
+    fireEvent.click(suspend);
     expect(transition).toHaveBeenCalledWith({
       document: presenting,
       operation: "suspend",

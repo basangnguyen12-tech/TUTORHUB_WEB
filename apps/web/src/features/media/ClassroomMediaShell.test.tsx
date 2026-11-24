@@ -1502,6 +1502,240 @@ describe("ClassroomMediaShell", () => {
     focus.mockRestore();
   });
 
+  describe("ROOM-MEET-DOCK-04 room tooltip", () => {
+    const roomTooltip = () => screen.getByTestId("room-tooltip");
+    const hover = (element: HTMLElement, pointerType = "mouse") =>
+      fireEvent.pointerOver(element, { pointerType });
+    const leave = (element: HTMLElement, next: Element | null = null) =>
+      fireEvent.pointerOut(element, {
+        pointerType: "mouse",
+        relatedTarget: next,
+      });
+    const advance = (milliseconds: number) =>
+      act(() => {
+        vi.advanceTimersByTime(milliseconds);
+      });
+    const studioShell = () =>
+      renderShell({
+        moderation: {
+          canEndRoom: true,
+          canLockRoom: true,
+          mutationState: { status: "idle" },
+          onDemoteCoHost: vi.fn(),
+          onEndRoom: vi.fn(),
+          onPromoteCoHost: vi.fn(),
+          onRemoteMute: vi.fn(),
+          onRemoveParticipant: vi.fn(),
+          onSetRoomLocked: vi.fn(),
+          participantOperations: [],
+          providerEffect: { status: "idle" },
+          roomLocked: false,
+        },
+        signals: createSignalControls(),
+        tools: [
+          {
+            content: <TestWhiteboardTool />,
+            icon: <span aria-hidden="true">W</span>,
+            id: "whiteboard",
+            label: "Open whiteboard",
+            title: "Classroom whiteboard",
+          },
+        ],
+      });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      liveKitState.cameraTrackRefs = createCameraTracks(2);
+      liveKitState.audioTrackRefs = createAudioTracks(2);
+    });
+
+    it("mounts one hidden, aria-hidden layer at the end of the shell", () => {
+      const { container } = studioShell();
+      const tooltip = roomTooltip();
+      expect(tooltip).toHaveAttribute("aria-hidden", "true");
+      expect(tooltip).not.toBeVisible();
+      expect(tooltip).toHaveAttribute("data-state", "closed");
+      expect(
+        container.querySelector(".media-p405-shell")?.lastElementChild,
+      ).toBe(tooltip);
+      // The tooltip never names or describes a control a second time.
+      expect(
+        document.querySelector("[aria-describedby='room-tooltip']"),
+      ).toBeNull();
+    });
+
+    it("waits 140ms on a first hover, then hands off to the next key at once", () => {
+      studioShell();
+      const share = screen.getByRole("button", { name: "Share screen" });
+      const devices = screen.getByRole("button", { name: "Devices" });
+
+      hover(share);
+      advance(139);
+      expect(roomTooltip()).not.toBeVisible();
+      advance(1);
+      expect(roomTooltip()).toBeVisible();
+      expect(roomTooltip()).toHaveTextContent("Share screen");
+      expect(roomTooltip()).toHaveAttribute("data-state", "open");
+      expect(roomTooltip()).not.toHaveAttribute("data-instant");
+
+      // Warm hand-off: sliding along the Dock moves the tooltip with 0ms.
+      leave(share, devices);
+      hover(devices);
+      expect(roomTooltip()).toBeVisible();
+      expect(roomTooltip()).toHaveTextContent("Devices");
+      expect(roomTooltip()).toHaveAttribute("data-instant", "true");
+
+      // After the 400ms warm window a fresh hover waits again.
+      leave(devices);
+      expect(roomTooltip()).not.toBeVisible();
+      advance(401);
+      hover(share);
+      expect(roomTooltip()).not.toBeVisible();
+      advance(140);
+      expect(roomTooltip()).toHaveTextContent("Share screen");
+    });
+
+    it("stays quiet while the pointer sweeps across the Dock and never shows for touch", () => {
+      studioShell();
+      const share = screen.getByRole("button", { name: "Share screen" });
+      const devices = screen.getByRole("button", { name: "Devices" });
+
+      hover(share);
+      advance(80);
+      leave(share, devices);
+      hover(devices);
+      advance(80);
+      expect(roomTooltip()).not.toBeVisible();
+      leave(devices);
+      advance(500);
+      expect(roomTooltip()).not.toBeVisible();
+
+      hover(share, "touch");
+      advance(1_000);
+      expect(roomTooltip()).not.toBeVisible();
+    });
+
+    it("shows at once for keyboard focus and follows the control's live name", async () => {
+      studioShell();
+      const camera = screen.getByRole("button", { name: "Turn camera on" });
+      // A Tab press: the room now treats focus moves as keyboard focus.
+      fireEvent.keyDown(document.body, { key: "Tab" });
+      act(() => camera.focus());
+      expect(roomTooltip()).toBeVisible();
+      expect(roomTooltip()).toHaveTextContent("Turn camera on");
+
+      // Space/Enter toggles the camera: the same open tooltip renames itself.
+      fireEvent.click(camera);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const cameraOn = screen.getByRole("button", { name: "Turn camera off" });
+      expect(cameraOn).toHaveAttribute("data-tooltip", "Turn camera off");
+      expect(roomTooltip()).toHaveTextContent("Turn camera off");
+
+      // Roving to the next key moves the tooltip with it.
+      fireEvent.keyDown(cameraOn, { key: "ArrowRight" });
+      expect(roomTooltip()).toHaveTextContent("Share screen");
+    });
+
+    it("hides on Escape without moving focus and on any press", () => {
+      studioShell();
+      const devices = screen.getByRole("button", { name: "Devices" });
+      fireEvent.keyDown(document.body, { key: "Tab" });
+      act(() => devices.focus());
+      expect(roomTooltip()).toHaveTextContent("Devices");
+
+      fireEvent.keyDown(devices, { key: "Escape" });
+      expect(roomTooltip()).not.toBeVisible();
+      expect(devices).toHaveFocus();
+      // Dismissed while the pointer stays on the key.
+      hover(devices);
+      advance(500);
+      expect(roomTooltip()).not.toBeVisible();
+      leave(devices);
+
+      const share = screen.getByRole("button", { name: "Share screen" });
+      hover(share);
+      advance(140);
+      expect(roomTooltip()).toHaveTextContent("Share screen");
+      fireEvent.pointerDown(share, { pointerType: "mouse" });
+      expect(roomTooltip()).not.toBeVisible();
+
+      // The focus a click leaves behind (pointer modality) stays silent.
+      leave(share);
+      act(() => share.focus());
+      expect(roomTooltip()).not.toBeVisible();
+    });
+
+    it("never covers the popover, menu or drawer its control opens", async () => {
+      studioShell();
+      const devices = screen.getByRole("button", { name: "Devices" });
+      hover(devices);
+      advance(140);
+      expect(roomTooltip()).toHaveTextContent("Devices");
+
+      // A keyboard activation fires no pointerdown: the observer still hides
+      // the tooltip as soon as the control reports aria-expanded="true".
+      fireEvent.click(devices);
+      expect(devices).toHaveAttribute("aria-expanded", "true");
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(roomTooltip()).not.toBeVisible();
+
+      // An already expanded control does not show a tooltip at all.
+      leave(devices);
+      advance(500);
+      hover(devices);
+      advance(500);
+      expect(roomTooltip()).not.toBeVisible();
+    });
+
+    it("keeps the whiteboard key's name while its stage is open beside it", () => {
+      studioShell();
+      const board = screen.getByRole("button", { name: "Open whiteboard" });
+      fireEvent.click(board);
+      expect(board).toHaveAttribute("aria-expanded", "true");
+      hover(board);
+      advance(140);
+      expect(roomTooltip()).toHaveTextContent("Open whiteboard");
+    });
+
+    it("turns the header and tool titlebar into named icon keys whose tooltips hang below", () => {
+      studioShell();
+      const effects = screen.getByRole("button", { name: "Effects: None" });
+      expect(effects).toHaveAttribute("data-tooltip", "Effects: None");
+      expect(effects).toHaveAttribute("data-tooltip-side", "bottom");
+      expect(effects.querySelector(".media-p405-sr-only")).toHaveTextContent(
+        "Effects: None",
+      );
+      for (const name of ["Lock room", "End room"]) {
+        const control = screen.getByRole("button", { name });
+        expect(control).toHaveAttribute("data-tooltip", name);
+        expect(control).toHaveAttribute("data-tooltip-side", "bottom");
+        expect(
+          control.querySelector(".media-p405-button-label"),
+        ).toHaveTextContent(name);
+      }
+
+      fireEvent.click(screen.getByRole("button", { name: "Open whiteboard" }));
+      const close = screen
+        .getAllByRole("button", { name: "Close" })
+        .find((button) =>
+          button.classList.contains("media-p506-tool-stage__close"),
+        );
+      expect(close).toHaveAttribute("data-tooltip", "Close");
+      expect(close?.textContent?.trim()).toBe("Close");
+      hover(close as HTMLElement);
+      advance(140);
+      expect(roomTooltip()).toHaveTextContent("Close");
+      expect(roomTooltip()).toHaveAttribute("data-side", "bottom");
+    });
+  });
+
   describe("ROOM-STUDIO-02 studio surface", () => {
     it.each([
       { participants: 1, tiles: 1 },
@@ -1571,7 +1805,7 @@ describe("ClassroomMediaShell", () => {
       expect(clock()).toHaveTextContent("00:03");
     });
 
-    it("adds decorative captions and cluster dividers without changing names or roving order", () => {
+    it("keeps an icon-only Dock with cluster dividers without changing names or roving order", () => {
       liveKitState.cameraTrackRefs = createCameraTracks(5);
       liveKitState.audioTrackRefs = createAudioTracks(5);
       renderShell({
@@ -1610,29 +1844,32 @@ describe("ClassroomMediaShell", () => {
         "layout-active-speaker",
         "layout-presentation",
       ]);
-      for (const [name, caption] of [
-        ["Turn microphone on", "Mic"],
-        ["Turn camera on", "Camera"],
-        ["Share screen", "Share"],
-        ["Devices", "Setup"],
-        ["Backgrounds and effects", "Effects"],
-        ["Raise hand", "Raise"],
-        ["Send a reaction", "React"],
-        ["Open in-room chat", "Chat"],
-        ["Open whiteboard", "Board"],
-        ["Open classroom roster", "People"],
-      ] as const) {
+      // ROOM-MEET-DOCK-04: no caption under any icon; each key carries its
+      // full accessible name as the room tooltip instead.
+      expect(document.querySelector(".media-p405-dock-caption")).toBeNull();
+      for (const name of [
+        "Turn microphone on",
+        "Turn camera on",
+        "Share screen",
+        "Devices",
+        "Backgrounds and effects",
+        "Raise hand",
+        "Send a reaction",
+        "Open in-room chat",
+        "Open whiteboard",
+        "Open classroom roster",
+        "Grid",
+        "Active speaker",
+        "Presentation",
+      ]) {
         const button = within(toolbar).getByRole("button", { name });
-        const captionElement = button.querySelector(".media-p405-dock-caption");
-        expect(captionElement).toHaveTextContent(caption);
-        expect(captionElement).toHaveAttribute("aria-hidden", "true");
+        expect(button).toHaveAttribute("data-tooltip", name);
       }
-      const layoutGroup = within(toolbar).getByRole("group", {
-        name: "Layout mode",
-      });
-      expect(
-        layoutGroup.querySelector(".media-p405-dock-caption"),
-      ).toHaveAttribute("aria-hidden", "true");
+      const leave = screen.getByRole("button", { name: "Leave room" });
+      expect(leave).toHaveAttribute("data-tooltip", "Leave room");
+      expect(leave.querySelector(".media-p405-sr-only")).toHaveTextContent(
+        "Leave room",
+      );
       const dividers = document.querySelectorAll(".media-p405-dock-divider");
       expect(dividers).toHaveLength(3);
       dividers.forEach((divider) => {

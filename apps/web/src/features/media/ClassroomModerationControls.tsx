@@ -121,6 +121,9 @@ export function ClassroomModerationControls({
   const endTrigger = useRef<HTMLButtonElement>(null);
   const busy = moderationBusy(controls);
   const status = moderationStatus(controls);
+  const lockLabel = t(
+    controls.roomLocked ? "media.p407.unlockRoom" : "media.p407.lockRoom",
+  );
 
   useEffect(() => {
     if (
@@ -146,9 +149,17 @@ export function ClassroomModerationControls({
       className="media-p407-room-controls"
     >
       <div className="media-p407-room-actions" role="group">
+        {/*
+          ROOM-MEET-DOCK-04: inside the classroom stylesheet the label span
+          is hidden visually (36px round icon keys) and the room tooltip shows
+          it; every other host keeps the visible text. The label always stays
+          the accessible name.
+        */}
         {controls.canLockRoom && (
           <Button
             aria-pressed={controls.roomLocked}
+            data-tooltip={lockLabel}
+            data-tooltip-side="bottom"
             disabled={disabled || busy}
             leadingIcon={controls.roomLocked ? <Unlock /> : <Lock />}
             onClick={() =>
@@ -159,16 +170,14 @@ export function ClassroomModerationControls({
             size="sm"
             variant={controls.roomLocked ? "primary" : "secondary"}
           >
-            {t(
-              controls.roomLocked
-                ? "media.p407.unlockRoom"
-                : "media.p407.lockRoom",
-            )}
+            <span className="media-p405-button-label">{lockLabel}</span>
           </Button>
         )}
 
         {controls.canEndRoom && (
           <Button
+            data-tooltip={t("media.p407.endRoom")}
+            data-tooltip-side="bottom"
             disabled={disabled || busy}
             leadingIcon={<LogOut />}
             onClick={() => setEndDialogOpen(true)}
@@ -176,7 +185,9 @@ export function ClassroomModerationControls({
             size="sm"
             variant="danger"
           >
-            {t("media.p407.endRoom")}
+            <span className="media-p405-button-label">
+              {t("media.p407.endRoom")}
+            </span>
           </Button>
         )}
       </div>
