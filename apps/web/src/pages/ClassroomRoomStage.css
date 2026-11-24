@@ -12,7 +12,129 @@
  *
  * Every rule is scoped to `.media-p405-room` or to a classroom portal class,
  * so the base styles that the deterministic fixtures load stay untouched.
+ *
+ * ROOM-MACOS-03 — Liquid Glass studio: a deep ambient floor, multi-layer
+ * translucent glass (Dock, popovers, inspector drawers), a specular top rim
+ * on every floating surface and springy, reduced-motion-aware key presses.
+ * The material tokens below are local to the room and its dark portals; the
+ * global design tokens are not touched.
  */
+
+.media-p403-room.media-p405-room,
+.media-p405-effects-drawer,
+.media-p406-roster-drawer,
+.media-p408-chat-drawer,
+.media-p405-drawer,
+.media-p406-reaction-menu,
+.media-p407-participant-menu {
+  /* Apple HIG type first; buttons read the stack through the token. */
+  --font-family-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter",
+    "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --room-ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --room-press-scale: 0.965;
+
+  /* Glass materials: thick (Dock), popover (Control Center), drawer
+     (inspector) and thin (pills). Popover and drawer glass is denser than
+     the Dock because it can sit over a bright live video frame. */
+  --room-glass-thick: linear-gradient(
+    180deg,
+    rgb(44 49 62 / 72%) 0%,
+    rgb(22 25 34 / 82%) 100%
+  );
+  --room-glass-popover: linear-gradient(
+    180deg,
+    rgb(40 45 58 / 84%) 0%,
+    rgb(22 25 34 / 90%) 100%
+  );
+  --room-glass-drawer: linear-gradient(
+    180deg,
+    rgb(32 36 46 / 88%) 0%,
+    rgb(18 21 28 / 92%) 100%
+  );
+  --room-glass-thin: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 11%) 0%,
+    rgb(255 255 255 / 5.5%) 100%
+  );
+  --room-blur-thick: blur(28px) saturate(185%);
+  --room-blur-popover: blur(30px) saturate(190%);
+  --room-blur-drawer: blur(32px) saturate(180%);
+  --room-blur-thin: blur(18px) saturate(165%);
+
+  /* Specular rim and elevation. */
+  --room-rim: rgb(255 255 255 / 13%);
+  --room-rim-strong: rgb(255 255 255 / 15%);
+  --room-rim-soft: rgb(255 255 255 / 8%);
+  --room-shadow-float:
+    inset 0 1px 0 rgb(255 255 255 / 16%), 0 2px 6px rgb(0 0 0 / 28%),
+    0 24px 56px -10px rgb(0 0 0 / 62%);
+  --room-shadow-keycap:
+    inset 0 1px 0 rgb(255 255 255 / 15%), 0 2px 5px rgb(0 0 0 / 22%);
+  --room-shadow-pill:
+    inset 0 1px 0 rgb(255 255 255 / 16%), 0 1px 3px rgb(0 0 0 / 24%);
+
+  /* Keycap fills. */
+  --room-keycap: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 12%) 0%,
+    rgb(255 255 255 / 6%) 100%
+  );
+  --room-keycap-hover: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 16%) 0%,
+    rgb(255 255 255 / 9%) 100%
+  );
+  --room-sapphire: linear-gradient(
+    180deg,
+    rgb(59 130 246 / 34%) 0%,
+    rgb(37 99 235 / 22%) 100%
+  );
+  --room-sapphire-hover: linear-gradient(
+    180deg,
+    rgb(59 130 246 / 42%) 0%,
+    rgb(37 99 235 / 28%) 100%
+  );
+  --room-sapphire-rim: rgb(147 197 253 / 44%);
+  --room-sapphire-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 22%), 0 6px 16px -4px rgb(37 99 235 / 32%);
+  /* Anodized ruby: background-color stays #dc2626 (4.83:1 with white); the
+     sheen fades out by 40% so the label band keeps >= 4.5:1. */
+  --room-ruby-sheen: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 14%) 0%,
+    rgb(255 255 255 / 0%) 40%,
+    rgb(0 0 0 / 0%) 55%,
+    rgb(0 0 0 / 14%) 100%
+  );
+  --room-ruby-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 28%), 0 8px 20px -4px rgb(220 38 38 / 45%);
+  /* 32px header pills: a tighter glow so the ruby does not bloom. */
+  --room-ruby-shadow-sm:
+    inset 0 1px 0 rgb(255 255 255 / 28%), 0 6px 14px -6px rgb(220 38 38 / 45%);
+  --room-groove-track: rgb(0 0 0 / 28%);
+  --room-groove-track-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 38%), 0 1px 0 rgb(255 255 255 / 7%);
+  --room-groove-knob: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 20%) 0%,
+    rgb(255 255 255 / 12%) 100%
+  );
+  --room-groove-knob-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 24%), 0 2px 6px rgb(0 0 0 / 32%);
+  --room-divider: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0%) 0%,
+    rgb(255 255 255 / 18%) 50%,
+    rgb(255 255 255 / 0%) 100%
+  );
+  --room-focus-ring: #93c5fd;
+
+  font-family: var(--font-family-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 
 .media-p403-room.media-p405-room {
   display: flex;
@@ -24,7 +146,7 @@
   flex-direction: column;
   padding: 0;
   overflow: hidden;
-  background: #111318;
+  background: #0a0c10;
   color: #f3f4f6;
 }
 
@@ -52,7 +174,14 @@
   gap: 10px;
   padding: 10px 16px 12px;
   overflow: hidden;
-  background: #111318;
+  /* FaceTime-studio floor: a faint overhead glow the glass can refract. */
+  background: radial-gradient(
+      90% 65% at 50% 0%,
+      #1a2030 0%,
+      #10131b 58%,
+      #0b0d13 100%
+    )
+    #0b0d13;
 }
 
 .media-p405-room .media-p405-shell > * {
@@ -109,7 +238,7 @@
   color: #f3f4f6;
   font-size: 15px;
   font-weight: 600;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.012em;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -119,16 +248,28 @@
   width: 1px;
   height: 16px;
   flex: 0 0 auto;
-  background: rgb(255 255 255 / 16%);
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0%),
+    rgb(255 255 255 / 20%),
+    rgb(255 255 255 / 0%)
+  );
 }
 
+/* The live clock reads like a Control Center capsule. */
 .media-p405-session-clock {
   flex: 0 0 auto;
+  padding: 3px 9px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 7%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
   color: #e5e7eb;
-  font-size: 14px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.02em;
+  line-height: 1.25;
 }
 
 .media-p405-room .media-p405-header p {
@@ -138,6 +279,7 @@
   overflow: hidden;
   color: #9ca3af;
   font-size: 12.5px;
+  letter-spacing: -0.003em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -156,24 +298,29 @@
   gap: 8px;
 }
 
-/* Effects badge and listen-only badge: slim glass pills. */
+/* Effects badge and listen-only badge: thin-vibrancy glass pills. */
 .media-p405-room .media-p405-header-badges span {
   display: inline-flex;
   min-height: 32px;
   align-items: center;
   gap: 6px;
   padding: 0 12px;
-  border: 1px solid rgb(255 255 255 / 12%);
+  border: 1px solid var(--room-rim);
   border-radius: 999px;
-  background: rgb(255 255 255 / 6%);
-  color: #d1d5db;
+  background: var(--room-glass-thin);
+  -webkit-backdrop-filter: var(--room-blur-thin);
+  backdrop-filter: var(--room-blur-thin);
+  box-shadow: var(--room-shadow-pill);
+  color: #e5e7eb;
   font-size: 12.5px;
   font-weight: 500;
+  letter-spacing: -0.003em;
   white-space: nowrap;
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
+    background-color 160ms var(--room-ease-spring),
+    border-color 160ms var(--room-ease-spring),
+    box-shadow 160ms var(--room-ease-spring),
+    color 160ms var(--room-ease-spring);
 }
 
 .media-p405-room .media-p405-effects-badge svg {
@@ -182,24 +329,25 @@
 }
 
 .media-p405-room .media-p405-effects-badge:hover:not(:disabled) > span {
-  border-color: rgb(255 255 255 / 22%);
-  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 20%);
+  background: var(--room-keycap-hover);
   color: #f9fafb;
 }
 
 .media-p405-room .media-p405-effects-badge--on > span,
 .media-p405-room .media-p405-effects-badge[aria-expanded="true"] > span {
-  border-color: rgb(96 165 250 / 45%);
-  background: rgb(59 130 246 / 18%);
-  color: #bfdbfe;
+  border-color: var(--room-sapphire-rim);
+  background: var(--room-sapphire);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #dbeafe;
 }
 
 .media-p405-room .media-p405-effects-badge:focus-visible {
-  outline: 2px solid #93c5fd;
+  outline: 2px solid var(--room-focus-ring);
   outline-offset: 2px;
 }
 
-/* Moderation (Lock room / End room) as matching 32px pills. */
+/* Moderation (Lock room / End room) as matching 32px glass pills. */
 .media-p405-room .media-p407-room-controls {
   gap: 8px;
   padding: 0;
@@ -215,40 +363,54 @@
   min-height: 32px;
   padding: 0 14px;
   border-radius: 999px;
+  box-shadow: var(--room-shadow-pill);
   font-size: 12.5px;
   font-weight: 600;
-  box-shadow: none;
+  letter-spacing: -0.003em;
 }
 
 .media-p405-room .media-p407-room-actions .th-button--secondary {
-  border-color: rgb(255 255 255 / 12%);
-  background: rgb(255 255 255 / 6%);
+  border-color: var(--room-rim);
+  background: var(--room-glass-thin);
+  -webkit-backdrop-filter: var(--room-blur-thin);
+  backdrop-filter: var(--room-blur-thin);
   color: #e5e7eb;
 }
 
 .media-p405-room
   .media-p407-room-actions
   .th-button--secondary:hover:not(:disabled) {
-  border-color: rgb(255 255 255 / 22%);
-  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 20%);
+  background: var(--room-keycap-hover);
   color: #f9fafb;
 }
 
-.media-p405-room .media-p407-room-actions .th-button--primary {
-  border-color: rgb(96 165 250 / 45%);
-  background: rgb(59 130 246 / 22%);
-  color: #bfdbfe;
+.media-p405-room .media-p407-room-actions .th-button--primary,
+.media-p405-room
+  .media-p407-room-actions
+  .th-button--primary:hover:not(:disabled) {
+  border-color: var(--room-sapphire-rim);
+  background: var(--room-sapphire);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #dbeafe;
 }
 
-.media-p405-room .media-p407-room-actions .th-button--danger {
-  background: #dc2626;
+.media-p405-room .media-p407-room-actions .th-button--danger,
+.media-p405-room
+  .media-p407-room-actions
+  .th-button--danger:hover:not(:disabled) {
+  border-color: #dc2626;
+  background-color: #dc2626;
+  background-image: var(--room-ruby-sheen);
+  box-shadow: var(--room-ruby-shadow-sm);
   color: #fff;
 }
 
 .media-p405-room
   .media-p407-room-actions
   .th-button--danger:hover:not(:disabled) {
-  background: #b91c1c;
+  border-color: #b91c1c;
+  background-color: #b91c1c;
 }
 
 .media-p405-room .media-p407-status {
@@ -268,7 +430,10 @@
   padding: 7px 12px;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 12px;
-  background: #1a1e26;
+  background: rgb(26 30 40 / 78%);
+  -webkit-backdrop-filter: var(--room-blur-thin);
+  backdrop-filter: var(--room-blur-thin);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
   color: #d1d5db;
   font-size: 13px;
 }
@@ -286,8 +451,11 @@
   gap: 12px;
   padding: 6px 8px 6px 14px;
   border: 1px solid rgb(96 165 250 / 40%);
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgb(59 130 246 / 14%);
+  -webkit-backdrop-filter: var(--room-blur-thin);
+  backdrop-filter: var(--room-blur-thin);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
   color: #e5e7eb;
 }
 
@@ -498,14 +666,30 @@
 /* ---- Video tiles ---------------------------------------------------- */
 
 .media-p405-room .media-p405-tile {
-  border: 1px solid rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 11%);
   border-radius: 16px;
-  background: linear-gradient(180deg, #222733 0%, #181c24 100%);
-  box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
+  /* Camera off: a deep silk surface lit from above. */
+  background: radial-gradient(
+    120% 100% at 50% 0%,
+    #272e3f 0%,
+    #171b25 70%,
+    #13161f 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 13%),
+    0 20px 44px -12px rgb(0 0 0 / 58%);
   container-type: inline-size;
   transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
+    border-color 200ms var(--room-ease-spring),
+    box-shadow 200ms var(--room-ease-spring);
+}
+
+/* FaceTime framing: one or two people get softer 20px corners. */
+.media-p405-room
+  :where(.media-p405-classroom:not(.media-p405-classroom--tool-stage))
+  .media-p405-grid:is([data-tile-count="1"], [data-tile-count="2"])
+  .media-p405-tile {
+  border-radius: 20px;
 }
 
 /* The speaking ring sits above the video, not behind it. */
@@ -517,55 +701,78 @@
   border-radius: inherit;
   content: "";
   pointer-events: none;
-  transition: border-color 160ms ease;
+  transition: border-color 200ms var(--room-ease-spring);
 }
 
 .media-p405-room .media-p405-tile[data-lk-speaking="true"] {
-  border-color: rgb(52 211 153 / 60%);
+  border-color: rgb(52 211 153 / 85%);
   box-shadow:
-    0 0 0 3px rgb(52 211 153 / 16%),
-    0 10px 28px rgb(0 0 0 / 28%);
+    0 0 0 1px rgb(52 211 153 / 50%),
+    0 12px 32px -6px rgb(16 185 129 / 28%),
+    0 20px 44px -12px rgb(0 0 0 / 58%);
 }
 
 .media-p405-room .media-p405-tile[data-lk-speaking="true"]::after {
-  border-color: #34d399;
+  border-color: rgb(52 211 153 / 85%);
 }
 
 .media-p405-room .media-p405-tile video {
-  background: #0d0f14;
+  background: #0b0d13;
 }
 
+/*
+ * Anodized medallion (Apple Contacts / FaceTime): a tone gradient, a soft
+ * top-left sheen that fades before the initial (white text stays >= 5:1),
+ * an inner specular rim and a thin glass halo.
+ */
 .media-p405-room .media-p405-avatar {
+  --avatar-from: #2f63d8;
+  --avatar-to: #5b3fd6;
   width: clamp(36px, 20cqi, 112px);
-  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  background:
+    radial-gradient(
+      110% 80% at 32% 12%,
+      rgb(255 255 255 / 20%) 0%,
+      rgb(255 255 255 / 0%) 40%
+    ),
+    linear-gradient(180deg, rgb(0 0 0 / 0%) 55%, rgb(0 0 0 / 16%) 100%),
+    linear-gradient(160deg, var(--avatar-from) 0%, var(--avatar-to) 100%);
   box-shadow:
+    inset 0 1.5px 1px rgb(255 255 255 / 34%),
+    inset 0 -1px 1px rgb(0 0 0 / 18%),
     0 0 0 6px rgb(255 255 255 / 4%),
-    0 12px 30px rgb(0 0 0 / 35%);
+    0 14px 30px rgb(0 0 0 / 42%);
   color: #fff;
   font-size: clamp(15px, 8cqi, 44px);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
 }
 
-/* Camera-off avatars get one of six calm gradients (white text >= 4.5:1). */
+/* Six medallion tones; every stop keeps white text >= 5:1. */
 .media-p405-room .media-p405-avatar[data-tone="1"] {
-  background: linear-gradient(135deg, #0e7490 0%, #2563eb 100%);
+  --avatar-from: #0b7490;
+  --avatar-to: #1f5fcf;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="2"] {
-  background: linear-gradient(135deg, #7c3aed 0%, #c026d3 100%);
+  --avatar-from: #7a37d8;
+  --avatar-to: #b02a9a;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="3"] {
-  background: linear-gradient(135deg, #047857 0%, #0e7490 100%);
+  --avatar-from: #06775a;
+  --avatar-to: #0b6c86;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="4"] {
-  background: linear-gradient(135deg, #b45309 0%, #be123c 100%);
+  --avatar-from: #b0480c;
+  --avatar-to: #bd2446;
 }
 
 .media-p405-room .media-p405-avatar[data-tone="5"] {
-  background: linear-gradient(135deg, #4338ca 0%, #0369a1 100%);
+  --avatar-from: #4338ca;
+  --avatar-to: #0b5f94;
 }
 
 /* HUD: frosted name pill bottom-left, round pin button bottom-right. */
@@ -583,13 +790,16 @@
 .media-p405-room .media-p405-tile-meta > span {
   max-width: calc(100% - 44px);
   padding: 5px 11px;
+  border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 999px;
-  background: rgb(17 19 24 / 66%);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: rgb(15 18 26 / 62%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
   color: #f3f4f6;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
+  letter-spacing: -0.003em;
   line-height: 1.25;
   pointer-events: auto;
 }
@@ -602,15 +812,17 @@
   flex: 0 0 auto;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 50%;
-  background: rgb(17 19 24 / 66%);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: rgb(15 18 26 / 62%);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
   color: #f3f4f6;
   opacity: 0;
   pointer-events: auto;
   transition:
-    opacity 140ms ease,
-    background-color 140ms ease;
+    opacity 160ms var(--room-ease-spring),
+    background-color 160ms var(--room-ease-spring),
+    transform 220ms var(--room-ease-spring);
 }
 
 .media-p405-room .media-p405-tile-meta .th-button svg {
@@ -683,14 +895,22 @@
 .media-p405-room .media-p405-shell > .th-button {
   align-self: center;
   min-height: 40px;
-  border-color: rgb(255 255 255 / 12%);
+  border-color: var(--room-rim);
   border-radius: 999px;
-  background: rgb(255 255 255 / 6%);
+  background: var(--room-glass-thin);
+  -webkit-backdrop-filter: var(--room-blur-thin);
+  backdrop-filter: var(--room-blur-thin);
+  box-shadow: var(--room-shadow-pill);
   color: #e5e7eb;
 }
 
-/* ---- Floating Studio Dock ------------------------------------------- */
+/* ---- Floating Liquid Glass Dock ------------------------------------- */
 
+/*
+ * The glass lives on ::before, not on the footer: an element with
+ * backdrop-filter becomes the Backdrop Root of its descendants, which would
+ * stop the device popover (a child of the Dock) from frosting the stage.
+ */
 .media-p405-room .media-p405-footer {
   position: relative;
   z-index: 10;
@@ -698,13 +918,29 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
+  --room-dock-radius: 22px;
   padding: 6px 10px;
-  border: 1px solid rgb(255 255 255 / 10%);
-  border-radius: 18px;
-  background: rgb(24 28 36 / 92%);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 42%);
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: var(--room-dock-radius);
+  background: transparent;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 28%),
+    0 24px 56px -10px rgb(0 0 0 / 62%);
+}
+
+.media-p405-room .media-p405-footer::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: calc(var(--room-dock-radius) - 1px);
+  background: var(--room-glass-thick);
+  -webkit-backdrop-filter: var(--room-blur-thick);
+  backdrop-filter: var(--room-blur-thick);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 18%),
+    inset 0 -1px 0 rgb(0 0 0 / 22%);
+  content: "";
+  pointer-events: none;
 }
 
 .media-p405-room .media-p405-toolbar {
@@ -727,7 +963,7 @@
   min-height: 44px;
   padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 13px;
   background: transparent;
   box-shadow: none;
   color: #e5e7eb;
@@ -754,59 +990,75 @@
 }
 
 .media-p405-room .media-p405-dock-button.th-icon-button:hover:not(:disabled) {
-  border-color: transparent;
-  background: rgb(255 255 255 / 8%);
+  border-color: rgb(255 255 255 / 8%);
+  background: rgb(255 255 255 / 9%);
   color: #fff;
 }
 
-/* Cluster 1 (AV): a dark filled key while live, crimson while off. */
+/* Cluster 1 (AV): a smoked-glass keycap while live, anodized ruby while off. */
 .media-p405-room .media-p405-dock-button--av.th-button--secondary {
-  border-color: rgb(255 255 255 / 10%);
-  background: #262b36;
+  border-color: var(--room-rim);
+  background: var(--room-keycap);
+  box-shadow: var(--room-shadow-keycap);
+  color: #f3f4f6;
 }
 
 .media-p405-room
   .media-p405-dock-button--av.th-button--secondary:hover:not(:disabled) {
-  border-color: rgb(255 255 255 / 16%);
-  background: #303746;
+  border-color: rgb(255 255 255 / 18%);
+  background: var(--room-keycap-hover);
+  box-shadow: var(--room-shadow-keycap);
 }
 
+/*
+ * Ruby keys keep background-color #dc2626 (white text 4.83:1; asserted by
+ * E2E) and only layer the anodized sheen as a background-image.
+ */
 .media-p405-room .media-p405-dock-button.th-button--danger,
 .media-p405-room
   .media-p405-dock-button.th-button--danger:hover:not(:disabled) {
   border-color: #dc2626;
-  background: #dc2626;
+  background-color: #dc2626;
+  background-image: var(--room-ruby-sheen);
+  box-shadow: var(--room-ruby-shadow);
   color: #fff;
 }
 
 .media-p405-room
   .media-p405-dock-button.th-button--danger:hover:not(:disabled) {
   border-color: #b91c1c;
-  background: #b91c1c;
+  background-color: #b91c1c;
 }
 
-/* Cluster 2: on (pressed / expanded / active) glows in the accent. */
+/* Cluster 2: on (pressed / expanded / active) glows as sapphire glass. */
 .media-p405-room
   .media-p405-dock-button:is(
     .th-button--primary,
     [aria-pressed="true"],
     [aria-expanded="true"]
-  ):not(.th-button--danger),
+  ):not(.th-button--danger) {
+  border-color: var(--room-sapphire-rim);
+  background: var(--room-sapphire);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #dbeafe;
+}
+
 .media-p405-room
   .media-p405-dock-button:is(
     .th-button--primary,
     [aria-pressed="true"],
     [aria-expanded="true"]
   ):not(.th-button--danger):hover:not(:disabled) {
-  border-color: rgb(96 165 250 / 45%);
-  background: rgb(59 130 246 / 22%);
-  color: #93c5fd;
+  border-color: rgb(147 197 253 / 58%);
+  background: var(--room-sapphire-hover);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #eff6ff;
 }
 
 .media-p405-room .media-p405-dock-button:focus-visible,
 .media-p405-room .media-p405-layout-button:focus-visible,
 .media-p405-room .media-p405-dock-leave:focus-visible {
-  outline: 2px solid #93c5fd;
+  outline: 2px solid var(--room-focus-ring);
   outline-offset: 2px;
 }
 
@@ -822,9 +1074,15 @@
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
-  border: 2px solid #181c24;
+  border: 2px solid #1d212c;
   border-radius: 999px;
-  background: #dc2626;
+  background-color: #dc2626;
+  background-image: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 12%) 0%,
+    rgb(255 255 255 / 0%) 45%
+  );
+  box-shadow: 0 2px 6px rgb(220 38 38 / 40%);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -832,7 +1090,7 @@
   place-items: center;
 }
 
-/* Cluster 3: layout as a dark segmented pill. */
+/* Cluster 3: layout as a recessed macOS segmented control. */
 .media-p405-room .media-p405-layout-controls {
   flex-direction: column;
   align-items: center;
@@ -846,9 +1104,10 @@
   align-items: center;
   gap: 2px;
   padding: 2px;
-  border: 1px solid rgb(255 255 255 / 6%);
+  border: 1px solid rgb(0 0 0 / 18%);
   border-radius: 12px;
-  background: rgb(255 255 255 / 5%);
+  background: var(--room-groove-track);
+  box-shadow: var(--room-groove-track-shadow);
 }
 
 .media-p405-room .media-p405-layout-button.th-icon-button {
@@ -873,30 +1132,35 @@
   color: #fff;
 }
 
-.media-p405-room .media-p405-layout-button[aria-pressed="true"],
+.media-p405-room .media-p405-layout-button.th-icon-button[aria-pressed="true"],
 .media-p405-room
-  .media-p405-layout-button[aria-pressed="true"]:hover:not(:disabled) {
-  background: rgb(255 255 255 / 15%);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+  .media-p405-layout-button.th-icon-button[aria-pressed="true"]:hover:not(
+    :disabled
+  ) {
+  background: var(--room-groove-knob);
+  box-shadow: var(--room-groove-knob-shadow);
   color: #fff;
 }
 
-/* Cluster 4: Leave. */
+/* Cluster 4: Leave, an anodized ruby key. */
 .media-p405-room .media-p405-dock-leave.th-button {
   min-height: 44px;
   padding: 0 16px;
   border: 1px solid #dc2626;
-  border-radius: 12px;
-  background: #dc2626;
-  box-shadow: 0 6px 16px rgb(220 38 38 / 26%);
+  border-radius: 13px;
+  background-color: #dc2626;
+  background-image: var(--room-ruby-sheen);
+  box-shadow: var(--room-ruby-shadow);
   color: #fff;
   font-size: 13.5px;
   font-weight: 600;
+  letter-spacing: -0.003em;
 }
 
 .media-p405-room .media-p405-dock-leave.th-button:hover:not(:disabled) {
   border-color: #b91c1c;
-  background: #b91c1c;
+  background-color: #b91c1c;
+  background-image: var(--room-ruby-sheen);
 }
 
 .media-p405-room .media-p405-dock-leave .th-button__icon svg {
@@ -935,10 +1199,10 @@
   .media-p405-room .media-p405-footer .media-p405-dock-divider {
     display: block;
     width: 1px;
-    height: 28px;
+    height: 32px;
     flex: 0 0 auto;
     margin: 0 6px;
-    background: rgb(255 255 255 / 12%);
+    background: var(--room-divider);
   }
 
   .media-p405-room .media-p405-footer .media-p405-dock-button.th-icon-button {
@@ -1002,10 +1266,10 @@
     .media-p405-dock-divider {
     display: block;
     width: 1px;
-    height: 28px;
+    height: 32px;
     flex: 0 0 auto;
     margin: 0 4px;
-    background: rgb(255 255 255 / 12%);
+    background: var(--room-divider);
   }
 
   .media-p405-room
@@ -1135,7 +1399,7 @@
   }
 }
 
-/* ---- Device popover (anchored above the Dock) ----------------------- */
+/* ---- Device popover: a Control Center module above the Dock ---------- */
 
 .media-p405-room .media-p405-device-panel {
   position: absolute;
@@ -1147,59 +1411,184 @@
   max-height: min(60vh, 420px);
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   overflow: auto;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 16px;
-  background: #1c2029;
-  box-shadow: 0 20px 48px rgb(0 0 0 / 55%);
+  border: 1px solid var(--room-rim-strong);
+  border-radius: 20px;
+  background: var(--room-glass-popover);
+  -webkit-backdrop-filter: var(--room-blur-popover);
+  backdrop-filter: var(--room-blur-popover);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 20%),
+    0 2px 6px rgb(0 0 0 / 28%),
+    0 28px 60px -12px rgb(0 0 0 / 66%);
   transform: translateX(-50%);
 }
 
 .media-p405-room .media-p405-device-panel label {
-  color: #c4cad4;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.003em;
 }
 
 .media-p405-room .media-p405-device-panel select {
   min-height: 40px;
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-radius: 10px;
-  background: #262b36;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 11px;
+  background: rgb(255 255 255 / 8%);
+  box-shadow:
+    inset 0 1px 1px rgb(0 0 0 / 22%),
+    0 1px 0 rgb(255 255 255 / 6%);
+  color: #f3f4f6;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    background-color 160ms var(--room-ease-spring),
+    border-color 160ms var(--room-ease-spring);
+}
+
+.media-p405-room .media-p405-device-panel select:hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 18%);
+  background: rgb(255 255 255 / 12%);
+}
+
+/* The native list stays opaque and dark under translucent fields. */
+.media-p405-room .media-p405-device-panel option {
+  background-color: #1f2430;
   color: #f3f4f6;
 }
 
 .media-p405-room .media-p405-device-panel select:focus-visible {
-  outline: 2px solid #93c5fd;
+  outline: 2px solid var(--room-focus-ring);
   outline-offset: 2px;
 }
 
-/* ---- Reaction menu & right drawers (portals) ------------------------ */
+/* ---- Reaction & participant menus (portals) ------------------------- */
+
+.th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu) {
+  border: 1px solid var(--room-rim-strong);
+  border-radius: 20px;
+  background: var(--room-glass-popover);
+  -webkit-backdrop-filter: var(--room-blur-popover);
+  backdrop-filter: var(--room-blur-popover);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 20%),
+    0 2px 6px rgb(0 0 0 / 28%),
+    0 28px 60px -12px rgb(0 0 0 / 66%);
+  color: #e5e7eb;
+}
 
 .th-menu-content.media-p406-reaction-menu {
   gap: 2px;
   min-width: 248px;
   padding: 6px;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 16px;
-  background: #1c2029;
-  box-shadow: 0 20px 48px rgb(0 0 0 / 55%);
 }
 
-.media-p406-reaction-menu .th-menu-item {
+.th-menu-content.media-p407-participant-menu {
+  padding: 6px;
+  border-radius: 16px;
+}
+
+:is(.media-p406-reaction-menu, .media-p407-participant-menu) .th-menu-item {
   gap: 8px;
   min-height: 40px;
-  border-radius: 10px;
+  border-radius: 11px;
   color: #e5e7eb;
+  font-size: 13.5px;
+  letter-spacing: -0.003em;
+  transition: background-color 140ms var(--room-ease-spring);
+}
+
+:is(.media-p406-reaction-menu, .media-p407-participant-menu)
+  .th-menu-item[data-highlighted] {
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
 }
 
 .media-p406-reaction-menu .th-menu-item > span[aria-hidden="true"] {
+  display: inline-block;
   font-size: 18px;
+  transition: transform 260ms var(--room-ease-spring);
 }
 
-.th-drawer-content.media-p406-roster-drawer,
-.th-drawer-content.media-p408-chat-drawer {
-  border-color: rgb(255 255 255 / 8%);
-  background: #161a21;
+.media-p406-reaction-menu
+  .th-menu-item[data-highlighted]
+  > span[aria-hidden="true"] {
+  transform: scale(1.18);
+}
+
+/* ---- Inspector drawers: effects, people, chat, participant rail ----- */
+
+.th-dialog-content.th-drawer-content:is(
+    .media-p405-effects-drawer,
+    .media-p406-roster-drawer,
+    .media-p408-chat-drawer,
+    .media-p405-drawer
+  )[data-theme="dark"] {
+  border-color: rgb(255 255 255 / 12%);
+  background: var(--room-glass-drawer);
+  -webkit-backdrop-filter: var(--room-blur-drawer);
+  backdrop-filter: var(--room-blur-drawer);
+  box-shadow:
+    inset 1px 0 0 var(--room-rim-soft),
+    inset 0 1px 0 rgb(255 255 255 / 6%),
+    -24px 0 56px -12px rgb(0 0 0 / 55%);
+  color: #f4f6f8;
+}
+
+:is(
+    .media-p405-effects-drawer,
+    .media-p406-roster-drawer,
+    .media-p408-chat-drawer,
+    .media-p405-drawer
+  )
+  .th-dialog-title {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+:is(
+    .media-p405-effects-drawer,
+    .media-p406-roster-drawer,
+    .media-p408-chat-drawer,
+    .media-p405-drawer
+  )
+  .th-dialog-close {
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 7%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  color: #d1d5db;
+}
+
+:is(
+    .media-p405-effects-drawer,
+    .media-p406-roster-drawer,
+    .media-p408-chat-drawer,
+    .media-p405-drawer
+  )
+  .th-dialog-close:hover {
+  background: rgb(255 255 255 / 13%);
+  color: #fff;
+}
+
+:is(.media-p406-roster-drawer, .media-p408-chat-drawer, .media-p405-drawer)
+  .th-button--secondary {
+  border-color: var(--room-rim);
+  border-radius: 999px;
+  background: var(--room-glass-thin);
+  box-shadow: var(--room-shadow-pill);
+  color: #f3f4f6;
+}
+
+:is(.media-p406-roster-drawer, .media-p408-chat-drawer, .media-p405-drawer)
+  .th-button--secondary:hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 20%);
+  background: var(--room-keycap-hover);
+  color: #fff;
 }
 
 .media-p406-roster-drawer {
@@ -1208,25 +1597,28 @@
   overflow-y: auto;
 }
 
+/* macOS System Settings inset groups. */
 .media-p406-roster-lobby .media-p404-lobby {
   width: 100%;
   max-width: none;
   padding: 14px;
   margin: 12px 0 0;
-  border-color: rgb(255 255 255 / 10%);
-  border-radius: 12px;
-  background: #1c2029;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 5.5%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
 }
 
 .media-p406-roster-drawer .media-p406-roster li {
   padding: 10px 12px;
   border: 1px solid rgb(255 255 255 / 8%);
-  border-radius: 12px;
-  background: #1f2430;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 5.5%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
 }
 
 .media-p406-roster-drawer .media-p406-roster li::marker {
-  color: #9ca3af;
+  color: #aeb5c1;
   font-size: 12px;
 }
 
@@ -1243,10 +1635,11 @@
   color: #f3f4f6;
   font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.006em;
 }
 
 .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-self {
-  color: #9ca3af;
+  color: #aeb5c1;
   font-size: 13px;
 }
 
@@ -1255,7 +1648,8 @@
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 999px;
   margin-left: auto;
-  background: rgb(255 255 255 / 6%);
+  background: rgb(255 255 255 / 7%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
   color: #d1d5db;
   font-size: 11.5px;
   font-weight: 600;
@@ -1272,14 +1666,14 @@
 
 .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-connection {
   flex-basis: 100%;
-  color: #9ca3af;
+  color: #aeb5c1;
   font-size: 12px;
 }
 
 .media-p406-roster-drawer .media-p406-hand-state {
   padding: 6px 8px 6px 10px;
   border: 1px solid rgb(245 158 11 / 35%);
-  border-radius: 10px;
+  border-radius: 11px;
   background: rgb(245 158 11 / 12%);
   color: #fcd34d;
 }
@@ -1288,7 +1682,7 @@
   color: #fcd34d;
 }
 
-/* ---- Tool stage (whiteboard) ---------------------------------------- */
+/* ---- Tool stage: a Keynote / Freeform window ------------------------ */
 
 .media-p506-tool-stage {
   display: flex;
@@ -1296,22 +1690,32 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 8%);
-  border-radius: 16px;
-  background: #181c24;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 20px;
+  background: #151922;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 28%),
+    0 28px 64px -16px rgb(0 0 0 / 66%);
 }
 
+/* Translucent titlebar with a specular top edge. */
 .media-p506-tool-stage__header {
   display: flex;
-  min-height: 38px;
+  min-height: 40px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 3px 6px 3px 14px;
+  padding: 4px 8px 4px 16px;
   border-bottom: 1px solid rgb(255 255 255 / 8%);
-  background: #1c2029;
+  background: linear-gradient(
+    180deg,
+    rgb(34 39 50 / 88%) 0%,
+    rgb(24 28 37 / 88%) 100%
+  );
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 14%);
 }
 
 .media-p506-tool-stage__header h2 {
@@ -1320,6 +1724,7 @@
   color: #e5e7eb;
   font-size: 13.5px;
   font-weight: 600;
+  letter-spacing: -0.006em;
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1333,15 +1738,26 @@
 .media-p506-tool-stage__header .th-button {
   min-height: 30px;
   padding: 0 12px;
-  border-color: rgb(255 255 255 / 12%);
+  border-color: rgb(255 255 255 / 13%);
   border-radius: 999px;
-  background: rgb(255 255 255 / 6%);
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 11%) 0%,
+    rgb(255 255 255 / 5.5%) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 16%),
+    0 1px 3px rgb(0 0 0 / 24%);
   color: #e5e7eb;
 }
 
 .media-p506-tool-stage__header .th-button:hover:not(:disabled) {
-  border-color: rgb(255 255 255 / 22%);
-  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 20%);
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 16%) 0%,
+    rgb(255 255 255 / 9%) 100%
+  );
   color: #fff;
 }
 
@@ -1545,9 +1961,9 @@
   }
 
   .media-p405-room .media-p405-footer {
+    --room-dock-radius: 18px;
     flex-direction: row;
     padding: 6px;
-    border-radius: 16px;
   }
 
   .media-p405-room .media-p405-toolbar {
@@ -1564,6 +1980,114 @@
   }
 }
 
+/* ---- Tactile press (Apple HIG) --------------------------------------
+ * Glass controls do not lift on hover (macOS never does); a press sinks the
+ * key slightly on the spring curve. Reduced motion turns both off below.
+ */
+.media-p405-room
+  :is(
+    .media-p405-dock-button,
+    .media-p405-layout-button,
+    .media-p405-dock-leave,
+    .media-p405-effects-badge,
+    .media-p405-tile-meta .th-button,
+    .media-p407-room-actions .th-button,
+    .media-p405-shell > .th-button,
+    .media-p506-tool-stage__header .th-button
+  ) {
+  transition:
+    background-color 180ms var(--room-ease-spring),
+    border-color 180ms var(--room-ease-spring),
+    box-shadow 180ms var(--room-ease-spring),
+    color 180ms var(--room-ease-spring),
+    opacity 160ms var(--room-ease-spring),
+    transform 240ms var(--room-ease-spring);
+}
+
+.media-p405-room
+  :is(
+    .media-p405-dock-button,
+    .media-p405-layout-button,
+    .media-p405-dock-leave,
+    .media-p405-effects-badge,
+    .media-p405-tile-meta .th-button,
+    .media-p407-room-actions .th-button,
+    .media-p405-shell > .th-button,
+    .media-p506-tool-stage__header .th-button
+  ):hover:not(:disabled) {
+  transform: none;
+}
+
+.media-p405-room
+  :is(
+    .media-p405-dock-button,
+    .media-p405-layout-button,
+    .media-p405-dock-leave,
+    .media-p405-effects-badge,
+    .media-p405-tile-meta .th-button,
+    .media-p407-room-actions .th-button,
+    .media-p405-shell > .th-button,
+    .media-p506-tool-stage__header .th-button
+  ):active:not(:disabled) {
+  transform: scale(var(--room-press-scale));
+}
+
+/* ---- Continuous (squircle) corners where supported ------------------
+ * A squircle hugs the corner much tighter than a circular arc of the same
+ * radius: at the diagonal it is inset 0.159r instead of 0.293r. Scaling each
+ * radius by 1.8 keeps the soft 20px / 16px reading while the curve spreads
+ * out like Apple's continuous corners. Only painting changes; layout boxes
+ * are identical.
+ */
+@supports (corner-shape: squircle) {
+  .media-p405-room .media-p405-tile,
+  .media-p405-room .media-p405-tile::after,
+  .media-p405-room .media-p405-footer,
+  .media-p405-room .media-p405-footer::before,
+  .media-p405-room .media-p405-device-panel,
+  .media-p506-tool-stage,
+  .th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu) {
+    corner-shape: squircle;
+  }
+
+  .media-p405-room .media-p405-tile {
+    border-radius: 28.8px;
+  }
+
+  .media-p405-room
+    :where(.media-p405-classroom:not(.media-p405-classroom--tool-stage))
+    .media-p405-grid:is([data-tile-count="1"], [data-tile-count="2"])
+    .media-p405-tile {
+    border-radius: 36px;
+  }
+
+  .media-p405-room .media-p405-classroom--tool-stage .media-p405-tile {
+    border-radius: 21.6px;
+  }
+
+  .media-p405-room .media-p405-footer {
+    --room-dock-radius: 39.6px;
+  }
+
+  .media-p405-room .media-p405-device-panel,
+  .media-p506-tool-stage,
+  .th-menu-content.media-p406-reaction-menu {
+    border-radius: 36px;
+  }
+
+  .th-menu-content.media-p407-participant-menu {
+    border-radius: 28.8px;
+  }
+}
+
+@supports (corner-shape: squircle) {
+  @media (max-width: 767px) {
+    .media-p405-room .media-p405-footer {
+      --room-dock-radius: 32.4px;
+    }
+  }
+}
+
 /* ---- Forced colors & reduced motion --------------------------------- */
 
 @media (forced-colors: active) {
@@ -1575,6 +2099,46 @@
   .media-p405-room .media-p405-layout-pill {
     border: 1px solid CanvasText;
     forced-color-adjust: auto;
+  }
+
+  /*
+   * Gradients, shadows and blur drop out: every glass surface that used to
+   * rely on a gradient fill states an opaque system Canvas instead, so text
+   * never floats over the stage or video.
+   */
+  .media-p405-room .media-p405-footer::before {
+    display: none;
+  }
+
+  .media-p405-room .media-p405-shell,
+  .media-p405-room .media-p405-footer,
+  .media-p405-room .media-p405-tile,
+  .media-p405-room .media-p405-device-panel,
+  .media-p405-room .media-p405-notice,
+  .media-p405-room .media-p405-error,
+  .media-p506-tool-stage__header,
+  .th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu),
+  .th-dialog-content.th-drawer-content:is(
+      .media-p405-effects-drawer,
+      .media-p406-roster-drawer,
+      .media-p408-chat-drawer,
+      .media-p405-drawer
+    )[data-theme="dark"] {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .th-dialog-content.th-drawer-content:is(
+      .media-p405-effects-drawer,
+      .media-p406-roster-drawer,
+      .media-p408-chat-drawer,
+      .media-p405-drawer
+    )[data-theme="dark"],
+  .th-menu-content:is(.media-p406-reaction-menu, .media-p407-participant-menu) {
+    border-color: CanvasText;
+    color: CanvasText;
   }
 
   /*
@@ -1610,6 +2174,39 @@
   .media-p405-room .media-p407-room-actions .th-button[aria-pressed="true"] {
     border-color: Highlight;
     background: Highlight;
+    box-shadow: none;
+    color: HighlightText;
+  }
+
+  /* Hover keeps the system pair (the glass hover fills are author colours). */
+  .media-p403-room.media-p405-room
+    :is(
+      .media-p405-dock-button.th-icon-button,
+      .media-p405-layout-button.th-icon-button,
+      .media-p405-dock-leave.th-button,
+      .media-p407-room-actions .th-button,
+      .media-p405-shell > .th-button,
+      .media-p405-tile-meta .th-button,
+      .media-p506-tool-stage__header .th-button
+    ):hover:not(:disabled) {
+    border-color: Highlight;
+    background: ButtonFace;
+    box-shadow: none;
+    color: ButtonText;
+  }
+
+  .media-p403-room.media-p405-room
+    :is(
+      .media-p405-dock-button.th-icon-button:is(
+          .th-button--primary,
+          [aria-pressed="true"],
+          [aria-expanded="true"]
+        ),
+      .media-p405-layout-button.th-icon-button[aria-pressed="true"],
+      .media-p407-room-actions .th-button[aria-pressed="true"]
+    ):hover:not(:disabled) {
+    border-color: ButtonText;
+    background: Highlight;
     color: HighlightText;
   }
 
@@ -1630,8 +2227,23 @@
     backdrop-filter: none;
     border-color: CanvasText;
     background: Canvas;
+    box-shadow: none;
     color: CanvasText;
     forced-color-adjust: none;
+  }
+
+  .media-p403-room.media-p405-room
+    .media-p405-header-badges
+    .media-p405-effects-badge:is(
+      :hover,
+      [aria-expanded="true"],
+      .media-p405-effects-badge--on
+    )
+    > span {
+    border-color: CanvasText;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
   }
 
   /* Studio text colours are authored for the dark floor: use system text. */
@@ -1652,13 +2264,39 @@
   .media-p406-roster-drawer .media-p406-roster-person strong,
   .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-self,
   .media-p406-roster-drawer .media-p406-roster li .media-p406-roster-connection,
-  .media-p406-reaction-menu .th-menu-item {
+  :is(.media-p406-reaction-menu, .media-p407-participant-menu) .th-menu-item {
     color: CanvasText;
   }
 
-  .media-p405-room .media-p405-device-panel select {
+  :is(.media-p406-reaction-menu, .media-p407-participant-menu)
+    .th-menu-item[data-highlighted] {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .media-p405-room .media-p405-session-clock {
+    border-color: CanvasText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .media-p405-room .media-p405-avatar {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+    text-shadow: none;
+  }
+
+  .media-p405-room .media-p405-device-panel select,
+  .media-p405-room .media-p405-device-panel select:hover:not(:disabled) {
     border-color: FieldText;
     background: Field;
+    box-shadow: none;
+    color: FieldText;
+  }
+
+  .media-p405-room .media-p405-device-panel option {
+    background-color: Field;
     color: FieldText;
   }
 
@@ -1686,8 +2324,10 @@
     outline-offset: -3px;
   }
 
-  .media-p406-roster-drawer .media-p406-roster li {
+  .media-p406-roster-drawer .media-p406-roster li,
+  .media-p406-roster-lobby .media-p404-lobby {
     border: 2px solid CanvasText;
+    box-shadow: none;
   }
 }
 
@@ -1696,7 +2336,38 @@
   .media-p405-room .media-p405-tile,
   .media-p405-room .media-p405-tile::after,
   .media-p405-room .media-p405-tile-meta .th-button,
-  .media-p405-room .media-p405-header-badges span {
+  .media-p405-room .media-p405-header-badges span,
+  .media-p405-room .media-p405-device-panel select,
+  .media-p406-reaction-menu .th-menu-item,
+  .media-p406-reaction-menu .th-menu-item > span[aria-hidden="true"],
+  .media-p405-room
+    :is(
+      .media-p405-dock-button,
+      .media-p405-layout-button,
+      .media-p405-dock-leave,
+      .media-p405-effects-badge,
+      .media-p405-tile-meta .th-button,
+      .media-p407-room-actions .th-button,
+      .media-p405-shell > .th-button,
+      .media-p506-tool-stage__header .th-button
+    ) {
     transition: none;
+  }
+
+  .media-p405-room
+    :is(
+      .media-p405-dock-button,
+      .media-p405-layout-button,
+      .media-p405-dock-leave,
+      .media-p405-effects-badge,
+      .media-p405-tile-meta .th-button,
+      .media-p407-room-actions .th-button,
+      .media-p405-shell > .th-button,
+      .media-p506-tool-stage__header .th-button
+    ):is(:hover, :active):not(:disabled),
+  .media-p406-reaction-menu
+    .th-menu-item[data-highlighted]
+    > span[aria-hidden="true"] {
+    transform: none;
   }
 }

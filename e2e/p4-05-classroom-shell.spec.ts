@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const fixturePath = "/__p4-05-classroom-shell-fixture";
 
@@ -708,9 +708,52 @@ test("VIDEO-FX-01 opens a right effects drawer without remounting camera tiles",
 
 // ROOM-STUDIO-02: adaptive cinema stage, captioned floating Dock and a minimal
 // header, measured with the real tokens, UI styles and room stylesheet.
-// Set ROOM_STUDIO_SCREENSHOT_DIR to save the six review screenshots.
+// ROOM-MACOS-03 adds the Liquid Glass material checks (translucent blur,
+// specular rim, FaceTime corners, tactile press) on the same fixtures.
+// Set ROOM_MACOS_SCREENSHOT_DIR (or the older ROOM_STUDIO_SCREENSHOT_DIR) to
+// save the six review screenshots.
 const roomStudioScreenshotDir =
-  process.env.ROOM_STUDIO_SCREENSHOT_DIR?.trim() ?? "";
+  process.env.ROOM_MACOS_SCREENSHOT_DIR?.trim() ||
+  process.env.ROOM_STUDIO_SCREENSHOT_DIR?.trim() ||
+  "";
+
+interface GlassStyle {
+  backdropFilter: string;
+  backgroundImage: string;
+  borderTopLeftRadius: string;
+  boxShadow: string;
+  display: string;
+}
+
+/** Computed glass material of an element or of its `::before` layer. */
+async function readGlass(
+  locator: Locator,
+  pseudo: "::before" | null = null,
+): Promise<GlassStyle> {
+  return locator.evaluate((element, pseudoElement) => {
+    const style = getComputedStyle(element, pseudoElement);
+    return {
+      backdropFilter:
+        style.backdropFilter ||
+        style.getPropertyValue("-webkit-backdrop-filter"),
+      backgroundImage: style.backgroundImage,
+      borderTopLeftRadius: style.borderTopLeftRadius,
+      boxShadow: style.boxShadow,
+      display: style.display,
+    };
+  }, pseudo);
+}
+
+/**
+ * Where `corner-shape: squircle` paints, the room scales each radius by 1.8
+ * (Apple-style continuous corners); elsewhere the nominal radius applies.
+ */
+async function expectedCornerRadius(page: Page, nominal: number) {
+  const squircle = await page.evaluate(() =>
+    CSS.supports("corner-shape", "squircle"),
+  );
+  return `${squircle ? Math.round(nominal * 18) / 10 : nominal}px`;
+}
 
 async function loadRoomStudioStyles(page: Page) {
   await page.evaluate(async () => {
@@ -855,11 +898,69 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under a captioned floating Dock
   await expect(
     page.getByRole("button", { name: "Kết thúc phòng", exact: true }),
   ).toHaveCSS("background-color", "rgb(220, 38, 38)");
+
+  // ROOM-MACOS-03: the Dock is Liquid Glass. The material sits on ::before so
+  // the footer never becomes the Backdrop Root of the device popover.
+  const dockGlass = await readGlass(footer, "::before");
+  expect(dockGlass.backdropFilter).toMatch(/blur\(28px\)/);
+  expect(dockGlass.backdropFilter).toMatch(/saturate\((1\.85|185%)\)/);
+  expect(dockGlass.backgroundImage).toContain("linear-gradient");
+  expect(dockGlass.boxShadow).toMatch(/inset/);
+  const dockFrame = await readGlass(footer);
+  expect(dockFrame.backdropFilter).toBe("none");
+  expect(dockFrame.boxShadow).not.toBe("none");
+  await expect(footer).toHaveCSS(
+    "border-top-color",
+    "rgba(255, 255, 255, 0.14)",
+  );
+  // Anodized ruby: the sheen is a background-image over the unchanged fill.
+  expect((await readGlass(leave)).backgroundImage).toContain("linear-gradient");
+  expect((await readGlass(leave)).boxShadow).toMatch(/inset/);
+  // FaceTime framing: a solo tile gets the soft 20px corner and a rim.
+  const soloTile = page.locator(".media-p405-grid .media-p405-tile").first();
+  await expect(soloTile).toHaveCSS(
+    "border-top-left-radius",
+    await expectedCornerRadius(page, 20),
+  );
+  expect((await readGlass(soloTile)).boxShadow).toMatch(/inset/);
+  const namePill = soloTile.locator(".media-p405-tile-meta > span");
+  expect((await readGlass(namePill)).backdropFilter).toMatch(/blur\(16px\)/);
+  // Apple HIG type and the spring curve on every Dock key.
+  expect(
+    await page
+      .locator(".media-p405-room")
+      .evaluate((room) => getComputedStyle(room).fontFamily),
+  ).toMatch(/^-apple-system, BlinkMacSystemFont/);
+  await expect(micButton).toHaveCSS(
+    "transition-timing-function",
+    /cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
+  );
+  // The header pills share the thin glass and its specular rim.
+  const effectsPill = page.locator(".media-p405-effects-badge > span");
+  expect((await readGlass(effectsPill)).backdropFilter).toMatch(/blur\(18px\)/);
+  expect((await readGlass(effectsPill)).boxShadow).toMatch(/inset/);
   expect(
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
   ).toEqual([]);
-  await saveRoomStudioScreenshot(page, "01-room-solo-vi-1440x900.png");
+  await saveRoomStudioScreenshot(page, "01-macos-solo-vi-1440x900.png");
+
+  // Tactile press: the key sinks to 96.5% while held. Releasing off the key
+  // dispatches no click on it, so the microphone state is untouched.
+  const micBox = await micButton.boundingBox();
+  await page.mouse.move(
+    micBox!.x + micBox!.width / 2,
+    micBox!.y + micBox!.height / 2,
+  );
+  await page.mouse.down();
+  await expect
+    .poll(() =>
+      micButton.evaluate((button) => getComputedStyle(button).transform),
+    )
+    .toBe("matrix(0.965, 0, 0, 0.965, 0, 0)");
+  await page.mouse.move(4, 4);
+  await page.mouse.up();
+  await expect(micButton).toHaveAccessibleName("Tắt micro");
 
   // The captioned Dock still fits one row on a 1024px laptop.
   await page.setViewportSize({ width: 1_024, height: 768 });
@@ -897,7 +998,11 @@ test("ROOM-STUDIO-02 seats a one-to-one lesson side by side at the stage centre"
     Math.abs((teacher!.x + student!.x + student!.width) / 2 - 720),
   ).toBeLessThanOrEqual(16);
   expect(await stageOverflow(page)).toBeLessThanOrEqual(1);
-  await saveRoomStudioScreenshot(page, "02-room-duo-vi-1440x900.png");
+  // ROOM-MACOS-03: a one-to-one lesson keeps the 20px FaceTime corner.
+  await expect(
+    page.locator(".media-p405-grid .media-p405-tile").nth(1),
+  ).toHaveCSS("border-top-left-radius", await expectedCornerRadius(page, 20));
+  await saveRoomStudioScreenshot(page, "02-macos-duo-vi-1440x900.png");
 });
 
 test("ROOM-STUDIO-02 fits five people in a centred 3 × 2 grid without scrolling", async ({
@@ -926,7 +1031,41 @@ test("ROOM-STUDIO-02 fits five people in a centred 3 × 2 grid without scrolling
   expect(Math.abs(topCentre - bottomCentre)).toBeLessThanOrEqual(2);
   expect(Math.abs(topCentre - 720)).toBeLessThanOrEqual(16);
   expect(await stageOverflow(page)).toBeLessThanOrEqual(1);
-  await saveRoomStudioScreenshot(page, "03-room-group5-vi-1440x900.png");
+  // ROOM-MACOS-03: groups tighten to 16px corners.
+  await expect(
+    page.locator(".media-p405-grid .media-p405-tile").first(),
+  ).toHaveCSS("border-top-left-radius", await expectedCornerRadius(page, 16));
+
+  // The reaction menu is a frosted Control Center module above the Dock.
+  const reactions = page.getByRole("button", {
+    name: "Gửi reaction",
+    exact: true,
+  });
+  await reactions.click();
+  const reactionMenu = page.getByRole("menu", { name: "Chọn reaction" });
+  await expect(reactionMenu).toBeVisible();
+  await expect(reactions).toHaveAttribute("aria-expanded", "true");
+  const menuGlass = await readGlass(reactionMenu);
+  expect(menuGlass.backdropFilter).toMatch(/blur\(30px\)/);
+  expect(menuGlass.backgroundImage).toContain("linear-gradient");
+  expect(menuGlass.boxShadow).toMatch(/inset/);
+  const menuBox = await reactionMenu.boundingBox();
+  const triggerBox = await reactions.boundingBox();
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(triggerBox!.y);
+  await reactionMenu.getByRole("menuitem", { name: "Vỗ tay" }).hover();
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p406-reaction-menu")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await saveRoomStudioScreenshot(
+    page,
+    "03-macos-group5-reactions-vi-1440x900.png",
+  );
+  await page.keyboard.press("Escape");
+  await expect(reactionMenu).toHaveCount(0);
 });
 
 test("ROOM-STUDIO-02 opens the whiteboard stage beside a 256px camera strip without remounting tiles", async ({
@@ -972,11 +1111,22 @@ test("ROOM-STUDIO-02 opens the whiteboard stage beside a 256px camera strip with
         document.querySelectorAll(".media-p405-tile[data-studio-probe]").length,
     ),
   ).toBe(4);
+  // ROOM-MACOS-03: a Keynote-style window with a translucent titlebar.
+  const toolStage = page.locator(".media-p506-tool-stage");
+  await expect(toolStage).toHaveCSS(
+    "border-top-left-radius",
+    await expectedCornerRadius(page, 20),
+  );
+  const titlebar = await readGlass(
+    page.locator(".media-p506-tool-stage__header"),
+  );
+  expect(titlebar.backdropFilter).toMatch(/blur\(20px\)/);
+  expect(titlebar.boxShadow).toMatch(/inset/);
   expect(
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
   ).toEqual([]);
-  await saveRoomStudioScreenshot(page, "04-room-whiteboard-vi-1440x900.png");
+  await saveRoomStudioScreenshot(page, "04-macos-whiteboard-vi-1440x900.png");
 });
 
 test("ROOM-STUDIO-02 centres the device popover over the Dock beside the effects drawer", async ({
@@ -1024,9 +1174,42 @@ test("ROOM-STUDIO-02 centres the device popover over the Dock beside the effects
   expect(panelBox!.width).toBeLessThanOrEqual(561);
   expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(drawerBox!.x);
   expect(stageBox!.x + stageBox!.width).toBeLessThanOrEqual(drawerBox!.x + 1);
+
+  // ROOM-MACOS-03: Control Center popover and inspector drawer are two
+  // separate glass layers; both frost what is behind them.
+  const panelGlass = await readGlass(panel);
+  expect(panelGlass.backdropFilter).toMatch(/blur\(30px\)/);
+  expect(panelGlass.backdropFilter).toMatch(/saturate\((1\.9|190%)\)/);
+  expect(panelGlass.backgroundImage).toContain("linear-gradient");
+  expect(panelGlass.boxShadow).toMatch(/inset/);
+  await expect(panel).toHaveCSS(
+    "border-top-left-radius",
+    await expectedCornerRadius(page, 20),
+  );
+  const drawerGlass = await readGlass(drawer);
+  expect(drawerGlass.backdropFilter).toMatch(/blur\(32px\)/);
+  expect(drawerGlass.backgroundImage).toContain("linear-gradient");
+  expect(drawerGlass.boxShadow).toMatch(/inset/);
+  await expect(drawer).toHaveCSS(
+    "border-left-color",
+    "rgba(255, 255, 255, 0.12)",
+  );
+  // Width and edge are unchanged by the glass (VIDEO-FX-01 geometry).
+  expect(drawerBox!.width).toBeLessThanOrEqual(361);
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p405-effects-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
   await saveRoomStudioScreenshot(
     page,
-    "05-room-effects-drawer-vi-1440x900.png",
+    "05-macos-control-center-vi-1440x900.png",
   );
 });
 
@@ -1065,7 +1248,7 @@ test("ROOM-STUDIO-02 reflows the studio room at 320 CSS pixels with forced color
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,
   ).toEqual([]);
-  await saveRoomStudioScreenshot(page, "06-room-mobile-vi-320x900.png");
+  await saveRoomStudioScreenshot(page, "06-macos-mobile-vi-320x900.png");
 
   await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
   expect(await horizontalOverflow()).toBeLessThanOrEqual(1);
@@ -1073,6 +1256,28 @@ test("ROOM-STUDIO-02 reflows the studio room at 320 CSS pixels with forced color
     "border-top-style",
     "solid",
   );
+  // ROOM-MACOS-03: forced colours drop the glass layer; reduced motion drops
+  // the spring transitions and the press transform.
+  expect(
+    (await readGlass(page.locator(".media-p405-footer"), "::before")).display,
+  ).toBe("none");
+  // (styles.css forces 0.01ms !important under reduced motion: effectively 0.)
+  const dockKeyMotion = await page
+    .locator(".media-p405-footer .media-p405-dock-button")
+    .first()
+    .evaluate((button) => {
+      const style = getComputedStyle(button);
+      return {
+        duration: Math.max(
+          ...style.transitionDuration
+            .split(",")
+            .map((value) => parseFloat(value)),
+        ),
+        transform: style.transform,
+      };
+    });
+  expect(dockKeyMotion.duration).toBeLessThan(0.001);
+  expect(dockKeyMotion.transform).toBe("none");
   expect(
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
       .violations,

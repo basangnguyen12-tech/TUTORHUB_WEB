@@ -4,18 +4,31 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-24                                                                                                                                              |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                   |
-| Nhánh làm việc       | `main`                                                                                                                                                  |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                             |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                               |
-| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                         |
-| Task `DONE` gần nhất | `ROOM-STUDIO-02` Đại tu Giao diện Phòng học Cinema Studio (Lưới Thích ứng 1–12 Người, Thanh Dock Nổi Có Nhãn Cụm, Đồng hồ Phiên & Nút Danger `#dc2626`) |
-| Mốc repository mới   | `@tutorhub/web` `1082/1082` (`104` file), Chromium E2E `p4-03..07` `44/44` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file          |
-| Task hiện tại        | Trải nghiệm trực tiếp toàn trình Danh sách lớp → Pre-Join chuẩn `110%` → Phòng học Cinema Studio + Nền & Hiệu ứng + Bảng trắng; chờ GitHub mở khóa      |
-| Task tiếp theo       | Tinh chỉnh theo phản hồi thực tế của chủ dự án, đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB` & nối lại Render/Cloudflare Pages                     |
+| Thuộc tính           | Trạng thái                                                                                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-24                                                                                                                                                 |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                      |
+| Nhánh làm việc       | `main`                                                                                                                                                     |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                  |
+| Phase hiện tại       | Đại tu UX Lớp học, Pre-Join & Phòng học trực tuyến (LiveKit + Bảng trắng Excalidraw); Phase 3 deferred carry-over vẫn hoạt động                            |
+| Task `DONE` gần nhất | `ROOM-MACOS-03` Nâng cấp Phòng học sang Ngôn ngữ Sang trọng macOS Liquid Glass (Vật liệu Kính 4 Lớp, Specular Rim, Squircle & Medallion)                   |
+| Mốc repository mới   | `@tutorhub/web` `1082/1082` (`104` file), Chromium E2E `p4-03..07` `44/44` PASS, `whiteboard-runtime` `156` PASS, `security:bundle` `218` file             |
+| Task hiện tại        | Trải nghiệm trực tiếp Phòng học macOS Liquid Glass trên trình duyệt; chuẩn bị `ADR-0042` mở rộng hệ thống token macOS ra toàn ứng dụng nếu chủ dự án duyệt |
+| Task tiếp theo       | Lập `ADR-0042` nâng cấp toàn bộ Design System sang ngôn ngữ macOS (hoặc tinh chỉnh thêm), đẩy `main` lên `basangnguyen12-tech/TUTORHUB_WEB`                |
+
+### Checkpoint `ROOM-MACOS-03` Nâng cấp Phòng học Trực tuyến sang Ngôn ngữ Thiết kế Sang trọng macOS Liquid Glass (`FaceTime · Control Center · Keynote`) (`DONE`) — 2026-11-24
+
+Claude Code nghiên cứu và triển khai `ROOM-MACOS-03` thuần CSS trong `Allowed Scope` (không chạm `ClassroomMediaShell.tsx` hay `tokens.css` toàn cục); Gatekeeper (Antigravity) review `RESEARCH.md`, kiểm tra bảng tương phản kịch bản nền sáng xấu nhất (`>= 4.73:1`), đối chiếu bộ 6 ảnh thực tế, chạy độc lập `pnpm verify`, ngân sách bundle và trọn bộ 44 bài Chromium Playwright E2E `p4-03..07`:
+
+- **Hệ Vật liệu Kính Mờ Đa Lớp, Specular Top Rim & Tách Backdrop Root (`apps/web/src/pages/ClassroomRoomStage.css`, `apps/web/src/components/VisualEffectsPicker.css`)**:
+  - Khai báo bộ token vật liệu cục bộ trên `.media-p405-room` và 6 portal tối của lớp học: font stack hệ sinh thái Apple (`-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter"`), đường cong đàn hồi `--room-ease-spring` (`cubic-bezier(0.22, 1, 0.36, 1)`) kèm phản hồi lún xúc giác `scale(0.965)` khi nhấn (`:active`, tự tắt khi `prefers-reduced-motion`).
+  - Tách lớp kính mờ của Thanh Dock (`blur(28px) saturate(185%)`) sang pseudo-element `.media-p405-footer::before` để tránh tạo Backdrop Root chặn hiệu ứng làm mờ xuyên thấu của Popover Thiết bị con (`blur(30px) saturate(190%)`) đối với sân khấu phía sau.
+  - Phủ viền ánh sáng vát mép trên (`inset 0 1px 0 rgb(255 255 255 / 15%..28%)`) và bóng đổ kép cho toàn bộ tấm kính nổi, nút keycap AV, nút Sapphire đang bật (`Bảng trắng`, `Hiệu ứng`, `Giơ tay`, `Thiết bị`), nút Ruby kim loại (`#dc2626` giữ nguyên `background-color` cho Playwright và đạt tương phản `>= 4.73:1`), rãnh lõm Segmented Control (`Bố cục` và tab `Phông nền | Ánh sáng` trong ngăn Hiệu ứng) cùng nhóm thẻ lồng kiểu macOS System Settings.
+- **Sàn Khí quyển FaceTime, Góc Cong Liên tục `squircle` & Medallion Avatar (`ClassroomRoomStage.css`, `e2e/p4-05-classroom-shell.spec.ts`)**:
+  - Tạo chiều sâu ánh sáng dịu trên sàn `.media-p405-shell` (`#1a2030 → #10131b → #0b0d13`); bo góc ô camera `20px` (`1–2` người) / `16px` (`>= 3` người) / `12px` (dải phụ cạnh Bảng trắng) kèm progressive `@supports (corner-shape: squircle)` (bù bán kính `× 1.8` giữ độ cong mềm chuẩn Apple); nâng cấp 6 tông avatar huy chương có tương phản chữ trắng thấp nhất `5.07:1` và cửa sổ Bảng trắng thanh tiêu đề trong mờ kiểu Keynote.
+  - Tính kiểm chứng tương phản composite trên nền video trắng xấu nhất đạt `>= 4.76:1` cho cả Popover Thiết bị, Menu Cảm xúc, viên tên người tham gia và 3 ngăn Inspector bên phải; đồng thời khai báo nền `Canvas` đặc tường minh cho mọi bề mặt kính dưới `@media (forced-colors: active)`.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1082/1082`** trên `104` file, `security:bundle` `218` file, Storybook build, Go `40` package + `go vet`), `check-whiteboard-performance-bundle.mjs` PASS (`entryRawBytes = 720,529` B, `issues: []`), và trọn bộ Chromium Playwright E2E `p4-03..07` (**`44/44`** bài kiểm chứng thêm `backdrop-filter`, viền sáng, `squircle`, font stack, tactile press, không chồng lấp nhãn dưới icon, `320px` `forced-colors` và Axe `0` vi phạm) **`PASS` (`55.5s`)**.
 
 ### Checkpoint `ROOM-STUDIO-02` Đại tu Toàn diện Giao diện Phòng học Trực tuyến — Sân khấu Cinema Thích ứng 1–12 Người, Thanh Dock Nổi Phân cụm Có Nhãn & Chuẩn Tương phản `#dc2626` (`DONE`) — 2026-11-24
 
