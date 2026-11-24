@@ -2079,9 +2079,12 @@ export function ClassroomMediaShell({
                   // The emoji popover and inline edit own their Escape.
                   const target = event.target;
                   if (
-                    target instanceof Element &&
-                    target.closest(
-                      ".classroom-chat-emoji__popover, .classroom-chat__edit",
+                    (target instanceof Element &&
+                      target.closest(
+                        ".classroom-chat-emoji__popover, .classroom-chat__edit",
+                      )) ||
+                    document.querySelector(
+                      ".media-p408-chat-drawer .classroom-chat-emoji__popover",
                     )
                   ) {
                     event.preventDefault();

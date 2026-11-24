@@ -278,6 +278,9 @@ importers:
       "@vitejs/plugin-react":
         specifier: 6.0.3
         version: 6.0.3(vite@8.1.4(@types/node@24.10.13)(esbuild@0.28.1))
+      emojibase-data:
+        specifier: 18.0.0
+        version: 18.0.0(emojibase@18.0.0)
       jsdom:
         specifier: 29.1.1
         version: 29.1.1
@@ -5498,6 +5501,21 @@ packages:
       {
         integrity: sha512-cEto7aeOqBfU1D+c5py5pE+ooscKE75JifxLBdFUZsqAxRS6y7kebtxAZvICszSl05gPjYHDTjY+lXpyGvpJbg==,
       }
+
+  emojibase-data@18.0.0:
+    resolution:
+      {
+        integrity: sha512-TPPRRYv2zPd0jKI+pTpMquwWNZXYAsC3IVsCMeg2X8y8fEzKwOks4/5bz0YavF5r6d71aGPpb6oDnUEwSLLMoA==,
+      }
+    peerDependencies:
+      emojibase: "*"
+
+  emojibase@18.0.0:
+    resolution:
+      {
+        integrity: sha512-5PG+EEt5zQ9qvqdHZw61+T9iz96g+r621QS/w8jEzPg+3mjzAdjl8LPLc+e9ABv/yboNfMwEair7aK9qKnwAbQ==,
+      }
+    engines: { node: ">=20.0.0" }
 
   empathic@2.0.1:
     resolution:
@@ -11402,6 +11420,12 @@ snapshots:
       "@types/trusted-types": 2.0.7
 
   electron-to-chromium@1.5.389: {}
+
+  emojibase-data@18.0.0(emojibase@18.0.0):
+    dependencies:
+      emojibase: 18.0.0
+
+  emojibase@18.0.0: {}
 
   empathic@2.0.1: {}
 

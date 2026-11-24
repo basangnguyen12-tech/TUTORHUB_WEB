@@ -58,6 +58,7 @@ import {
   formatAttachmentSize,
   isJumboEmoji,
   linkifyChatText,
+  prefetchClassroomEmojiCatalog,
   prepareChatImage,
   type AttachmentObjectURLCache,
   type ClassroomChatComposerStore,
@@ -258,9 +259,16 @@ export function ClassroomChatPanel({
   const [lightbox, setLightbox] = useState<MessageAttachment | null>(null);
   const [dragging, setDragging] = useState(false);
   const [showJump, setShowJump] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const dragDepth = useRef(0);
   const pendingSend = useRef<ClassroomChatSendInput | null>(null);
+  const pendingCaret = useRef<number | null>(null);
+  const composerRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const emojiScope = useMemo(
+    () => ({ actorID, tenantID }),
+    [actorID, tenantID],
+  );
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<HTMLDivElement>(null);
@@ -371,6 +379,29 @@ export function ClassroomChatPanel({
     element.style.height = `${element.scrollHeight}px`;
   }, []);
   useLayoutEffect(resizeComposer, [draft, resizeComposer]);
+
+  // ROOM-CHAT-EMOJI-02: after an emoji lands, park the caret right after it
+  // (without stealing focus from the picker) so the next pick follows it.
+  useLayoutEffect(() => {
+    const caret = pendingCaret.current;
+    if (caret === null) return;
+    pendingCaret.current = null;
+    textareaRef.current?.setSelectionRange(caret, caret);
+  }, [draft]);
+
+  // Warm the emoji data chunk once Chat is open and the viewer can post.
+  useEffect(() => {
+    if (!canPost) return undefined;
+    const idle = globalThis.requestIdleCallback;
+    if (typeof idle === "function") {
+      const handle = idle(() => prefetchClassroomEmojiCatalog(), {
+        timeout: 2_000,
+      });
+      return () => globalThis.cancelIdleCallback?.(handle);
+    }
+    const timer = globalThis.setTimeout(prefetchClassroomEmojiCatalog, 300);
+    return () => globalThis.clearTimeout(timer);
+  }, [canPost]);
 
   const uploadItem = useCallback(
     async (item: ClassroomChatStagedAttachment) => {
@@ -531,6 +562,7 @@ export function ClassroomChatPanel({
             content: trimmed,
           };
     pendingSend.current = input;
+    setEmojiOpen(false);
     setSending(true);
     setComposerError(null);
     forceScroll.current = true;
@@ -573,17 +605,14 @@ export function ClassroomChatPanel({
     addFiles(files);
   };
 
+  // Multi-pick: the textarea keeps its caret while focus stays in the picker.
   const insertEmoji = (emoji: string) => {
     const element = textareaRef.current;
-    const start = element?.selectionStart ?? draft.length;
-    const end = element?.selectionEnd ?? draft.length;
-    const next = `${draft.slice(0, start)}${emoji}${draft.slice(end)}`;
-    setDraft(next);
-    const caret = start + emoji.length;
-    globalThis.requestAnimationFrame(() => {
-      element?.focus();
-      element?.setSelectionRange(caret, caret);
-    });
+    const current = element?.value ?? draft;
+    const start = element?.selectionStart ?? current.length;
+    const end = element?.selectionEnd ?? current.length;
+    pendingCaret.current = start + emoji.length;
+    setDraft(`${current.slice(0, start)}${emoji}${current.slice(end)}`);
   };
 
   const onPick =
@@ -1036,6 +1065,7 @@ export function ClassroomChatPanel({
       {canPost && (
         <form
           className="classroom-chat__composer"
+          ref={composerRef}
           onSubmit={(event: FormEvent) => {
             event.preventDefault();
             void submit();
@@ -1143,7 +1173,14 @@ export function ClassroomChatPanel({
             </p>
           )}
           <div className="classroom-chat__actions">
-            <ClassroomEmojiPicker disabled={sending} onSelect={insertEmoji} />
+            <ClassroomEmojiPicker
+              boundaryRef={composerRef}
+              disabled={sending}
+              onOpenChange={setEmojiOpen}
+              onSelect={insertEmoji}
+              open={emojiOpen}
+              recentScope={emojiScope}
+            />
             {canUpload && (
               <button
                 aria-label={t("media.chat.attachImage")}

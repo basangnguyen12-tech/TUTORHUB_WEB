@@ -23,13 +23,21 @@ import {
   type ClassroomChatPanelProps,
 } from "./ClassroomChatPanel";
 import {
+  CHAT_EMOJI_RECENT_LIMIT,
+  CLASSROOM_EMOJI_TOPICS,
+  chatEmojiRecentKey,
   checkChatFile,
   createAttachmentObjectURLCache,
   createClassroomChatComposerStore,
   isJumboEmoji,
   linkifyChatText,
+  loadChatEmojiRecents,
+  normalizeEmojiSearch,
+  parseClassroomEmojiCatalog,
+  recordChatEmojiRecent,
   searchClassroomEmoji,
 } from "./classroomChatMedia";
+import { EMOJI_CATALOG_DATA, EMOJI_CATALOG_SOURCE } from "./emojiCatalog.data";
 
 const actorID = "be85eb92-0f18-4163-85ba-50e4d343d632";
 const peerID = "53f0dac5-6c10-46ff-bcb8-da03d07bc142";
@@ -151,11 +159,13 @@ describe("ClassroomChatPanel", () => {
     });
     URL.createObjectURL = vi.fn(() => `blob:chat-${(counter += 1)}`);
     URL.revokeObjectURL = vi.fn();
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
   });
 
   it("shows a calm empty state and sends with Enter while Shift+Enter adds a line", async () => {
@@ -203,7 +213,7 @@ describe("ClassroomChatPanel", () => {
     );
   });
 
-  it("inserts an emoji at the caret from the searchable picker", async () => {
+  it("opens a Zalo-style picker and keeps it open for several emoji in a row", async () => {
     renderPanel();
     const textbox = composer() as HTMLTextAreaElement;
     fireEvent.change(textbox, { target: { value: "ab" } });
@@ -215,40 +225,243 @@ describe("ClassroomChatPanel", () => {
       name: "Chọn biểu tượng cảm xúc",
     });
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(within(picker).getAllByRole("tab")).toHaveLength(4);
-    expect(
-      within(picker).getByRole("tab", { name: "Lớp học & Hay dùng" }),
-    ).toHaveAttribute("aria-selected", "true");
+    const search = within(picker).getByRole("searchbox", {
+      name: "Tìm biểu tượng cảm xúc",
+    });
+    expect(search).toHaveFocus();
+    expect(search).toHaveAttribute("placeholder", "Tìm biểu tượng cảm xúc…");
+    // Opening alone never touches localStorage.
+    expect(window.localStorage).toHaveLength(0);
 
-    fireEvent.change(
-      within(picker).getByRole("searchbox", { name: "Tìm biểu tượng cảm xúc" }),
-      { target: { value: "vo tay" } },
-    );
-    fireEvent.click(
-      within(picker).getByRole("button", { name: "vỗ tay hoan hô" }),
-    );
+    // Three tiers: search on top, one stream, the topic bar at the bottom.
+    await within(picker).findByRole("button", { name: "mặt cười toe toét" });
+    const tablist = within(picker).getByRole("tablist", {
+      name: "Danh mục biểu tượng",
+    });
+    const stream = picker.querySelector(".classroom-chat-emoji__stream")!;
+    expect(picker.lastElementChild).toBe(tablist.parentElement);
+    expect(
+      search.compareDocumentPosition(stream) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      stream.compareDocumentPosition(tablist) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      within(tablist)
+        .getAllByRole("tab")
+        .map((tab) => tab.getAttribute("aria-label")),
+    ).toEqual([
+      "Gần đây",
+      "Cảm xúc",
+      "Con người & Cử chỉ",
+      "Động vật & Thiên nhiên",
+      "Ẩm thực & Đồ uống",
+      "Hoạt động & Thể thao",
+      "Du lịch & Địa điểm",
+      "Đồ vật & Học tập",
+      "Biểu tượng & Toán học",
+      "Cờ",
+    ]);
+    // No Recent row yet: the stream starts with Smileys.
+    expect(
+      within(tablist).getByRole("tab", { name: "Cảm xúc" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(within(picker).queryByRole("group", { name: "Gần đây" })).toBeNull();
+    // ~1.9k emoji, but only the rows near the viewport are in the DOM.
+    expect(picker.querySelectorAll("[data-cell]").length).toBeLessThan(260);
+
+    // Vietnamese without diacritics: 👏, then ❤️ follows it at the caret.
+    fireEvent.change(search, { target: { value: "vo tay" } });
+    expect(
+      within(picker).getByRole("heading", { name: /kết quả$/u }),
+    ).toBeInTheDocument();
+    fireEvent.click(within(picker).getByRole("button", { name: "vỗ tay" }));
     expect(textbox).toHaveValue("a👏b");
     expect(
-      screen.queryByRole("dialog", { name: "Chọn biểu tượng cảm xúc" }),
-    ).toBeNull();
+      screen.getByRole("dialog", { name: "Chọn biểu tượng cảm xúc" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(picker).getByRole("button", { name: "Xóa từ khóa tìm kiếm" }),
+    );
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: "trai tim" } });
+    fireEvent.click(
+      within(picker).getByRole("button", { name: "trái tim màu đỏ" }),
+    );
+    expect(textbox).toHaveValue("a👏❤️b");
+    expect(textbox.selectionStart).toBe("a👏❤️".length);
 
-    // Keyboard: arrows rove, Escape closes and returns focus.
-    fireEvent.click(trigger);
-    const reopened = screen.getByRole("dialog", {
-      name: "Chọn biểu tượng cảm xúc",
-    });
-    fireEvent.click(within(reopened).getByRole("tab", { name: "Mặt cười" }));
-    const first = within(reopened).getByRole("button", { name: "cười tươi" });
-    first.focus();
-    fireEvent.keyDown(first, { key: "ArrowRight" });
-    expect(
-      within(reopened).getByRole("button", { name: "cười lớn" }),
-    ).toHaveFocus();
-    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    const key = `tutorhub:chat-emoji-recent:v1:${tenantID}:${actorID}`;
+    expect(JSON.parse(window.localStorage.getItem(key) ?? "[]")).toEqual([
+      "❤️",
+      "👏",
+    ]);
+
+    // Escape closes only the popover and returns focus to the emoji key.
+    fireEvent.keyDown(search, { key: "Escape" });
     expect(
       screen.queryByRole("dialog", { name: "Chọn biểu tượng cảm xúc" }),
     ).toBeNull();
     expect(trigger).toHaveFocus();
+    expect(composer()).toBeInTheDocument();
+
+    // Reopening shows them first, most recent first.
+    fireEvent.click(trigger);
+    const reopened = screen.getByRole("dialog", {
+      name: "Chọn biểu tượng cảm xúc",
+    });
+    const recent = await within(reopened).findByRole("group", {
+      name: "Gần đây",
+    });
+    expect(
+      within(recent)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["❤️", "👏"]);
+    expect(
+      within(reopened).getByRole("tab", { name: "Gần đây" }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("jumps from the bottom topic bar to the exact section and follows scrolling", async () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Biểu tượng cảm xúc" }));
+    const picker = screen.getByRole("dialog", {
+      name: "Chọn biểu tượng cảm xúc",
+    });
+    await within(picker).findByRole("button", { name: "mặt cười toe toét" });
+    const stream = picker.querySelector<HTMLElement>(
+      ".classroom-chat-emoji__stream",
+    )!;
+    const sectionTop = (name: string) =>
+      Number(
+        within(picker).getByRole("group", { name }).getAttribute("data-top"),
+      );
+    const tab = (name: string) => within(picker).getByRole("tab", { name });
+
+    fireEvent.click(tab("Ẩm thực & Đồ uống"));
+    expect(tab("Ẩm thực & Đồ uống")).toHaveAttribute("aria-selected", "true");
+    expect(tab("Cảm xúc")).toHaveAttribute("aria-selected", "false");
+    expect(stream.scrollTop).toBe(sectionTop("Ẩm thực & Đồ uống"));
+    expect(
+      within(picker).getByRole("button", { name: "chùm nho" }),
+    ).toBeInTheDocument();
+
+    // The last topic lands on its first row on the very first click.
+    fireEvent.click(tab("Cờ"));
+    expect(stream.scrollTop).toBe(sectionTop("Cờ"));
+    const flags = within(picker).getByRole("group", { name: "Cờ" });
+    expect(within(flags).getAllByRole("button")[0]).toHaveAccessibleName(
+      "cờ: Việt Nam",
+    );
+
+    // Scroll-spy: scrolling into Animals & Nature moves the underline.
+    stream.scrollTop = sectionTop("Động vật & Thiên nhiên") + 40;
+    fireEvent.scroll(stream);
+    expect(tab("Động vật & Thiên nhiên")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(tab("Cờ")).toHaveAttribute("aria-selected", "false");
+
+    // Bottom bar keys: roving focus, Home shows the empty-Recent hint.
+    tab("Động vật & Thiên nhiên").focus();
+    fireEvent.keyDown(tab("Động vật & Thiên nhiên"), { key: "ArrowRight" });
+    expect(tab("Ẩm thực & Đồ uống")).toHaveFocus();
+    expect(tab("Ẩm thực & Đồ uống")).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(tab("Ẩm thực & Đồ uống"), { key: "Home" });
+    expect(tab("Gần đây")).toHaveFocus();
+    expect(stream.scrollTop).toBe(0);
+    expect(
+      within(picker).getByText("Emoji bạn dùng sẽ xuất hiện tại đây"),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(tab("Gần đây"), { key: "End" });
+    expect(tab("Cờ")).toHaveFocus();
+    expect(stream.scrollTop).toBe(sectionTop("Cờ"));
+  });
+
+  it("moves through the 8-column grid with arrows across topics", async () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Biểu tượng cảm xúc" }));
+    const picker = screen.getByRole("dialog", {
+      name: "Chọn biểu tượng cảm xúc",
+    });
+    const first = await within(picker).findByRole("button", {
+      name: "mặt cười toe toét",
+    });
+    const search = within(picker).getByRole("searchbox");
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    expect(first).toHaveFocus();
+    expect(first).toHaveAttribute("tabindex", "0");
+    fireEvent.keyDown(first, { key: "ArrowRight" });
+    const second = document.activeElement as HTMLElement;
+    expect(second).toHaveAttribute("data-cell", "smileys:1");
+    fireEvent.keyDown(second, { key: "ArrowDown" });
+    expect(document.activeElement).toHaveAttribute("data-cell", "smileys:9");
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(document.activeElement).toHaveAttribute("data-cell", "smileys:15");
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(document.activeElement).toHaveAttribute("data-cell", "smileys:8");
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(search).toHaveFocus();
+
+    // Ctrl+End reaches the last flag even though it was never rendered.
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    fireEvent.keyDown(document.activeElement!, { key: "End", ctrlKey: true });
+    const last = document.activeElement as HTMLElement;
+    expect(last.getAttribute("data-cell")).toMatch(/^flags:\d+$/u);
+    expect(last).toHaveAccessibleName("cờ: Xứ Wales");
+    // Crossing a topic border keeps the column.
+    fireEvent.keyDown(document.activeElement!, { key: "Home", ctrlKey: true });
+    const peopleStart = within(picker).getByRole("tab", {
+      name: "Con người & Cử chỉ",
+    });
+    fireEvent.click(peopleStart);
+    const people = within(picker).getByRole("group", {
+      name: "Con người & Cử chỉ",
+    });
+    const firstPerson = within(people).getAllByRole("button")[2]!;
+    firstPerson.focus();
+    fireEvent.keyDown(firstPerson, { key: "ArrowUp" });
+    const above = document.activeElement as HTMLElement;
+    expect(above.getAttribute("data-cell")).toMatch(/^smileys:\d+$/u);
+    expect(
+      Number(above.getAttribute("data-cell")!.split(":")[1]) % 8,
+    ).toBeLessThanOrEqual(2);
+  });
+
+  it("closes the picker on send and on outside clicks, but not inside the composer", async () => {
+    const { props } = renderPanel();
+    const trigger = screen.getByRole("button", { name: "Biểu tượng cảm xúc" });
+    fireEvent.click(trigger);
+    const picker = screen.getByRole("dialog", {
+      name: "Chọn biểu tượng cảm xúc",
+    });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "mặt cười toe toét" }),
+    );
+    fireEvent.pointerDown(composer());
+    expect(
+      screen.getByRole("dialog", { name: "Chọn biểu tượng cảm xúc" }),
+    ).toBeInTheDocument();
+    fireEvent.keyDown(composer(), { key: "Enter" });
+    await waitFor(() => expect(props.onSend).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(props.onSend).mock.calls[0]?.[0].content).toBe("😀");
+    expect(
+      screen.queryByRole("dialog", { name: "Chọn biểu tượng cảm xúc" }),
+    ).toBeNull();
+
+    fireEvent.click(trigger);
+    expect(
+      screen.getByRole("dialog", { name: "Chọn biểu tượng cảm xúc" }),
+    ).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(
+      screen.queryByRole("dialog", { name: "Chọn biểu tượng cảm xúc" }),
+    ).toBeNull();
   });
 
   it("renders jumbo emoji, safe links, day pills and same-author grouping", () => {
@@ -631,14 +844,120 @@ describe("classroomChatMedia", () => {
       checkChatFile({ name: "deck.pptx", size: 11 * 1024 * 1024, type: "" }),
     ).toEqual({ ok: false, problem: "size" });
   });
+});
 
-  it("searches emoji in Vietnamese without diacritics and in English", () => {
-    expect(searchClassroomEmoji("vo tay").map((entry) => entry.char)).toContain(
+describe("ROOM-CHAT-EMOJI-02 emoji catalogue", () => {
+  const catalog = parseClassroomEmojiCatalog(
+    EMOJI_CATALOG_DATA,
+    EMOJI_CATALOG_SOURCE,
+  );
+  const chars = (query: string) =>
+    searchClassroomEmoji(catalog, query).map((entry) => entry.char);
+
+  it("ships nine fixed topics of default-tone CLDR emoji with 🇻🇳 leading the flags", () => {
+    expect(EMOJI_CATALOG_SOURCE).toBe("emojibase-data@18.0.0");
+    expect(catalog.topics.map((topic) => topic.id)).toEqual([
+      ...CLASSROOM_EMOJI_TOPICS,
+    ]);
+    expect(CLASSROOM_EMOJI_TOPICS).toEqual([
+      "smileys",
+      "people",
+      "nature",
+      "food",
+      "activities",
+      "travel",
+      "objects",
+      "symbols",
+      "flags",
+    ]);
+    expect(catalog.size).toBeGreaterThan(1_200);
+    for (const topic of catalog.topics) {
+      expect(topic.entries.length).toBeGreaterThan(40);
+    }
+    const flags = catalog.topics.find((topic) => topic.id === "flags");
+    expect(flags?.entries[0]).toMatchObject({
+      char: "🇻🇳",
+      en: "flag: Vietnam",
+      vi: "cờ: Việt Nam",
+    });
+    const all = catalog.topics.flatMap((topic) => topic.entries);
+    expect(new Set(all.map((entry) => entry.char)).size).toBe(all.length);
+    // No skin-tone variants or lone components; classroom picks are present.
+    expect(all.some((entry) => /\p{Emoji_Modifier}/u.test(entry.char))).toBe(
+      false,
+    );
+    for (const emoji of [
       "👏",
-    );
-    expect(searchClassroomEmoji("divide").map((entry) => entry.char)).toContain(
+      "❤️",
+      "🎓",
+      "📚",
+      "✏️",
+      "💡",
+      "✅",
       "➗",
+      "⚽",
+    ]) {
+      expect(catalog.byChar.has(emoji)).toBe(true);
+    }
+    // The telemetry word gate is enforced by the generator and by
+    // scripts/check-calendar-production-gate.mjs over this data file.
+  });
+
+  it("searches Vietnamese with or without diacritics and English, names first", () => {
+    expect(chars("vo tay")[0]).toBe("👏");
+    expect(chars("Vỗ Tay")[0]).toBe("👏");
+    expect(chars("trai tim")).toContain("❤️");
+    expect(chars("trái tim")).toContain("❤️");
+    expect(chars("mu tot nghiep")[0]).toBe("🎓");
+    expect(chars("bong da")[0]).toBe("⚽");
+    expect(chars("viet nam")[0]).toBe("🇻🇳");
+    expect(chars("cuoi").length).toBeGreaterThan(10);
+    expect(chars("rocket")[0]).toBe("🚀");
+    expect(chars("heart")).toContain("❤️");
+    expect(chars("laugh")).toContain("😂");
+    expect(chars("divide")).toContain("➗");
+    // A name match outranks a tag-only match.
+    const laugh = chars("laugh");
+    expect(laugh.indexOf("🤣")).toBeGreaterThanOrEqual(0);
+    expect(laugh.indexOf("🤣")).toBeLessThan(laugh.indexOf("😀"));
+    expect(chars("🎉")).toEqual(["🎉"]);
+    expect(chars("zzzz")).toEqual([]);
+    expect(normalizeEmojiSearch("Đồng hồ, BÁO thức!")).toBe("dong ho bao thuc");
+  });
+
+  it("keeps recent emoji per tenant and user, writing only on a real pick", () => {
+    const scope = { actorID, tenantID };
+    const storage = window.localStorage;
+    storage.clear();
+    expect(loadChatEmojiRecents(scope)).toEqual([]);
+    expect(storage).toHaveLength(0);
+
+    let recents = recordChatEmojiRecent(scope, [], "👏");
+    recents = recordChatEmojiRecent(scope, recents, "❤️");
+    recents = recordChatEmojiRecent(scope, recents, "👏");
+    expect(recents).toEqual(["👏", "❤️"]);
+    expect(chatEmojiRecentKey(scope)).toBe(
+      `tutorhub:chat-emoji-recent:v1:${tenantID}:${actorID}`,
     );
-    expect(searchClassroomEmoji("zzzz")).toEqual([]);
+    expect(loadChatEmojiRecents(scope)).toEqual(["👏", "❤️"]);
+    // Another tenant or user never sees this list.
+    expect(loadChatEmojiRecents({ actorID: peerID, tenantID })).toEqual([]);
+
+    for (const emoji of catalog.topics[0]!.entries.slice(0, 40)) {
+      recents = recordChatEmojiRecent(scope, recents, emoji.char);
+    }
+    expect(recents).toHaveLength(CHAT_EMOJI_RECENT_LIMIT);
+    expect(recents).toHaveLength(24);
+
+    storage.setItem(chatEmojiRecentKey(scope), '{"bad":true}');
+    expect(loadChatEmojiRecents(scope)).toEqual([]);
+    storage.setItem(chatEmojiRecentKey(scope), "not json");
+    expect(loadChatEmojiRecents(scope)).toEqual([]);
+    storage.setItem(
+      chatEmojiRecentKey(scope),
+      JSON.stringify(["🎉", 7, "x".repeat(64), "🎉"]),
+    );
+    expect(loadChatEmojiRecents(scope)).toEqual(["🎉"]);
+    storage.clear();
   });
 });

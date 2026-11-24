@@ -107,10 +107,43 @@ function navigateToLogin(returnTo = "/app/home") {
   );
 }
 
+/**
+ * ROOM-CHAT-EMOJI-02: classroom chat "Recent" emoji live in localStorage under
+ * `tutorhub:chat-emoji-recent:v1:<tenant>:<user>`. The prefix is owned here so
+ * sign-out can clear it without pulling the classroom chat module into the
+ * entry chunk.
+ */
+export const CHAT_EMOJI_RECENT_STORAGE_PREFIX = "tutorhub:chat-emoji-recent:";
+
+function defaultChatEmojiStorage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function clearChatEmojiRecentStorage(
+  storage: Storage | null = defaultChatEmojiStorage(),
+) {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(CHAT_EMOJI_RECENT_STORAGE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // Storage may be blocked; keys stay scoped per (tenant, user) anyway.
+  }
+}
+
 export async function clearPrivateSessionCache(queryClient: QueryClient) {
   advancePrincipalGeneration(queryClient);
   clearClientDrafts();
   clearMediaRoomEscrow();
+  clearChatEmojiRecentStorage();
   // ADR-0041: personal backgrounds (IndexedDB) and the effect preference are
   // device-local and scoped per (tenant, user); none of it outlives sign-out.
   await Promise.all([

@@ -3166,10 +3166,15 @@ test("ROOM-CHAT-01 docks a 360px chat beside the whiteboard and camera column wi
     page,
     "02-chat-emoji-picker-and-staged-files-vi-1440x900.png",
   );
-  await picker.getByRole("button", { name: "vỗ tay hoan hô" }).click();
-  await expect(picker).toHaveCount(0);
+  // ROOM-CHAT-EMOJI-02: picking keeps the popover open; sending closes it.
+  await picker
+    .getByRole("searchbox", { name: "Tìm biểu tượng cảm xúc" })
+    .fill("vo tay");
+  await picker.getByRole("button", { name: "vỗ tay", exact: true }).click();
+  await expect(picker).toBeVisible();
   await expect(composer).toHaveValue("Cô gửi lời giải mẫu 👏");
   await composer.press("Enter");
+  await expect(picker).toHaveCount(0);
   await expect(strip).toHaveCount(0);
   await expect(composer).toHaveValue("");
   await expect(drawer.getByText("Cô gửi lời giải mẫu 👏")).toBeVisible();
@@ -3364,4 +3369,403 @@ test("ROOM-CHAT-01 reflows the chat inspector and emoji popover at 320 CSS pixel
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
   await expect(chatKey).toBeFocused();
+});
+
+// ---- ROOM-CHAT-EMOJI-02 Zalo-style emoji popover -------------------------
+
+// Set ROOM_CHAT_EMOJI_SCREENSHOT_DIR to save the acceptance screenshots.
+const roomChatEmojiScreenshotDir =
+  process.env.ROOM_CHAT_EMOJI_SCREENSHOT_DIR?.trim() ?? "";
+
+async function saveRoomChatEmojiScreenshot(page: Page, name: string) {
+  if (!roomChatEmojiScreenshotDir) return;
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${roomChatEmojiScreenshotDir}/${name}` });
+}
+
+async function openRoomChatEmojiPicker(page: Page) {
+  const chatKey = page.locator("#media-p408-control-chat");
+  await chatKey.scrollIntoViewIfNeeded();
+  await chatKey.click();
+  const drawer = page.getByRole("dialog", { name: "Trò chuyện trong phòng" });
+  await expect(drawer).toBeVisible();
+  const trigger = drawer.getByRole("button", { name: "Biểu tượng cảm xúc" });
+  await trigger.click();
+  const picker = page.getByRole("dialog", { name: "Chọn biểu tượng cảm xúc" });
+  await expect(picker).toBeVisible();
+  await expect(
+    picker.getByRole("button", { name: "mặt cười toe toét", exact: true }),
+  ).toBeVisible();
+  return {
+    chatKey,
+    composer: drawer.getByRole("textbox", { name: "Nội dung tin nhắn" }),
+    drawer,
+    picker,
+    stream: picker.locator(".classroom-chat-emoji__stream"),
+    trigger,
+  };
+}
+
+/** Every section's real offsetTop must equal the virtualiser's arithmetic. */
+async function emojiSectionOffsets(stream: Locator) {
+  return stream.evaluate((element) =>
+    Array.from(
+      element.querySelectorAll<HTMLElement>(".classroom-chat-emoji__section"),
+    ).map((section) => ({
+      expected: Number(section.dataset.top),
+      height: section.getBoundingClientRect().height,
+      id: section.dataset.section ?? "",
+      offsetTop: section.offsetTop,
+      styleHeight: Number.parseFloat(section.style.height),
+    })),
+  );
+}
+
+async function emojiSectionTop(stream: Locator, id: string) {
+  const offsets = await emojiSectionOffsets(stream);
+  const section = offsets.find((item) => item.id === id);
+  if (!section) throw new Error(`Missing emoji section ${id}.`);
+  return section.expected;
+}
+
+test("ROOM-CHAT-EMOJI-02 shows a Zalo-style emoji popover with Recent, scroll-spy, bottom topic bar and multi-pick", async ({
+  page,
+}) => {
+  await page.route(roomChatExternalRoute, (route) => route.abort());
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, {
+    participantCount: 4,
+    studio: { chat: {}, language: "vi", roomTitle: roomCompactTitle },
+  });
+  await loadRoomStudioStyles(page);
+  const { composer, drawer, picker, stream, trigger } =
+    await openRoomChatEmojiPicker(page);
+  // Opening alone stores nothing.
+  expect(
+    await page.evaluate(() =>
+      Object.keys(window.localStorage).filter((key) =>
+        key.startsWith("tutorhub:chat-emoji-recent:"),
+      ),
+    ),
+  ).toEqual([]);
+
+  // ---- Geometry: 344×410 popover, search → stream → bottom topic bar. ----
+  const pickerBox = await boxOf(picker);
+  const drawerBox = await boxOf(drawer);
+  const searchBox = await boxOf(
+    picker.getByRole("searchbox", { name: "Tìm biểu tượng cảm xúc" }),
+  );
+  const streamBox = await boxOf(stream);
+  const tablist = picker.getByRole("tablist", { name: "Danh mục biểu tượng" });
+  const tabsBox = await boxOf(tablist);
+  expect(Math.round(pickerBox.width)).toBe(344);
+  expect(Math.round(pickerBox.height)).toBe(410);
+  expect(pickerBox.x).toBeGreaterThanOrEqual(drawerBox.x);
+  expect(pickerBox.x + pickerBox.width).toBeLessThanOrEqual(
+    drawerBox.x + drawerBox.width,
+  );
+  expect(searchBox.y + searchBox.height).toBeLessThanOrEqual(streamBox.y);
+  expect(tabsBox.y).toBeGreaterThanOrEqual(streamBox.y + streamBox.height - 1);
+  expect(
+    Math.abs(pickerBox.y + pickerBox.height - (tabsBox.y + tabsBox.height)),
+  ).toBeLessThanOrEqual(2);
+  // A 40px bar (1px top hairline included) at the very bottom edge.
+  expect(
+    Math.round(
+      (await boxOf(picker.locator(".classroom-chat-emoji__nav"))).height,
+    ),
+  ).toBe(40);
+  await expect(tablist.getByRole("tab")).toHaveCount(10);
+  await expect(picker.getByRole("tab", { name: "Cảm xúc" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // 8 even columns of 36px-high cells with a large colour glyph.
+  const cellBoxes = await picker
+    .locator('[data-cell^="smileys:"]')
+    .evaluateAll((cells) =>
+      cells.slice(0, 9).map((cell) => {
+        const box = cell.getBoundingClientRect();
+        return { height: box.height, x: box.x, y: box.y };
+      }),
+    );
+  expect(new Set(cellBoxes.slice(0, 8).map((box) => box.y)).size).toBe(1);
+  expect(cellBoxes[8]!.y).toBeGreaterThan(cellBoxes[0]!.y);
+  expect(Math.round(cellBoxes[0]!.height)).toBe(36);
+  await expect(picker.locator('[data-cell="smileys:0"]')).toHaveCSS(
+    "font-size",
+    "25px",
+  );
+  // CSS layout and the virtualiser agree to the pixel, so jumps are exact.
+  for (const section of await emojiSectionOffsets(stream)) {
+    expect(section.offsetTop, section.id).toBe(section.expected);
+    expect(Math.round(section.height), section.id).toBe(section.styleHeight);
+  }
+  // Only the rows near the viewport exist (~1.9k emoji in the catalogue).
+  expect(await picker.locator("[data-cell]").count()).toBeLessThan(260);
+
+  // ---- Scroll-spy: wheel into Animals & Nature, then Food. ----
+  const natureTop = await emojiSectionTop(stream, "nature");
+  const foodTop = await emojiSectionTop(stream, "food");
+  await stream.hover();
+  await page.mouse.wheel(0, natureTop + 60);
+  await expect(
+    picker.getByRole("tab", { name: "Động vật & Thiên nhiên" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(picker.getByRole("tab", { name: "Cảm xúc" })).toHaveAttribute(
+    "aria-selected",
+    "false",
+  );
+  await page.mouse.wheel(
+    0,
+    foodTop + 40 - (await stream.evaluate((element) => element.scrollTop)),
+  );
+  await expect(
+    picker.getByRole("tab", { name: "Ẩm thực & Đồ uống" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    picker.getByRole("button", { name: "chùm nho", exact: true }),
+  ).toBeVisible();
+  await saveRoomChatEmojiScreenshot(
+    page,
+    "02-zalo-emoji-scrollspy-food-nature-vi-1440x900.png",
+  );
+
+  // ---- Bottom bar jumps land on the exact first row (even the last topic). ----
+  await picker.getByRole("tab", { name: "Cờ" }).click();
+  await expect(picker.getByRole("tab", { name: "Cờ" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(await stream.evaluate((element) => element.scrollTop)).toBe(
+    await emojiSectionTop(stream, "flags"),
+  );
+  const vietnam = picker.getByRole("button", {
+    name: "cờ: Việt Nam",
+    exact: true,
+  });
+  await expect(vietnam).toBeVisible();
+  const vietnamBox = await boxOf(vietnam);
+  expect(vietnamBox.y).toBeGreaterThanOrEqual(streamBox.y + 28);
+  expect(vietnamBox.y + vietnamBox.height).toBeLessThanOrEqual(
+    streamBox.y + streamBox.height,
+  );
+  await picker.getByRole("tab", { name: "Ẩm thực & Đồ uống" }).click();
+  expect(await stream.evaluate((element) => element.scrollTop)).toBe(foodTop);
+  await expect(
+    picker.getByRole("tab", { name: "Ẩm thực & Đồ uống" }),
+  ).toHaveAttribute("aria-selected", "true");
+
+  // ---- Multi-pick: two emoji in a row, the stream does not jump. ----
+  await picker.getByRole("tab", { name: "Con người & Cử chỉ" }).click();
+  const clap = picker.getByRole("button", { name: "vỗ tay", exact: true });
+  await expect(clap).toBeVisible();
+  const clapBefore = await boxOf(clap);
+  await clap.click();
+  await expect(picker).toBeVisible();
+  // "Recent" appeared above, but the clicked emoji stayed under the pointer.
+  const clapAfter = await boxOf(clap);
+  expect(Math.abs(clapAfter.y - clapBefore.y)).toBeLessThanOrEqual(1);
+  await picker.getByRole("tab", { name: "Đồ vật & Học tập" }).click();
+  await picker
+    .getByRole("button", { name: "mũ tốt nghiệp", exact: true })
+    .click();
+  await expect(picker).toBeVisible();
+  await expect(composer).toHaveValue("👏🎓");
+  expect(
+    await page.evaluate(() =>
+      Object.entries(window.localStorage)
+        .filter(([key]) => key.startsWith("tutorhub:chat-emoji-recent:v1:"))
+        .map(([, value]) => JSON.parse(value) as string[]),
+    ),
+  ).toEqual([["🎓", "👏"]]);
+
+  // Escape closes only the popover and returns focus to the emoji key.
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(drawer).toBeVisible();
+
+  // ---- Reopen: "Recent" leads the stream, newest first. ----
+  // Metrics only (dev-mode React, no timing assertion): the reopen commit and
+  // its first frame with the virtualised rows.
+  const openCost = await page.evaluate(async () => {
+    const key = document.querySelector<HTMLButtonElement>(
+      ".classroom-chat-emoji > .classroom-chat-tool",
+    );
+    const start = performance.now();
+    key?.click();
+    await Promise.resolve();
+    const commitMs = performance.now() - start;
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => setTimeout(resolve, 0)),
+    );
+    return {
+      cells: document.querySelectorAll("[data-cell]").length,
+      commitMs: Math.round(commitMs * 10) / 10,
+      frameMs: Math.round((performance.now() - start) * 10) / 10,
+    };
+  });
+  console.log(`[ROOM-CHAT-EMOJI-02 metrics] ${JSON.stringify(openCost)}`);
+  await expect(picker).toBeVisible();
+  expect(openCost.cells).toBeLessThan(260);
+  const recent = picker.getByRole("group", { name: "Gần đây" });
+  await expect(recent.getByRole("button")).toHaveText(["🎓", "👏"]);
+  await expect(picker.getByRole("tab", { name: "Gần đây" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    picker.getByRole("group", { name: "Cảm xúc" }).getByRole("heading"),
+  ).toBeVisible();
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p408-chat-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await saveRoomChatEmojiScreenshot(
+    page,
+    "01-zalo-emoji-recent-and-smileys-vi-1440x900.png",
+  );
+
+  // ---- Keyboard: search → grid → across topics. ----
+  const search = picker.getByRole("searchbox", {
+    name: "Tìm biểu tượng cảm xúc",
+  });
+  await search.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(picker.locator('[data-cell="recent:0"]')).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(picker.locator('[data-cell="smileys:0"]')).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(picker.locator('[data-cell="smileys:1"]')).toBeFocused();
+  await page.keyboard.press("Control+End");
+  await expect(
+    picker.getByRole("button", { name: "cờ: Xứ Wales", exact: true }),
+  ).toBeFocused();
+  await expect(picker.getByRole("tab", { name: "Cờ" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  // ---- Vietnamese search with and without diacritics. ----
+  await search.fill("bong da");
+  await expect(picker.locator('[data-cell="results:0"]')).toHaveAccessibleName(
+    "bóng đá",
+  );
+  await search.fill("mũ tốt nghiệp");
+  await expect(picker.locator('[data-cell="results:0"]')).toHaveText("🎓");
+  await search.fill("trai tim");
+  await expect(
+    picker.getByRole("button", { name: "trái tim màu đỏ", exact: true }),
+  ).toBeVisible();
+  await expect(
+    picker.getByRole("heading", { name: /^\d+ kết quả$/u }),
+  ).toBeVisible();
+  for (const tab of await tablist.getByRole("tab").all()) {
+    await expect(tab).toHaveAttribute("aria-selected", "false");
+  }
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p408-chat-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await saveRoomChatEmojiScreenshot(
+    page,
+    "03-zalo-emoji-vietnamese-search-vi-1440x900.png",
+  );
+  await search.fill("zzzz");
+  await expect(picker.locator(".classroom-chat-emoji__empty")).toHaveText(
+    "Không tìm thấy biểu tượng phù hợp.",
+  );
+  await expect(picker.getByRole("status")).toHaveText(
+    "Không tìm thấy biểu tượng phù hợp.",
+  );
+  await picker.getByRole("button", { name: "Xóa từ khóa tìm kiếm" }).click();
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+
+  // ---- Sending closes the popover. ----
+  await composer.press("Enter");
+  await expect(picker).toHaveCount(0);
+  await expect(composer).toHaveValue("");
+  await expect(drawer.getByText("👏🎓")).toBeVisible();
+});
+
+test("ROOM-CHAT-EMOJI-02 reflows the emoji popover at 320 CSS pixels with forced colors and no violations", async ({
+  page,
+}) => {
+  await page.route(roomChatExternalRoute, (route) => route.abort());
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.emulateMedia({ forcedColors: "active", reducedMotion: "reduce" });
+  await mountClassroomFixture(page, {
+    participantCount: 2,
+    studio: { chat: {}, language: "vi", roomTitle: roomCompactTitle },
+  });
+  await loadRoomStudioStyles(page);
+  const { drawer, picker, stream, trigger } =
+    await openRoomChatEmojiPicker(page);
+  await expect.poll(async () => Math.round((await boxOf(drawer)).x)).toBe(0);
+  const pickerBox = await boxOf(picker);
+  expect(pickerBox.x).toBeGreaterThanOrEqual(0);
+  expect(pickerBox.x + pickerBox.width).toBeLessThanOrEqual(320);
+  expect(Math.round(pickerBox.width)).toBe(296);
+  expect(pickerBox.y).toBeGreaterThanOrEqual(0);
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(1);
+  await expect(picker).toHaveCSS("border-top-style", "solid");
+
+  // The topic bar overflows: only the forward arrow shows at the start.
+  const nav = picker.locator(".classroom-chat-emoji__nav");
+  const navBox = await boxOf(nav);
+  const streamBox = await boxOf(stream);
+  expect(navBox.y).toBeGreaterThanOrEqual(streamBox.y + streamBox.height - 1);
+  await expect(nav.locator('[data-side="end"]')).toBeVisible();
+  await expect(nav.locator('[data-side="start"]')).toHaveCount(0);
+  await nav.locator('[data-side="end"]').click();
+  await expect(nav.locator('[data-side="start"]')).toBeVisible();
+  // Keyboard End brings the last topic into view; its tab is selected.
+  await picker.getByRole("tab", { name: "Cảm xúc" }).focus();
+  await page.keyboard.press("End");
+  const flagsTab = picker.getByRole("tab", { name: "Cờ" });
+  await expect(flagsTab).toBeFocused();
+  await expect(flagsTab).toHaveAttribute("aria-selected", "true");
+  await expect(nav.locator('[data-side="end"]')).toHaveCount(0);
+  const flagsTabBox = await boxOf(flagsTab);
+  expect(flagsTabBox.x + flagsTabBox.width).toBeLessThanOrEqual(
+    pickerBox.x + pickerBox.width,
+  );
+  await page.keyboard.press("Home");
+  await expect(picker.getByRole("tab", { name: "Gần đây" })).toBeFocused();
+  await expect(
+    picker.getByText("Emoji bạn dùng sẽ xuất hiện tại đây"),
+  ).toBeVisible();
+  await picker.getByRole("tab", { name: "Cảm xúc" }).click();
+
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .include(".media-p408-chat-drawer")
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  await saveRoomChatEmojiScreenshot(
+    page,
+    "04-zalo-emoji-320px-forced-colors.png",
+  );
+
+  // Escape closes the popover first (focus back on its key), then the panel.
+  await page.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(drawer).toBeVisible();
 });

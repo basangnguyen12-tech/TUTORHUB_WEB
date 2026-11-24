@@ -16,6 +16,8 @@ import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTutorHubQueryClient } from "./queryClient";
 import {
+  CHAT_EMOJI_RECENT_STORAGE_PREFIX,
+  clearChatEmojiRecentStorage,
   clearPrivateSessionCache,
   nativeSignOutTarget,
   SessionProvider,
@@ -304,6 +306,37 @@ describe("remote session provider", () => {
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
     expect(queryClient.getMutationCache().getAll()).toHaveLength(0);
     expect(sessionStorage.getItem("tutorhub:draft:v1:test")).toBeNull();
+  });
+
+  it("removes every classroom chat recent-emoji key on sign-out (ROOM-CHAT-EMOJI-02)", async () => {
+    const queryClient = new QueryClient();
+    localStorage.setItem(
+      `${CHAT_EMOJI_RECENT_STORAGE_PREFIX}v1:tenant-a:user-a`,
+      JSON.stringify(["👏", "❤️"]),
+    );
+    localStorage.setItem(
+      `${CHAT_EMOJI_RECENT_STORAGE_PREFIX}v1:tenant-b:user-b`,
+      JSON.stringify(["🎓"]),
+    );
+    localStorage.setItem("tutorhub:unrelated-preference", "keep");
+
+    await clearPrivateSessionCache(queryClient);
+
+    expect(
+      Object.keys(localStorage).filter((key) =>
+        key.startsWith("tutorhub:chat-emoji-recent:"),
+      ),
+    ).toEqual([]);
+    expect(localStorage.getItem("tutorhub:unrelated-preference")).toBe("keep");
+    localStorage.clear();
+
+    // Blocked storage never breaks sign-out.
+    const blocked = {
+      get length(): number {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    } as unknown as Storage;
+    expect(() => clearChatEmojiRecentStorage(blocked)).not.toThrow();
   });
 
   it("purges private caches and rechecks /me after a mutation-only 401", async () => {

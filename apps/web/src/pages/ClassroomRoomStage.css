@@ -3865,10 +3865,16 @@
   height: 28px;
 }
 
-/* ---- Emoji popover --------------------------------------------------- */
+/* ---- Emoji popover (ROOM-CHAT-EMOJI-02, Zalo layout) ----------------- */
 
-/* The popover rises above the whole composer card (anchored to it), so the
-   staged attachment strip stays visible while picking an emoji. */
+/*
+ * Three tiers: search, one continuous 8-column stream with sticky topic
+ * titles, and a monochrome topic bar at the bottom. The popover rises above
+ * the whole composer card (anchored to it), so the staged attachment strip
+ * stays visible while picking. Heights below are mirrored in
+ * ClassroomEmojiPicker.tsx (title 30px, row 38px = 36px cell + 2px gap, 6px
+ * section gap): the stream is virtualised by those exact numbers.
+ */
 .classroom-chat-emoji {
   position: static;
 }
@@ -3880,10 +3886,12 @@
   left: 0;
   display: flex;
   flex-direction: column;
-  width: min(312px, calc(100vw - 40px));
-  padding: 10px;
-  border: 1px solid var(--room-rim, rgb(255 255 255 / 13%));
-  border-radius: 18px;
+  width: min(344px, calc(100vw - 24px));
+  height: 410px;
+  max-height: min(420px, calc(100dvh - 150px));
+  overflow: hidden;
+  border: 1px solid var(--room-rim-strong, rgb(255 255 255 / 15%));
+  border-radius: 16px;
   background: var(
     --room-glass-popover,
     linear-gradient(180deg, rgb(44 50 64 / 94%), rgb(28 32 42 / 96%))
@@ -3896,95 +3904,360 @@
   color: #f3f4f6;
 }
 
+/* Tier 1: compact search. */
+.classroom-chat-emoji__search-bar {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 10px 10px 6px;
+}
+
+.classroom-chat-emoji__search-icon {
+  position: absolute;
+  top: 19.5px;
+  left: 21px;
+  width: 15px;
+  height: 15px;
+  color: #a3acb9;
+  pointer-events: none;
+}
+
 .classroom-chat-emoji__search {
   width: 100%;
-  padding: 7px 10px;
-  border: 1px solid rgb(255 255 255 / 14%);
+  height: 34px;
+  padding: 0 36px 0 33px;
+  border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 10px;
-  background: rgb(0 0 0 / 28%);
+  background: rgb(0 0 0 / 26%);
   color: #f8fafc;
   font: inherit;
   font-size: 0.8125rem;
+  appearance: none;
+}
+
+.classroom-chat-emoji__search::-webkit-search-cancel-button,
+.classroom-chat-emoji__search::-webkit-search-decoration {
+  display: none;
+  appearance: none;
 }
 
 .classroom-chat-emoji__search::placeholder {
   color: #a3acb9;
 }
 
-.classroom-chat-emoji__search:focus-visible,
-.classroom-chat-emoji__tab:focus-visible,
-.classroom-chat-emoji__cell:focus-visible {
-  outline: 2px solid var(--room-focus-ring, #93c5fd);
-  outline-offset: 1px;
-}
-
-.classroom-chat-emoji__tabs {
-  display: flex;
-  gap: 4px;
-  margin: 8px 0 6px;
-}
-
-.classroom-chat-emoji__tab {
+.classroom-chat-emoji__clear {
+  position: absolute;
+  top: 15px;
+  right: 15px;
   display: grid;
-  flex: 1 1 0;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 12%);
+  color: #e2e8f0;
   cursor: pointer;
-  font-size: 16px;
   place-items: center;
 }
 
-.classroom-chat-emoji__tab:hover {
-  background: rgb(255 255 255 / 8%);
+.classroom-chat-emoji__clear:hover {
+  background: rgb(255 255 255 / 20%);
+  color: #fff;
 }
 
-.classroom-chat-emoji__tab[aria-selected="true"] {
-  border-color: rgb(147 197 253 / 40%);
-  background: rgb(255 255 255 / 14%);
+.classroom-chat-emoji__clear svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Tier 2: one continuous vertical stream. */
+.classroom-chat-emoji__stream {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 6px 0 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Picking adjusts scrollTop itself (Recent grows above the pointer). */
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-color: rgb(255 255 255 / 24%) transparent;
+  scrollbar-width: thin;
+}
+
+.classroom-chat-emoji__section {
+  position: relative;
 }
 
 .classroom-chat-emoji__heading {
-  margin: 2px 2px 4px;
-  color: rgb(226 232 240 / 74%);
-  font-size: 0.6875rem;
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  align-items: center;
+  height: 30px;
+  margin: 0;
+  padding: 0 4px;
+  /* Matches the popover glass at the stream's top edge, where it sticks;
+     rows passing underneath are frosted by the blur. */
+  background: rgb(36 41 53 / 90%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  color: rgb(226 232 240 / 86%);
+  font-size: 0.75rem;
   font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
 }
 
-.classroom-chat-emoji__grid {
+.classroom-chat-emoji__rows {
+  position: relative;
+}
+
+.classroom-chat-emoji__row {
+  position: absolute;
+  right: 0;
+  left: 0;
   display: grid;
+  height: 36px;
   grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 2px;
-  max-height: 196px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  column-gap: 2px;
 }
 
 .classroom-chat-emoji__cell {
   display: grid;
-  aspect-ratio: 1;
+  width: 100%;
+  height: 36px;
   padding: 0;
   border: 0;
+  overflow: hidden;
   border-radius: 8px;
   background: transparent;
+  color: inherit;
   cursor: pointer;
-  font-size: 20px;
+  font-family:
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 25px;
   line-height: 1;
   place-items: center;
+  transition: background-color 120ms ease;
+}
+
+.classroom-chat-emoji__cell > span {
+  display: block;
+  transition: transform 160ms var(--room-ease-spring, ease);
 }
 
 .classroom-chat-emoji__cell:hover,
 .classroom-chat-emoji__cell:focus-visible {
-  background: rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 13%);
+}
+
+.classroom-chat-emoji__cell:hover > span {
+  transform: scale(1.14);
+}
+
+.classroom-chat-emoji__cell:active > span {
+  transform: scale(0.96);
+}
+
+.classroom-chat-emoji__hint {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  margin: 0;
+  padding: 0 6px;
+  color: rgb(226 232 240 / 74%);
+  font-size: 0.8125rem;
+}
+
+.classroom-chat-emoji__state {
+  display: grid;
+  gap: 12px;
+  padding: 16px 4px;
+  color: rgb(226 232 240 / 80%);
+  font-size: 0.8125rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.classroom-chat-emoji__skeleton {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.classroom-chat-emoji__skeleton span {
+  aspect-ratio: 1;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 8%);
+  animation: classroom-chat-emoji-pulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes classroom-chat-emoji-pulse {
+  from {
+    opacity: 0.45;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.classroom-chat-emoji__retry {
+  padding: 6px 14px;
+  border: 1px solid rgb(147 197 253 / 45%);
+  border-radius: 999px;
+  background: rgb(59 130 246 / 22%);
+  color: #eff6ff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
 }
 
 .classroom-chat-emoji__empty {
-  margin: 12px 4px;
-  color: rgb(226 232 240 / 74%);
+  margin: 18px 6px;
+  color: rgb(226 232 240 / 78%);
   font-size: 0.8125rem;
   text-align: center;
+}
+
+/* Tier 3: monochrome topic bar at the bottom edge with a blue underline. */
+.classroom-chat-emoji__nav {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  height: 40px;
+  border-top: 1px solid rgb(255 255 255 / 10%);
+  background: rgb(0 0 0 / 12%);
+}
+
+.classroom-chat-emoji__tabs {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.classroom-chat-emoji__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.classroom-chat-emoji__tab {
+  position: relative;
+  display: grid;
+  flex: 1 0 32px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgb(203 213 225 / 74%);
+  cursor: pointer;
+  place-items: center;
+  transition: color 140ms ease;
+}
+
+.classroom-chat-emoji__tab svg {
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.75;
+}
+
+.classroom-chat-emoji__tab::after {
+  position: absolute;
+  right: 22%;
+  bottom: 0;
+  left: 22%;
+  height: 2.5px;
+  border-radius: 2px 2px 0 0;
+  background: #3b82f6;
+  content: "";
+  transform: scaleX(0);
+  transition: transform 180ms var(--room-ease-spring, ease);
+}
+
+.classroom-chat-emoji__tab:hover:not(:disabled) {
+  color: #f1f5f9;
+}
+
+.classroom-chat-emoji__tab[aria-selected="true"] {
+  color: #60a5fa;
+}
+
+.classroom-chat-emoji__tab[aria-selected="true"]::after {
+  transform: scaleX(1);
+}
+
+.classroom-chat-emoji__tab:disabled {
+  cursor: progress;
+  opacity: 0.5;
+}
+
+.classroom-chat-emoji__nav-arrow {
+  display: grid;
+  flex: 0 0 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgb(203 213 225 / 82%);
+  cursor: pointer;
+  place-items: center;
+}
+
+.classroom-chat-emoji__nav-arrow:hover {
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+}
+
+.classroom-chat-emoji__nav-arrow svg {
+  width: 16px;
+  height: 16px;
+}
+
+.classroom-chat-emoji__search:focus-visible {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: 1px;
+}
+
+.classroom-chat-emoji__cell:focus-visible,
+.classroom-chat-emoji__clear:focus-visible,
+.classroom-chat-emoji__retry:focus-visible {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: -1px;
+}
+
+.classroom-chat-emoji__tab:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: -4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .classroom-chat-emoji__cell,
+  .classroom-chat-emoji__cell > span,
+  .classroom-chat-emoji__tab,
+  .classroom-chat-emoji__tab::after {
+    transition: none;
+  }
+
+  .classroom-chat-emoji__cell:hover > span,
+  .classroom-chat-emoji__cell:active > span {
+    transform: none;
+  }
+
+  .classroom-chat-emoji__tabs {
+    scroll-behavior: auto;
+  }
+
+  .classroom-chat-emoji__skeleton span {
+    animation: none;
+  }
 }
 
 /* ---- Image Lightbox ---------------------------------------------------- */
@@ -4200,12 +4473,19 @@
       .classroom-chat__input,
       .classroom-chat__edit-input,
       .classroom-chat-emoji__search,
+      .classroom-chat-emoji__clear,
+      .classroom-chat-emoji__heading,
+      .classroom-chat-emoji__nav,
+      .classroom-chat-emoji__nav-arrow,
+      .classroom-chat-emoji__retry,
       .classroom-chat-emoji__tab,
       .classroom-chat-emoji__cell
     ) {
     border-color: CanvasText;
     background: Canvas;
     box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   .media-p408-chat-drawer :is(.classroom-chat__send, .classroom-chat__switch) {
@@ -4215,5 +4495,25 @@
 
   .media-p408-chat-drawer .classroom-chat__send:disabled {
     color: GrayText !important;
+  }
+
+  /* ROOM-CHAT-EMOJI-02: the active topic keeps a system-colour underline. */
+  .media-p408-chat-drawer .classroom-chat-emoji__nav {
+    border-top: 1px solid CanvasText;
+  }
+
+  .media-p408-chat-drawer .classroom-chat-emoji__tab[aria-selected="true"] {
+    color: Highlight !important;
+  }
+
+  .media-p408-chat-drawer .classroom-chat-emoji__tab::after {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .media-p408-chat-drawer .classroom-chat-emoji__cell:hover,
+  .media-p408-chat-drawer .classroom-chat-emoji__cell:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 }
