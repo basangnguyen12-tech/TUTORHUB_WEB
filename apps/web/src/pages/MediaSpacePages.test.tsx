@@ -553,6 +553,34 @@ function renderedWhiteboardEnabled(): boolean | undefined {
     ?.props?.enabled;
 }
 
+function renderedCodeToolEnabled(): boolean | undefined {
+  const shellProps = liveKitMocks.shellRender.mock.lastCall?.[0] as
+    | {
+        tools?: Array<{
+          content?: { props?: { enabled?: boolean } };
+          id: string;
+        }>;
+      }
+    | undefined;
+
+  return shellProps?.tools?.find((tool) => tool.id === "code")?.content?.props
+    ?.enabled;
+}
+
+function tenantCapabilitiesWithCodeTool(enabled: boolean) {
+  const capabilities = tenantCapabilitiesWithWhiteboard(true);
+  return {
+    ...capabilities,
+    features: {
+      ...capabilities.features,
+      classroom_code_tool: {
+        ...capabilities.features.classroom_code_tool,
+        enabled,
+      },
+    },
+  };
+}
+
 function renderedWhiteboardAutoOpenKey(): string | null | undefined {
   const shellProps = liveKitMocks.shellRender.mock.lastCall?.[0] as
     { tools?: Array<{ autoOpenKey?: string | null; id: string }> } | undefined;
@@ -792,6 +820,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
               props?: {
                 actorID?: string;
                 chatCanPost?: boolean;
+                enabled?: boolean;
                 mediaSpaceID?: string;
                 onSendToChat?: unknown;
                 session?: unknown;
@@ -816,6 +845,7 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     const code = tools.find((tool) => tool.id === "code")?.content?.props;
     expect(code).toMatchObject({
       actorID: userID,
+      enabled: true,
       mediaSpaceID: spaceID,
       tenantID,
     });
@@ -824,6 +854,18 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     // One per-room-session Code memory shared with chat "Open in Code".
     expect(code?.session).toBeTruthy();
     expect(shellProps?.chat?.props?.codeSession).toBe(code?.session);
+  });
+
+  it("binds the Code tool to the classroom_code_tool kill-switch (ROOM-TOOLS-CODE-02A)", async () => {
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithCodeTool(false),
+    );
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    await waitFor(() => expect(renderedWhiteboardEnabled()).toBe(true));
+    expect(renderedCodeToolEnabled()).toBe(false);
   });
 
   it("passes a presenter auto-open key only for an open whiteboard the viewer can join", async () => {

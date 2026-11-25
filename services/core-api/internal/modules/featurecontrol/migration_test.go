@@ -91,3 +91,42 @@ func TestWhiteboardFeatureQuotaMigrationIsForwardOnlyAndBounded(t *testing.T) {
 		}
 	}
 }
+
+func TestCodeWorkspaceFeatureMigrationExtendsAndRestoresFeatureAllowlist(t *testing.T) {
+	t.Parallel()
+
+	migrations := filepath.Join("..", "..", "..", "migrations")
+	upContents, err := os.ReadFile(filepath.Join(migrations, "000054_code_workspace_collaboration.up.sql"))
+	if err != nil {
+		t.Fatalf("read code workspace feature migration: %v", err)
+	}
+	downContents, err := os.ReadFile(filepath.Join(migrations, "000054_code_workspace_collaboration.down.sql"))
+	if err != nil {
+		t.Fatalf("read code workspace feature rollback: %v", err)
+	}
+	up := string(upContents)
+	down := string(downContents)
+	for _, key := range []FeatureKey{FeatureClassroomCodeTool, FeatureClassroomCodeCollaboration} {
+		if _, ok := NewDefaultCatalog().FeatureDefinition(key); !ok {
+			t.Fatalf("catalog is missing %q", key)
+		}
+		if !strings.Contains(up, "'"+string(key)+"'") {
+			t.Fatalf("feature override allowlist is missing %q", key)
+		}
+	}
+	for _, required := range []string{
+		"DROP CONSTRAINT tenant_feature_overrides_key_valid",
+		"ADD CONSTRAINT tenant_feature_overrides_key_valid CHECK",
+		"'classroom_whiteboards'",
+	} {
+		if !strings.Contains(up, required) || !strings.Contains(down, required) {
+			t.Fatalf("code workspace feature migration pair is missing %q", required)
+		}
+	}
+	if strings.Contains(strings.ToUpper(up), "DELETE FROM") {
+		t.Fatal("forward code workspace migration must not delete data")
+	}
+	if !strings.Contains(down, "DELETE FROM tutorhub.tenant_feature_overrides") {
+		t.Fatal("rollback must remove overrides for the withdrawn feature keys")
+	}
+}

@@ -28,9 +28,10 @@ type whiteboardInternalHandlers struct {
 }
 
 type whiteboardInternalGrantRequest struct {
-	Grant                *string `json:"grant"`
-	Origin               *string `json:"origin"`
-	ProviderDocumentName *string `json:"provider_document_name"`
+	DocumentKind         *collaboration.DocumentKind `json:"document_kind"`
+	Grant                *string                     `json:"grant"`
+	Origin               *string                     `json:"origin"`
+	ProviderDocumentName *string                     `json:"provider_document_name"`
 }
 
 type whiteboardInternalValidationRequest struct {
@@ -38,19 +39,20 @@ type whiteboardInternalValidationRequest struct {
 }
 
 type whiteboardInternalScopeRequest struct {
-	AuthorityLease           *string                   `json:"authority_lease"`
-	ActorID                  *uuid.UUID                `json:"actor_id"`
-	Capability               *collaboration.Capability `json:"capability"`
-	DocumentID               *uuid.UUID                `json:"document_id"`
-	Generation               *int64                    `json:"generation"`
-	MaxConnectionsPerTenant  *int64                    `json:"max_connections_per_tenant"`
-	MaxOperationsPerMinute   *int64                    `json:"max_operations_per_minute"`
-	MaxStorageBytesPerTenant *int64                    `json:"max_storage_bytes_per_tenant"`
-	Origin                   *string                   `json:"origin"`
-	ProviderDocumentName     *string                   `json:"provider_document_name"`
-	SessionID                *uuid.UUID                `json:"session_id"`
-	TenantID                 *uuid.UUID                `json:"tenant_id"`
-	WriterFence              *int64                    `json:"writer_fence"`
+	AuthorityLease           *string                     `json:"authority_lease"`
+	ActorID                  *uuid.UUID                  `json:"actor_id"`
+	Capability               *collaboration.Capability   `json:"capability"`
+	DocumentID               *uuid.UUID                  `json:"document_id"`
+	DocumentKind             *collaboration.DocumentKind `json:"document_kind"`
+	Generation               *int64                      `json:"generation"`
+	MaxConnectionsPerTenant  *int64                      `json:"max_connections_per_tenant"`
+	MaxOperationsPerMinute   *int64                      `json:"max_operations_per_minute"`
+	MaxStorageBytesPerTenant *int64                      `json:"max_storage_bytes_per_tenant"`
+	Origin                   *string                     `json:"origin"`
+	ProviderDocumentName     *string                     `json:"provider_document_name"`
+	SessionID                *uuid.UUID                  `json:"session_id"`
+	TenantID                 *uuid.UUID                  `json:"tenant_id"`
+	WriterFence              *int64                      `json:"writer_fence"`
 }
 
 type whiteboardInternalValidationResponse struct {
@@ -99,9 +101,11 @@ func (handlers whiteboardInternalHandlers) exchangeGrant(w http.ResponseWriter, 
 		writeWhiteboardInternalProblem(w, r, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	// A missing document_kind keeps pre-Slice-2 runtimes on the whiteboard
+	// contract; the kind router rejects any kind/provider-prefix mismatch.
 	scope, err := handlers.service.ConsumeGrant(r.Context(), collaboration.GrantConsumeInput{
-		Credential: *request.Grant, Origin: *request.Origin,
-		ProviderDocumentName: *request.ProviderDocumentName,
+		Credential: *request.Grant, DocumentKind: optionalDocumentKind(request.DocumentKind),
+		Origin: *request.Origin, ProviderDocumentName: *request.ProviderDocumentName,
 	})
 	if err != nil {
 		handlers.writeGrantProblem(w, r, err)
@@ -157,7 +161,8 @@ func (request whiteboardInternalScopeRequest) input() (collaboration.GrantValida
 		Scope: collaboration.GrantScope{
 			AuthorityLease: *request.AuthorityLease, ActorID: *request.ActorID,
 			Capability: *request.Capability, DocumentID: *request.DocumentID,
-			Generation: *request.Generation, ProviderDocumentName: *request.ProviderDocumentName,
+			DocumentKind: optionalDocumentKind(request.DocumentKind),
+			Generation:   *request.Generation, ProviderDocumentName: *request.ProviderDocumentName,
 			MaxConnectionsPerTenant:  optionalInt64(request.MaxConnectionsPerTenant),
 			MaxOperationsPerMinute:   optionalInt64(request.MaxOperationsPerMinute),
 			MaxStorageBytesPerTenant: optionalInt64(request.MaxStorageBytesPerTenant),
@@ -165,6 +170,15 @@ func (request whiteboardInternalScopeRequest) input() (collaboration.GrantValida
 			WriterFence: *request.WriterFence,
 		},
 	}, true
+}
+
+// optionalDocumentKind leaves a missing kind empty; the kind router, the
+// broker and both control planes normalize "" to the whiteboard contract.
+func optionalDocumentKind(value *collaboration.DocumentKind) collaboration.DocumentKind {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func optionalInt64(value *int64) int64 {

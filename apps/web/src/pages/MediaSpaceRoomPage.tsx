@@ -109,6 +109,13 @@ function MediaSpaceRoomSession({
   const tenantCapabilities = useTenantCapabilities(tenantId, Boolean(tenantId));
   const whiteboardEnabled =
     tenantCapabilities.data?.features.classroom_whiteboards.enabled === true;
+  // ROOM-TOOLS-CODE-02A: the personal Code tool stays on by default but obeys
+  // the Ops kill-switch; a failed capability read fails closed.
+  const codeToolEnabled = tenantCapabilities.data
+    ? tenantCapabilities.data.features.classroom_code_tool.enabled === true
+    : tenantCapabilities.isError
+      ? false
+      : undefined;
   const [handoff, setHandoff] = useState(() => {
     if (!spaceId || !roomInstanceId || !tenantId || !userId) {
       clearMediaRoomEscrow();
@@ -534,6 +541,7 @@ function MediaSpaceRoomSession({
           <ClassroomCodeTool
             actorID={userId}
             chatCanPost={chatCanPost}
+            enabled={codeToolEnabled}
             mediaSpaceID={spaceId}
             onSendToChat={sendCodeToChat}
             session={codeSession}

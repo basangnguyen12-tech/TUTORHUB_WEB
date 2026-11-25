@@ -43,18 +43,20 @@ type operationCapabilityResponse struct {
 }
 
 type tenantFeatureCapabilitiesResponse struct {
-	MembershipInvitations  featureCapabilityResponse `json:"membership_invitations"`
-	ClassManagement        featureCapabilityResponse `json:"class_management"`
-	ClassInviteLinks       featureCapabilityResponse `json:"class_invite_links"`
-	ClassSessionScheduling featureCapabilityResponse `json:"class_session_scheduling"`
-	ClassSessionRecurrence featureCapabilityResponse `json:"class_session_recurrence"`
-	InAppNotifications     featureCapabilityResponse `json:"in_app_notifications"`
-	AvailabilityPolls      featureCapabilityResponse `json:"availability_polls"`
-	Conversations          featureCapabilityResponse `json:"conversations"`
-	FileUploads            featureCapabilityResponse `json:"file_uploads"`
-	ClassroomMediaRooms    featureCapabilityResponse `json:"classroom_media_rooms"`
-	InstantStudyRooms      featureCapabilityResponse `json:"instant_study_rooms"`
-	ClassroomWhiteboards   featureCapabilityResponse `json:"classroom_whiteboards"`
+	MembershipInvitations      featureCapabilityResponse `json:"membership_invitations"`
+	ClassManagement            featureCapabilityResponse `json:"class_management"`
+	ClassInviteLinks           featureCapabilityResponse `json:"class_invite_links"`
+	ClassSessionScheduling     featureCapabilityResponse `json:"class_session_scheduling"`
+	ClassSessionRecurrence     featureCapabilityResponse `json:"class_session_recurrence"`
+	InAppNotifications         featureCapabilityResponse `json:"in_app_notifications"`
+	AvailabilityPolls          featureCapabilityResponse `json:"availability_polls"`
+	Conversations              featureCapabilityResponse `json:"conversations"`
+	FileUploads                featureCapabilityResponse `json:"file_uploads"`
+	ClassroomMediaRooms        featureCapabilityResponse `json:"classroom_media_rooms"`
+	InstantStudyRooms          featureCapabilityResponse `json:"instant_study_rooms"`
+	ClassroomWhiteboards       featureCapabilityResponse `json:"classroom_whiteboards"`
+	ClassroomCodeTool          featureCapabilityResponse `json:"classroom_code_tool"`
+	ClassroomCodeCollaboration featureCapabilityResponse `json:"classroom_code_collaboration"`
 }
 
 type tenantQuotaCapabilitiesResponse struct {
@@ -117,18 +119,20 @@ type updateTenantFeatureControlsRequest struct {
 }
 
 type updateTenantFeatureControlValuesRequest struct {
-	MembershipInvitations  *bool `json:"membership_invitations"`
-	ClassManagement        *bool `json:"class_management"`
-	ClassInviteLinks       *bool `json:"class_invite_links"`
-	ClassSessionScheduling *bool `json:"class_session_scheduling"`
-	ClassSessionRecurrence *bool `json:"class_session_recurrence"`
-	InAppNotifications     *bool `json:"in_app_notifications"`
-	AvailabilityPolls      *bool `json:"availability_polls"`
-	Conversations          *bool `json:"conversations"`
-	FileUploads            *bool `json:"file_uploads"`
-	ClassroomMediaRooms    *bool `json:"classroom_media_rooms"`
-	InstantStudyRooms      *bool `json:"instant_study_rooms"`
-	ClassroomWhiteboards   *bool `json:"classroom_whiteboards"`
+	MembershipInvitations      *bool `json:"membership_invitations"`
+	ClassManagement            *bool `json:"class_management"`
+	ClassInviteLinks           *bool `json:"class_invite_links"`
+	ClassSessionScheduling     *bool `json:"class_session_scheduling"`
+	ClassSessionRecurrence     *bool `json:"class_session_recurrence"`
+	InAppNotifications         *bool `json:"in_app_notifications"`
+	AvailabilityPolls          *bool `json:"availability_polls"`
+	Conversations              *bool `json:"conversations"`
+	FileUploads                *bool `json:"file_uploads"`
+	ClassroomMediaRooms        *bool `json:"classroom_media_rooms"`
+	InstantStudyRooms          *bool `json:"instant_study_rooms"`
+	ClassroomWhiteboards       *bool `json:"classroom_whiteboards"`
+	ClassroomCodeTool          *bool `json:"classroom_code_tool"`
+	ClassroomCodeCollaboration *bool `json:"classroom_code_collaboration"`
 }
 
 type updateTenantQuotaControlValuesRequest struct {
@@ -173,6 +177,8 @@ func (request updateTenantFeatureControlsRequest) complete() bool {
 		request.Features.ClassroomMediaRooms != nil &&
 		request.Features.InstantStudyRooms != nil &&
 		request.Features.ClassroomWhiteboards != nil &&
+		request.Features.ClassroomCodeTool != nil &&
+		request.Features.ClassroomCodeCollaboration != nil &&
 		request.Quotas != nil && request.Quotas.Members != nil &&
 		request.Quotas.ActiveClasses != nil &&
 		request.Quotas.InviteCreationsPerHour != nil &&
@@ -287,6 +293,8 @@ func (handlers featureControlHandlers) update(w http.ResponseWriter, r *http.Req
 				{Key: featurecontrol.FeatureClassroomMediaRooms, Enabled: *request.Features.ClassroomMediaRooms},
 				{Key: featurecontrol.FeatureInstantStudyRooms, Enabled: *request.Features.InstantStudyRooms},
 				{Key: featurecontrol.FeatureClassroomWhiteboards, Enabled: *request.Features.ClassroomWhiteboards},
+				{Key: featurecontrol.FeatureClassroomCodeTool, Enabled: *request.Features.ClassroomCodeTool},
+				{Key: featurecontrol.FeatureClassroomCodeCollaboration, Enabled: *request.Features.ClassroomCodeCollaboration},
 			},
 			QuotaOverrides: []featurecontrol.QuotaOverride{
 				{Key: featurecontrol.QuotaMembers, Limit: *request.Quotas.Members},
@@ -455,6 +463,8 @@ func mapTenantCapabilities(
 	classroomMediaFeature, classroomMediaOK := features[featurecontrol.FeatureClassroomMediaRooms]
 	instantStudyFeature, instantStudyOK := features[featurecontrol.FeatureInstantStudyRooms]
 	classroomWhiteboardFeature, classroomWhiteboardOK := features[featurecontrol.FeatureClassroomWhiteboards]
+	classroomCodeToolFeature, classroomCodeToolOK := features[featurecontrol.FeatureClassroomCodeTool]
+	classroomCodeCollaborationFeature, classroomCodeCollaborationOK := features[featurecontrol.FeatureClassroomCodeCollaboration]
 	membersQuota, membersOK := quotas[featurecontrol.QuotaMembers]
 	classesQuota, classesOK := quotas[featurecontrol.QuotaActiveClasses]
 	invitesQuota, invitesOK := quotas[featurecontrol.QuotaInviteCreationsPerHour]
@@ -488,7 +498,8 @@ func mapTenantCapabilities(
 		!classroomMediaOK || !instantStudyOK || !activeMediaSpacesOK ||
 		!mediaParticipantsPerSpaceOK || !activeMediaParticipantsOK || !mediaSpaceStartsOK ||
 		!classroomWhiteboardOK || !whiteboardDocumentsOK || !whiteboardConnectionsOK ||
-		!whiteboardStorageBytesOK || !whiteboardOperationsOK {
+		!whiteboardStorageBytesOK || !whiteboardOperationsOK ||
+		!classroomCodeToolOK || !classroomCodeCollaborationOK {
 		return tenantCapabilitiesResponse{}, errors.New("feature control snapshot is incomplete")
 	}
 	response := tenantCapabilitiesResponse{
@@ -496,18 +507,20 @@ func mapTenantCapabilities(
 		Version:            capabilities.Version,
 		CanManageOverrides: capabilities.AllowedAction.ManageControls,
 		Features: tenantFeatureCapabilitiesResponse{
-			MembershipInvitations:  mapFeatureCapability(membershipFeature, capabilities.AllowedAction.ManageControls),
-			ClassManagement:        mapFeatureCapability(classFeature, capabilities.AllowedAction.ManageControls),
-			ClassInviteLinks:       mapFeatureCapability(inviteFeature, capabilities.AllowedAction.ManageControls),
-			ClassSessionScheduling: mapFeatureCapability(sessionFeature, capabilities.AllowedAction.ManageControls),
-			ClassSessionRecurrence: mapFeatureCapability(recurrenceFeature, capabilities.AllowedAction.ManageControls),
-			InAppNotifications:     mapFeatureCapability(notificationFeature, capabilities.AllowedAction.ManageControls),
-			AvailabilityPolls:      mapFeatureCapability(availabilityPollFeature, capabilities.AllowedAction.ManageControls),
-			Conversations:          mapFeatureCapability(conversationFeature, capabilities.AllowedAction.ManageControls),
-			FileUploads:            mapFeatureCapability(fileUploadFeature, capabilities.AllowedAction.ManageControls),
-			ClassroomMediaRooms:    mapFeatureCapability(classroomMediaFeature, capabilities.AllowedAction.ManageControls),
-			InstantStudyRooms:      mapFeatureCapability(instantStudyFeature, capabilities.AllowedAction.ManageControls),
-			ClassroomWhiteboards:   mapFeatureCapability(classroomWhiteboardFeature, capabilities.AllowedAction.ManageControls),
+			MembershipInvitations:      mapFeatureCapability(membershipFeature, capabilities.AllowedAction.ManageControls),
+			ClassManagement:            mapFeatureCapability(classFeature, capabilities.AllowedAction.ManageControls),
+			ClassInviteLinks:           mapFeatureCapability(inviteFeature, capabilities.AllowedAction.ManageControls),
+			ClassSessionScheduling:     mapFeatureCapability(sessionFeature, capabilities.AllowedAction.ManageControls),
+			ClassSessionRecurrence:     mapFeatureCapability(recurrenceFeature, capabilities.AllowedAction.ManageControls),
+			InAppNotifications:         mapFeatureCapability(notificationFeature, capabilities.AllowedAction.ManageControls),
+			AvailabilityPolls:          mapFeatureCapability(availabilityPollFeature, capabilities.AllowedAction.ManageControls),
+			Conversations:              mapFeatureCapability(conversationFeature, capabilities.AllowedAction.ManageControls),
+			FileUploads:                mapFeatureCapability(fileUploadFeature, capabilities.AllowedAction.ManageControls),
+			ClassroomMediaRooms:        mapFeatureCapability(classroomMediaFeature, capabilities.AllowedAction.ManageControls),
+			InstantStudyRooms:          mapFeatureCapability(instantStudyFeature, capabilities.AllowedAction.ManageControls),
+			ClassroomWhiteboards:       mapFeatureCapability(classroomWhiteboardFeature, capabilities.AllowedAction.ManageControls),
+			ClassroomCodeTool:          mapFeatureCapability(classroomCodeToolFeature, capabilities.AllowedAction.ManageControls),
+			ClassroomCodeCollaboration: mapFeatureCapability(classroomCodeCollaborationFeature, capabilities.AllowedAction.ManageControls),
 		},
 		Quotas: tenantQuotaCapabilitiesResponse{
 			Members:                                    mapQuotaCapability(membersQuota, capabilities.AllowedAction.ManageControls),

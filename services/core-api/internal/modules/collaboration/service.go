@@ -319,6 +319,10 @@ func (service *Service) validateGrantResolution(
 	ctx context.Context,
 	resolution GrantResolution,
 ) error {
+	if kind, known := NormalizeDocumentKind(resolution.Scope.DocumentKind); !known ||
+		kind != DocumentKindWhiteboard {
+		return ErrGrantDenied
+	}
 	if !validAccess(resolution.Access) ||
 		resolution.Scope.TenantID != resolution.Access.TenantID ||
 		resolution.Scope.ActorID != resolution.Access.ActorID ||

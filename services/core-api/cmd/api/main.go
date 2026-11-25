@@ -403,6 +403,7 @@ func run() int {
 	var mediaLifecycleService media.LifecycleServiceAPI
 	var collaborationService collaboration.ServiceAPI
 	var collaborationInternalService collaboration.InternalServiceAPI
+	var codeWorkspaceService collaboration.CodeWorkspaceServiceAPI
 	if pool != nil && classroomRepository != nil {
 		var mediaLifecycleErr error
 		mediaLifecycleRepository, mediaLifecycleErr = media.NewPostgresLifecycleRepository(
@@ -448,8 +449,10 @@ func run() int {
 				return 1
 			}
 			var grantBroker collaboration.GrantBroker
+			var codeGrantBroker collaboration.CodeWorkspaceGrantBroker
 			if cfg.Collaboration.BrokerEnabled {
-				grantBroker, collaborationErr = collaboration.NewMemoryGrantBroker(
+				var memoryBroker *collaboration.MemoryGrantBroker
+				memoryBroker, collaborationErr = collaboration.NewMemoryGrantBroker(
 					collaboration.MemoryGrantBrokerConfig{
 						Clock:       time.Now,
 						GrantTTL:    cfg.Collaboration.GrantTTL,
@@ -460,6 +463,9 @@ func run() int {
 					logger.Error("initialize whiteboard grant broker", "error", collaborationErr)
 					return 1
 				}
+				// One process-local broker serves both document kinds so a
+				// credential is consumed exactly once, whatever its kind.
+				grantBroker, codeGrantBroker = memoryBroker, memoryBroker
 			}
 			collaborationControlPlane, collaborationErr := collaboration.NewService(
 				collaborationRepository,
@@ -473,8 +479,30 @@ func run() int {
 				return 1
 			}
 			collaborationService = collaborationControlPlane
+			codeWorkspaceRepository, collaborationErr := collaboration.NewPostgresCodeWorkspaceRepository(
+				pool,
+				cfg.Database.QueryTimeout,
+				collaboration.PostgresRepositoryConfig{Controls: featureControlEnforcer, Quotas: featureControlQuotas},
+			)
+			if collaborationErr != nil {
+				logger.Error("initialize code workspace repository", "error", collaborationErr)
+				return 1
+			}
+			codeWorkspaceControlPlane, collaborationErr := collaboration.NewCodeWorkspaceService(
+				codeWorkspaceRepository,
+				mediaLifecycleService,
+				codeGrantBroker,
+				collaboration.ServiceConfig{Clock: time.Now, NewID: uuid.New, RuntimeMode: collaboration.RuntimeMode(cfg.Collaboration.RuntimeMode)},
+			)
+			if collaborationErr != nil {
+				logger.Error("initialize code workspace control plane", "error", collaborationErr)
+				return 1
+			}
+			codeWorkspaceService = codeWorkspaceControlPlane
 			if cfg.Collaboration.BrokerEnabled {
-				collaborationInternalService = collaborationControlPlane
+				collaborationInternalService = collaboration.NewInternalKindRouter(
+					collaborationControlPlane, codeWorkspaceControlPlane,
+				)
 				logger.Info("whiteboard one-time grant broker initialized")
 			} else {
 				logger.Info("whiteboard one-time grant broker is deployment-force-off")
@@ -778,6 +806,7 @@ func run() int {
 		Discovery:             discoveryService,
 		Collaboration:         collaborationService,
 		CollaborationInternal: collaborationInternalService,
+		CodeWorkspaces:        codeWorkspaceService,
 		CollaborationToken:    cfg.Collaboration.RuntimeToken,
 		CollaborationMode:     cfg.Collaboration.RuntimeMode,
 		InvitationRateLimiter: invitationRateLimiter,
@@ -880,6 +909,12 @@ func featureControlGuardrails(configuration config.FeatureControlConfig) feature
 	}
 	if !configuration.EnableClassroomWhiteboards {
 		forcedOff[featurecontrol.FeatureClassroomWhiteboards] = true
+	}
+	if configuration.DisableClassroomCodeTool {
+		forcedOff[featurecontrol.FeatureClassroomCodeTool] = true
+	}
+	if !configuration.EnableClassroomCodeCollaboration {
+		forcedOff[featurecontrol.FeatureClassroomCodeCollaboration] = true
 	}
 
 	tenantQuotaCeilings := map[featurecontrol.QuotaKey]map[uuid.UUID]int64{}

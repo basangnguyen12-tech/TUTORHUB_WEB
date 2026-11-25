@@ -19,6 +19,13 @@ import {
   type RawHocuspocusAwarenessInspection,
 } from "./rawHocuspocusAwareness.js";
 import { installRawWebSocketIngressGate } from "./rawWebSocketIngressGate.js";
+import {
+  CODE_WORKSPACE_DOCUMENT_KIND,
+  CODE_WORKSPACE_MAX_DOCUMENT_BYTES,
+  CODE_WORKSPACE_MAX_UPDATE_BYTES,
+  documentKindForName,
+  scopeDocumentKind,
+} from "./documentKind.js";
 import { RuntimeDocumentBudget } from "./runtimeDocumentBudget.js";
 import {
   RuntimeConnectionPolicy,
@@ -93,6 +100,22 @@ export function createCollaborationRuntime(
     config.maxDocumentBytes,
     config.maxUpdateBytes,
   );
+  // ROOM-TOOLS-CODE-02A: `code.workspace.v1` documents get a separate,
+  // stricter budget so code traffic can never consume whiteboard headroom.
+  const codeMaxUpdateBytes = Math.min(
+    CODE_WORKSPACE_MAX_UPDATE_BYTES,
+    config.maxUpdateBytes,
+  );
+  const codeDocumentBudget = new RuntimeDocumentBudget(
+    Math.min(CODE_WORKSPACE_MAX_DOCUMENT_BYTES, config.maxDocumentBytes),
+    codeMaxUpdateBytes,
+  );
+  const isCodeDocument = (documentName: string): boolean =>
+    documentKindForName(documentName) === CODE_WORKSPACE_DOCUMENT_KIND;
+  const budgetFor = (documentName: string): RuntimeDocumentBudget =>
+    isCodeDocument(documentName) ? codeDocumentBudget : documentBudget;
+  const maxUpdateBytesFor = (documentName: string): number =>
+    isCodeDocument(documentName) ? codeMaxUpdateBytes : config.maxUpdateBytes;
   const awarenessIngressPolicy = new RuntimeIngressPolicy({
     maxBytesPerWindow:
       config.maxAwarenessBytes * config.maxAwarenessMessagesPerSecond,
@@ -188,7 +211,8 @@ export function createCollaborationRuntime(
         requireAdmissionReady();
         if (
           scope.origin !== origin ||
-          scope.providerDocumentName !== documentName
+          scope.providerDocumentName !== documentName ||
+          documentKindForName(documentName) !== scopeDocumentKind(scope)
         ) {
           throw new RuntimeSocketError("grant_denied");
         }
@@ -353,7 +377,11 @@ export function createCollaborationRuntime(
       const isReadOnlySync =
         type === 0 ||
         (type === 1 &&
-          isNonMutatingSyncStep2(document, payload, config.maxUpdateBytes));
+          isNonMutatingSyncStep2(
+            document,
+            payload,
+            maxUpdateBytesFor(documentName),
+          ));
       requireAdmissionReady(!isReadOnlySync);
       if (isReadOnlySync) return;
       if (context.capability === "view") {
@@ -371,7 +399,7 @@ export function createCollaborationRuntime(
         throw new RuntimeSocketError("update_denied");
       }
       try {
-        documentBudget.reserve(documentName, payload.byteLength);
+        budgetFor(documentName).reserve(documentName, payload.byteLength);
       } catch {
         telemetry.policyRejected("update");
         throw new RuntimeSocketError("update_denied");
@@ -384,7 +412,7 @@ export function createCollaborationRuntime(
           Y.applyUpdate(document, checkpoint.state);
           telemetry.checkpoint("loaded");
         }
-        documentBudget.load(
+        budgetFor(documentName).load(
           documentName,
           Y.encodeStateAsUpdate(document).byteLength,
         );
@@ -392,7 +420,7 @@ export function createCollaborationRuntime(
         telemetry.setDocuments(loadedDocuments.size);
         return document;
       } catch {
-        documentBudget.release(documentName);
+        budgetFor(documentName).release(documentName);
         loadedDocuments.delete(documentName);
         telemetry.setDocuments(loadedDocuments.size);
         rollbackPendingDocument(connections, documentName, "load");
@@ -410,7 +438,7 @@ export function createCollaborationRuntime(
       try {
         const state = Y.encodeStateAsUpdate(document);
         await dependencies.checkpoints.store(lastContext, state);
-        documentBudget.load(documentName, state.byteLength);
+        budgetFor(documentName).load(documentName, state.byteLength);
         dirtyDocuments.delete(documentName);
         if (dirtyDocuments.size === 0) {
           readinessCoordinator.markCheckpointRecovered();
@@ -427,7 +455,7 @@ export function createCollaborationRuntime(
       }
     },
     async afterUnloadDocument({ documentName }) {
-      documentBudget.release(documentName);
+      budgetFor(documentName).release(documentName);
       loadedDocuments.delete(documentName);
       telemetry.setDocuments(loadedDocuments.size);
     },

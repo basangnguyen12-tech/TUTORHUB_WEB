@@ -52,6 +52,86 @@ export async function createBrowserCollaborationSession({
   tenantId,
 }: BrowserCollaborationSessionOptions): Promise<BrowserCollaborationSession> {
   validateGrant(grant);
+  const connection = connectHocuspocusDocument({
+    grant,
+    onStatus,
+    onTerminal,
+    providerDocumentName: deriveProviderDocumentName(grant.documentId),
+  });
+  const authority = new CanonicalExcalidrawAuthority(
+    connection.document,
+    {
+      documentId: grant.documentId,
+      generation: grant.generation,
+      tenantId,
+    },
+    actorId,
+  );
+
+  try {
+    await connection.ready();
+    if (!authority.isInitialized() && grant.capability !== "view") {
+      authority.initialize(
+        excalidrawSceneToCanonical({
+          appState: { viewBackgroundColor: "#f8fafc" },
+          elements: [],
+          files: {},
+          page: { id: "page-1", name: "Bảng lớp học" },
+        }),
+      );
+    }
+    await connection.waitUntil(
+      () => authority.isInitialized(),
+      "collaboration_authority_not_ready",
+      grant.capability === "view" ? 10_000 : 8_000,
+    );
+  } catch (error) {
+    onStatus("failed");
+    authority.destroy();
+    connection.destroy();
+    throw error;
+  }
+
+  return {
+    authority,
+    capability: grant.capability,
+    destroy: () => {
+      authority.destroy();
+      connection.destroy();
+    },
+    generation: grant.generation,
+  };
+}
+
+export interface HocuspocusDocumentConnection {
+  readonly document: Y.Doc;
+  readonly provider: HocuspocusProvider;
+  destroy(): void;
+  /** Resolves once the provider is authenticated and synced. */
+  ready(): Promise<void>;
+  waitUntil(
+    predicate: () => boolean,
+    errorCode: string,
+    timeoutMs?: number,
+  ): Promise<void>;
+}
+
+/**
+ * Shared, kind-agnostic Hocuspocus connection used by every collaboration
+ * document kind. It owns the Y.Doc, the socket, bounded reconnect policy and
+ * terminal close classification; authorities are layered on top.
+ */
+export function connectHocuspocusDocument({
+  grant,
+  onStatus,
+  onTerminal,
+  providerDocumentName,
+}: {
+  grant: BrowserCollaborationGrant;
+  onStatus: (status: CollaborationConnectionStatus) => void;
+  onTerminal: (reason: CollaborationTerminalReason) => void;
+  providerDocumentName: string;
+}): HocuspocusDocumentConnection {
   const document = new Y.Doc();
   let authenticationFailed = false;
   let everConnected = false;
@@ -84,7 +164,7 @@ export async function createBrowserCollaborationSession({
   });
   const provider = new HocuspocusProvider({
     document,
-    name: deriveProviderDocumentName(grant.documentId),
+    name: providerDocumentName,
     onAuthenticationFailed: () => {
       authenticationFailed = true;
       notifyTerminal("grant_rejected");
@@ -99,60 +179,31 @@ export async function createBrowserCollaborationSession({
     token: grant.credential,
     websocketProvider: socket,
   });
-  const authority = new CanonicalExcalidrawAuthority(
-    document,
-    {
-      documentId: grant.documentId,
-      generation: grant.generation,
-      tenantId,
-    },
-    actorId,
-  );
-
-  onStatus("connecting");
-  try {
-    provider.attach();
-    await socket.connect();
-    await waitUntil(
-      () => provider.synced && provider.isAuthenticated,
-      () => authenticationFailed,
-      "collaboration_provider_sync_timeout",
-    );
-    if (!authority.isInitialized() && grant.capability !== "view") {
-      authority.initialize(
-        excalidrawSceneToCanonical({
-          appState: { viewBackgroundColor: "#f8fafc" },
-          elements: [],
-          files: {},
-          page: { id: "page-1", name: "Bảng lớp học" },
-        }),
-      );
-    }
-    await waitUntil(
-      () => authority.isInitialized(),
-      () => authenticationFailed,
-      "collaboration_authority_not_ready",
-      grant.capability === "view" ? 10_000 : 8_000,
-    );
-  } catch (error) {
-    onStatus("failed");
-    authority.destroy();
-    provider.destroy();
-    socket.destroy();
-    document.destroy();
-    throw error;
-  }
+  const waitFor = (
+    predicate: () => boolean,
+    errorCode: string,
+    timeoutMs?: number,
+  ): Promise<void> =>
+    waitUntil(predicate, () => authenticationFailed, errorCode, timeoutMs);
 
   return {
-    authority,
-    capability: grant.capability,
     destroy: () => {
-      authority.destroy();
       provider.destroy();
       socket.destroy();
       document.destroy();
     },
-    generation: grant.generation,
+    document,
+    provider,
+    ready: async () => {
+      onStatus("connecting");
+      provider.attach();
+      await socket.connect();
+      await waitFor(
+        () => provider.synced && provider.isAuthenticated,
+        "collaboration_provider_sync_timeout",
+      );
+    },
+    waitUntil: waitFor,
   };
 }
 
@@ -203,6 +254,10 @@ const UUID_PATTERN =
 
 function validateGrant(grant: BrowserCollaborationGrant): void {
   deriveProviderDocumentName(grant.documentId);
+  validateGrantTransport(grant);
+}
+
+export function validateGrantTransport(grant: BrowserCollaborationGrant): void {
   const providerUrl = new URL(grant.providerUrl);
   const expiresAt = Date.parse(grant.expiresAt);
   if (

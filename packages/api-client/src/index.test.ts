@@ -838,6 +838,8 @@ describe("getHealth", () => {
         classroom_media_rooms: { enabled: false },
         instant_study_rooms: { enabled: false },
         classroom_whiteboards: { enabled: false },
+        classroom_code_tool: { enabled: true },
+        classroom_code_collaboration: { enabled: false },
       },
       quotas: {
         active_availability_polls: { limit: 20, used: 2, remaining: 18 },
@@ -1002,6 +1004,8 @@ describe("getHealth", () => {
         classroom_media_rooms: false,
         instant_study_rooms: false,
         classroom_whiteboards: false,
+        classroom_code_tool: true,
+        classroom_code_collaboration: false,
       },
       quotas: {
         active_availability_polls: 30,

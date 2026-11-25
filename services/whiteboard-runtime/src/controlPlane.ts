@@ -5,10 +5,14 @@ import type {
   RuntimeAuthorityState,
   RuntimeMode,
 } from "./contracts.js";
+import {
+  documentKindForName,
+  parseDocumentKind,
+  scopeDocumentKind,
+} from "./documentKind.js";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
 const AUTHORITY_LEASE_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
-const PROVIDER_DOCUMENT_PATTERN = /^wb_[A-Za-z0-9_-]{22,125}$/;
 const MAX_RESPONSE_BYTES = 8 * 1024;
 
 export class ControlPlaneError extends Error {
@@ -33,10 +37,13 @@ export class HttpControlPlane implements ControlPlane {
     grant: string;
     origin: string;
   }): Promise<CollaborationScope> {
+    const documentKind = documentKindForName(input.documentName);
+    if (!documentKind) throw new ControlPlaneError("control_plane_denied");
     const payload = await this.request(
       "/internal/v1/collaboration/grants/exchange",
       {
         body: JSON.stringify({
+          document_kind: documentKind,
           grant: input.grant,
           origin: input.origin,
           provider_document_name: input.documentName,
@@ -78,6 +85,7 @@ export class HttpControlPlane implements ControlPlane {
             authority_lease: scope.authorityLease,
             capability: scope.capability,
             document_id: scope.documentId,
+            document_kind: scopeDocumentKind(scope),
             generation: scope.generation,
             max_connections_per_tenant: scope.maxConnectionsPerTenant,
             max_operations_per_minute: scope.maxOperationsPerMinute,
@@ -179,15 +187,17 @@ function parseScope(
   const sessionId = stringField(payload, "session_id");
   const tenantId = stringField(payload, "tenant_id");
   const writerFence = integerField(payload, "writer_fence", 1);
+  const documentKind = parseDocumentKind(payload.document_kind);
 
   if (
     !isCapability(capability) ||
+    !documentKind ||
+    documentKindForName(providerDocumentName) !== documentKind ||
     !AUTHORITY_LEASE_PATTERN.test(authorityLease) ||
     !IDENTIFIER_PATTERN.test(actorId) ||
     !IDENTIFIER_PATTERN.test(documentId) ||
     !IDENTIFIER_PATTERN.test(sessionId) ||
     !IDENTIFIER_PATTERN.test(tenantId) ||
-    !PROVIDER_DOCUMENT_PATTERN.test(providerDocumentName) ||
     providerDocumentName !== expectedDocumentName
   ) {
     throw new ControlPlaneError("control_plane_denied");
@@ -198,6 +208,7 @@ function parseScope(
     actorId,
     capability,
     documentId,
+    documentKind,
     generation,
     maxConnectionsPerTenant,
     maxOperationsPerMinute,

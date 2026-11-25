@@ -8209,6 +8209,254 @@ paths:
           $ref: "#/components/responses/ConflictResponse"
         default:
           $ref: "#/components/responses/ProblemResponse"
+  /api/v1/media/spaces/{space_id}/code-workspace:
+    get:
+      operationId: resolveCodeWorkspace
+      summary: Resolve the shared code workspace bound to one MediaSpace
+      description: The server reauthorizes MediaSpace access and returns the tenant-scoped code workspace projection, can_create for current managers, and the active temporary editor grants of participants connected to the active RoomInstance. Requires classroom_code_tool and classroom_code_collaboration; when either is disabled the response is 503 feature_disabled. Foreign and inaccessible resources remain concealed as 404.
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "200":
+          description: Authorized shared code workspace projection
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeWorkspaceProjection"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    post:
+      operationId: createCodeWorkspace
+      summary: Create or replay the shared code workspace bound to one MediaSpace
+      description: Only hosts, organization admins and co-hosts may create. The server generates an opaque cw_ provider document name and never returns it.
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCodeWorkspaceRequest"
+      responses:
+        "200": { $ref: "#/components/responses/CodeWorkspaceResponse" }
+        "201": { $ref: "#/components/responses/CodeWorkspaceResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-workspaces/{workspace_id}/open:
+    post:
+      operationId: openCodeWorkspace
+      summary: Open one created shared code workspace with optimistic authority
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhiteboardTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/CodeWorkspaceResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-workspaces/{workspace_id}/suspend:
+    post:
+      operationId: suspendCodeWorkspace
+      summary: Suspend one open shared code workspace and revoke every current lease
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhiteboardTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/CodeWorkspaceResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-workspaces/{workspace_id}/resume:
+    post:
+      operationId: resumeCodeWorkspace
+      summary: Resume one suspended shared code workspace without reusing an old credential
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhiteboardTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/CodeWorkspaceResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-workspaces/{workspace_id}/close:
+    post:
+      operationId: closeCodeWorkspace
+      summary: Permanently close one shared code workspace and revoke every current lease
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhiteboardTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/CodeWorkspaceResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-workspaces/{workspace_id}/grant-exchanges:
+    post:
+      operationId: exchangeCodeWorkspaceGrant
+      summary: Exchange current code workspace authority for a one-time provider credential
+      description: The exact Origin must equal the configured TutorHub web origin. The credential is one-time, expires within 60 seconds, is bound to document kind code.workspace.v1, and is never cached.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeWorkspaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+        - name: Origin
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uri
+            maxLength: 512
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/WhiteboardGrantExchangeRequest" }
+      responses:
+        "200":
+          description: Minimal short-lived provider credential
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+            Referrer-Policy:
+              schema: { type: string, const: no-referrer }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WhiteboardGrantCredential" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ProblemResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "429": { $ref: "#/components/responses/ProblemResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-workspaces/{workspace_id}/actor-grants/{participant_key}:
+    put:
+      operationId: putCodeWorkspaceActorGrant
+      summary: Grant or extend temporary edit access for one connected attendee
+      description: Hosts, organization admins and co-hosts may grant edit access to an attendee connected to the active RoomInstance, addressed only by the opaque participant key. At most three attendees hold an unexpired grant at once (409 code_workspace_editor_limit); grants of participants who left are withdrawn first.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeWorkspaceID"
+        - $ref: "#/components/parameters/MediaParticipantKeyPath"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CodeWorkspaceActorGrantRequest"
+      responses:
+        "200":
+          description: Current temporary edit grant
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeWorkspaceEditorGrant"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    delete:
+      operationId: deleteCodeWorkspaceActorGrant
+      summary: Revoke temporary edit access and invalidate the participant's leases immediately
+      description: Idempotent. The participant's provider leases are invalidated at once so the runtime closes the edit connection on its next revalidation and the client reconnects read-only.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeWorkspaceID"
+        - $ref: "#/components/parameters/MediaParticipantKeyPath"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "204":
+          description: Temporary edit access is not held
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
   /api/v1/whiteboards:
     get:
       operationId: resolveWhiteboard
@@ -10286,6 +10534,14 @@ components:
       schema:
         type: string
         format: uuid
+    CodeWorkspaceID:
+      name: workspace_id
+      in: path
+      required: true
+      description: Opaque canonical code workspace identifier; never a provider document name.
+      schema:
+        type: string
+        format: uuid
     MediaParticipantKeyPath:
       name: participant_key
       in: path
@@ -10367,6 +10623,17 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/AvailabilityPoll"
+    CodeWorkspaceResponse:
+      description: Authorization-filtered shared code workspace control-plane projection
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: private, no-store
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CodeWorkspace"
     WhiteboardDocumentResponse:
       description: Authorization-filtered whiteboard control-plane projection
       headers:
@@ -12026,6 +12293,8 @@ components:
         - classroom_media_rooms
         - instant_study_rooms
         - classroom_whiteboards
+        - classroom_code_tool
+        - classroom_code_collaboration
       properties:
         membership_invitations:
           $ref: "#/components/schemas/FeatureCapability"
@@ -12050,6 +12319,10 @@ components:
         instant_study_rooms:
           $ref: "#/components/schemas/FeatureCapability"
         classroom_whiteboards:
+          $ref: "#/components/schemas/FeatureCapability"
+        classroom_code_tool:
+          $ref: "#/components/schemas/FeatureCapability"
+        classroom_code_collaboration:
           $ref: "#/components/schemas/FeatureCapability"
     TenantQuotaCapabilities:
       type: object
@@ -12277,6 +12550,8 @@ components:
         - classroom_media_rooms
         - instant_study_rooms
         - classroom_whiteboards
+        - classroom_code_tool
+        - classroom_code_collaboration
       properties:
         membership_invitations:
           type: boolean
@@ -12301,6 +12576,10 @@ components:
         instant_study_rooms:
           type: boolean
         classroom_whiteboards:
+          type: boolean
+        classroom_code_tool:
+          type: boolean
+        classroom_code_collaboration:
           type: boolean
     ContentFileStatus:
       type: string
@@ -18116,6 +18395,125 @@ components:
         expires_at:
           type: string
           format: date-time
+    CodeWorkspaceViewerCapabilities:
+      type: object
+      additionalProperties: false
+      description: Server-derived capability for the shared code workspace. Attendees receive edit only while an unexpired temporary grant exists and they are connected to the active RoomInstance.
+      required:
+        - capability
+        - can_open
+        - can_suspend
+        - can_resume
+        - can_close
+        - can_manage_editor_grants
+        - can_exchange_grant
+      properties:
+        capability:
+          $ref: "#/components/schemas/WhiteboardCapability"
+        can_open:
+          type: boolean
+        can_suspend:
+          type: boolean
+        can_resume:
+          type: boolean
+        can_close:
+          type: boolean
+        can_manage_editor_grants:
+          type: boolean
+        can_exchange_grant:
+          type: boolean
+    CodeWorkspace:
+      type: object
+      additionalProperties: false
+      description: Authorization-filtered code workspace projection (document kind code.workspace.v1). Provider names, checkpoints and source text are intentionally absent.
+      required:
+        - id
+        - media_space_id
+        - status
+        - version
+        - current_generation
+        - revoke_generation
+        - viewer_capabilities
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        media_space_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/WhiteboardStatus"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        current_generation:
+          type: integer
+          format: int64
+          minimum: 1
+        revoke_generation:
+          type: integer
+          format: int64
+          minimum: 1
+        viewer_capabilities:
+          $ref: "#/components/schemas/CodeWorkspaceViewerCapabilities"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CodeWorkspaceEditorGrant:
+      type: object
+      additionalProperties: false
+      description: One unexpired temporary edit grant of a participant connected to the active RoomInstance. Only the opaque RoomInstance-scoped participant key is projected; user and session identifiers never are.
+      required: [participant_key, expires_at]
+      properties:
+        participant_key:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+    CodeWorkspaceProjection:
+      type: object
+      additionalProperties: false
+      description: Server-authoritative shared code workspace discovery for one MediaSpace. A null workspace is an explicit empty state; can_create is projected only after current MediaSpace authorization.
+      required: [workspace, can_create, active_editor_grants]
+      properties:
+        workspace:
+          oneOf:
+            - $ref: "#/components/schemas/CodeWorkspace"
+            - type: "null"
+        can_create:
+          type: boolean
+        active_editor_grants:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/CodeWorkspaceEditorGrant"
+    CreateCodeWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required: [idempotency_key]
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 16
+          maxLength: 128
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$"
+    CodeWorkspaceActorGrantRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ttl_seconds:
+          type: integer
+          format: int64
+          minimum: 60
+          maximum: 1800
+          description: Temporary edit grant lifetime in seconds; the server applies 600 when omitted. At most three attendees hold an unexpired grant per workspace.
     WhiteboardSnapshot:
       type: object
       additionalProperties: false

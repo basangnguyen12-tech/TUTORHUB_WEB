@@ -62,6 +62,7 @@ type Options struct {
 	Discovery             discovery.ServiceAPI
 	Collaboration         collaboration.ServiceAPI
 	CollaborationInternal collaboration.InternalServiceAPI
+	CodeWorkspaces        collaboration.CodeWorkspaceServiceAPI
 	CollaborationToken    string
 	CollaborationMode     string
 	LiveKitWebhook        media.WebhookVerifier
@@ -240,6 +241,7 @@ func NewHandlerWithOptions(cfg config.Config, logger *slog.Logger, options Optio
 	files := newContentHandlers(logger, auth, options.Content)
 	discovery := newDiscoveryHandlers(logger, auth, options.Discovery)
 	whiteboards := newWhiteboardHandlers(logger, auth, options.Collaboration)
+	codeWorkspaces := newCodeWorkspaceHandlers(logger, auth, options.CodeWorkspaces)
 	whiteboardInternal := newWhiteboardInternalHandlers(
 		logger, options.CollaborationInternal, options.CollaborationToken, options.CollaborationMode,
 	)
@@ -374,6 +376,26 @@ func NewHandlerWithOptions(cfg config.Config, logger *slog.Logger, options Optio
 	mux.Handle(
 		whiteboardImportValidatePath,
 		whiteboardResponseHeaders(http.HandlerFunc(whiteboards.validateImport)),
+	)
+	mux.Handle(
+		codeWorkspaceSpacePattern,
+		whiteboardResponseHeaders(http.HandlerFunc(codeWorkspaces.space)),
+	)
+	for pattern, operation := range map[string]string{
+		codeWorkspaceOpenPattern:    "open",
+		codeWorkspaceSuspendPattern: "suspend",
+		codeWorkspaceResumePattern:  "resume",
+		codeWorkspaceClosePattern:   "close",
+	} {
+		mux.Handle(pattern, whiteboardResponseHeaders(codeWorkspaces.transition(operation)))
+	}
+	mux.Handle(
+		codeWorkspaceGrantExchangePattern,
+		whiteboardResponseHeaders(http.HandlerFunc(codeWorkspaces.grantExchange)),
+	)
+	mux.Handle(
+		codeWorkspaceActorGrantPattern,
+		whiteboardResponseHeaders(http.HandlerFunc(codeWorkspaces.actorGrant)),
 	)
 	if options.CollaborationInternal != nil && options.CollaborationToken != "" {
 		mux.Handle(whiteboardInternalRuntimeStatePath, http.HandlerFunc(whiteboardInternal.runtimeState))

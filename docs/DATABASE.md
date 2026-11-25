@@ -1543,6 +1543,25 @@ chỉ có schema `USAGE`, không có DML P5-COLLAB-02; bounded retention purge t
 Shared staging vẫn ở `36 false`; không được forward hoặc provision P5-COLLAB-02 ACL trước khi
 disposable `36 -> 37 -> 37` và exact candidate CI/security PASS.
 
+## ROOM-TOOLS-CODE-02A — code workspace collaboration schema (`000054`)
+
+Migration `000054_code_workspace_collaboration` mở rộng ràng buộc `tenant_feature_overrides_key_valid` với
+`classroom_code_tool` và `classroom_code_collaboration`, đồng thời tạo 5 bảng có `tenant_id`, khóa ngoại
+tổng hợp theo `tenant_id` và `REVOKE ALL ON TABLE ... FROM PUBLIC`:
+
+- `code_workspaces` — `UNIQUE (tenant_id, media_space_id)`, vòng đời `created|open|suspended|closed`, CAS `version`, `current_generation`, `revoke_generation`;
+- `code_workspace_generations` — khóa mô tả bất biến `^cw_[A-Za-z0-9_-]{22,125}$`, pin `yjs 13.6.27` và `hocuspocus 4.6.0`;
+- `code_workspace_checkpoints` — checkpoint Yjs nén tối đa `524288` byte (`512 KiB`), `checksum` 32 byte, `writer_fence > 0`;
+- `code_workspace_actor_grants` — quyền `edit` tạm thời theo `(tenant_id, workspace_id, actor_user_id)`, TTL tối đa `30 phút`;
+- `code_workspace_mutation_receipts` — biên nhận idempotency cho `open|suspend|resume|close`.
+
+Trước khi bật runtime sau khi chạy migration `000054` trên Neon, migration owner phải cấp đúng quyền tối thiểu
+trong cùng cửa sổ triển khai (vì `NeonCheckpointStore.probe()` của `services/whiteboard-runtime` kiểm tra quyền trên
+`tutorhub.code_workspace_checkpoints` ngay khi bảng tồn tại):
+
+1. Cho role Core API (`tutorhub_runtime`): `SELECT` trên 4 bảng control-plane (`code_workspaces`, `code_workspace_generations`, `code_workspace_actor_grants`, `code_workspace_mutation_receipts`, **không** cấp trên `code_workspace_checkpoints`, **không** cấp `DELETE`/`TRUNCATE`), cùng `INSERT`/`UPDATE` đúng các cột mà `PostgresCodeWorkspaceRepository` sử dụng (`INSERT` trên 4 bảng; `UPDATE` trên `code_workspaces` và `code_workspace_actor_grants`).
+2. Cho role Collaboration Runtime (`COLLAB_DATABASE_URL`): `SELECT, INSERT, UPDATE` trên `tutorhub.code_workspace_checkpoints` (**không** cấp `DELETE`/`TRUNCATE`).
+
 ## Quy tắc thay đổi schema
 
 1. Không sửa migration đã chạy; tạo migration số tiếp theo với cặp `up/down`.

@@ -1,3 +1,5 @@
 export * from "./browserSession.js";
 export * from "./canonicalAuthority.js";
+export * from "./codeWorkspaceAuthority.js";
+export * from "./codeWorkspaceSession.js";
 export * from "./portableScene.js";

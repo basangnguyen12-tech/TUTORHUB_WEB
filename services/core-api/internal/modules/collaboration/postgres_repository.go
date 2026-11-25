@@ -247,6 +247,7 @@ func (repository *PostgresRepository) GrantAuthority(
 		return GrantAuthority{}, ErrUnavailable
 	}
 	authority.WriterFence = authority.Document.RevokeGeneration
+	authority.DocumentKind = DocumentKindWhiteboard
 	if repository.quotas != nil {
 		connectionLimit, quotaErr := repository.quotas.ResolveQuota(queryContext, tx, access.TenantID, featurecontrol.QuotaWhiteboardConnectionsPerTenant)
 		if quotaErr != nil {

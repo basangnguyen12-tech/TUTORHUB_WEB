@@ -251,6 +251,7 @@ type GrantCredential struct {
 // whiteboard lifecycle endpoints.
 type GrantAuthority struct {
 	Document             Document
+	DocumentKind         DocumentKind
 	ProviderDocumentName string
 	RuntimeLimits        RuntimeLimits
 	WriterFence          int64
@@ -258,6 +259,7 @@ type GrantAuthority struct {
 
 type GrantConsumeInput struct {
 	Credential           string
+	DocumentKind         DocumentKind
 	Origin               string
 	ProviderDocumentName string
 }
@@ -266,18 +268,19 @@ type GrantConsumeInput struct {
 // authority lease remains memory-only and is used for bounded revalidation of
 // an active provider connection.
 type GrantScope struct {
-	AuthorityLease           string     `json:"authority_lease"`
-	ActorID                  uuid.UUID  `json:"actor_id"`
-	Capability               Capability `json:"capability"`
-	DocumentID               uuid.UUID  `json:"document_id"`
-	Generation               int64      `json:"generation"`
-	MaxConnectionsPerTenant  int64      `json:"max_connections_per_tenant"`
-	MaxOperationsPerMinute   int64      `json:"max_operations_per_minute"`
-	MaxStorageBytesPerTenant int64      `json:"max_storage_bytes_per_tenant"`
-	ProviderDocumentName     string     `json:"provider_document_name"`
-	SessionID                uuid.UUID  `json:"session_id"`
-	TenantID                 uuid.UUID  `json:"tenant_id"`
-	WriterFence              int64      `json:"writer_fence"`
+	AuthorityLease           string       `json:"authority_lease"`
+	ActorID                  uuid.UUID    `json:"actor_id"`
+	Capability               Capability   `json:"capability"`
+	DocumentID               uuid.UUID    `json:"document_id"`
+	DocumentKind             DocumentKind `json:"document_kind"`
+	Generation               int64        `json:"generation"`
+	MaxConnectionsPerTenant  int64        `json:"max_connections_per_tenant"`
+	MaxOperationsPerMinute   int64        `json:"max_operations_per_minute"`
+	MaxStorageBytesPerTenant int64        `json:"max_storage_bytes_per_tenant"`
+	ProviderDocumentName     string       `json:"provider_document_name"`
+	SessionID                uuid.UUID    `json:"session_id"`
+	TenantID                 uuid.UUID    `json:"tenant_id"`
+	WriterFence              int64        `json:"writer_fence"`
 }
 
 type GrantValidationInput struct {

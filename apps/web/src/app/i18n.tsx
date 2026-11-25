@@ -1385,6 +1385,9 @@ const messages = {
     "capabilities.featureFileUploads": "Tải tệp lên",
     "capabilities.featureClassroomMediaRooms": "Phòng học trực tuyến",
     "capabilities.featureClassroomWhiteboards": "Bảng vẽ lớp học",
+    "capabilities.featureClassroomCodeTool": "Công cụ Code trong lớp học",
+    "capabilities.featureClassroomCodeCollaboration":
+      "Không gian Code cộng tác trong lớp học",
     "capabilities.featureInstantStudyRooms": "Phòng học nhóm tức thời",
     "capabilities.featureInAppNotifications": "Thông báo trong ứng dụng",
     "capabilities.featureAvailabilityPolls": "Khảo sát thời gian rảnh",
@@ -3282,6 +3285,8 @@ const messages = {
     "classroomTools.code.forbiddenTitle": "Bạn không có quyền mở công cụ này",
     "classroomTools.code.forbiddenDescription":
       "Hãy vào lại lớp từ trang chuẩn bị.",
+    "classroomTools.code.featureOff":
+      "Công cụ Code hiện đang tắt cho môi trường này.",
     "classroomTools.code.language": "Ngôn ngữ",
     "classroomTools.code.run": "Chạy",
     "classroomTools.code.stop": "Dừng",
@@ -4810,6 +4815,9 @@ const messages = {
     "capabilities.featureFileUploads": "File uploads",
     "capabilities.featureClassroomMediaRooms": "Classroom media rooms",
     "capabilities.featureClassroomWhiteboards": "Classroom whiteboards",
+    "capabilities.featureClassroomCodeTool": "Classroom code tool",
+    "capabilities.featureClassroomCodeCollaboration":
+      "Collaborative classroom code workspace",
     "capabilities.featureInstantStudyRooms": "Instant study rooms",
     "capabilities.featureInAppNotifications": "In-app notifications",
     "capabilities.featureAvailabilityPolls": "Availability polls",
@@ -6715,6 +6723,8 @@ const messages = {
     "classroomTools.code.forbiddenTitle": "You don't have access to this tool",
     "classroomTools.code.forbiddenDescription":
       "Rejoin the class from the pre-join page.",
+    "classroomTools.code.featureOff":
+      "The Code tool is turned off for this environment.",
     "classroomTools.code.language": "Language",
     "classroomTools.code.run": "Run",
     "classroomTools.code.stop": "Stop",

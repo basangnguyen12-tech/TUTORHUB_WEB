@@ -38,6 +38,9 @@ const featureLabelKeys: Record<FeatureKey, TranslationKey> = {
   file_uploads: "capabilities.featureFileUploads",
   classroom_media_rooms: "capabilities.featureClassroomMediaRooms",
   classroom_whiteboards: "capabilities.featureClassroomWhiteboards",
+  classroom_code_tool: "capabilities.featureClassroomCodeTool",
+  classroom_code_collaboration:
+    "capabilities.featureClassroomCodeCollaboration",
   instant_study_rooms: "capabilities.featureInstantStudyRooms",
   in_app_notifications: "capabilities.featureInAppNotifications",
   membership_invitations: "capabilities.featureMembershipInvitations",
@@ -117,6 +120,14 @@ function controlsDraft(capabilities: TenantCapabilities): ControlsDraft {
       classroom_whiteboards: configuredFeature(
         capabilities,
         "classroom_whiteboards",
+      ),
+      classroom_code_tool: configuredFeature(
+        capabilities,
+        "classroom_code_tool",
+      ),
+      classroom_code_collaboration: configuredFeature(
+        capabilities,
+        "classroom_code_collaboration",
       ),
       instant_study_rooms: configuredFeature(
         capabilities,

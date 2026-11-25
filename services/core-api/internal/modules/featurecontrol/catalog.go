@@ -22,6 +22,10 @@ const (
 	FeatureClassroomMediaRooms    FeatureKey = "classroom_media_rooms"
 	FeatureInstantStudyRooms      FeatureKey = "instant_study_rooms"
 	FeatureClassroomWhiteboards   FeatureKey = "classroom_whiteboards"
+	// ROOM-TOOLS-CODE-02A (ADR-0043): the personal Code tool keeps its Slice 1
+	// default-on experience; the shared Yjs workspace stays default-off.
+	FeatureClassroomCodeTool          FeatureKey = "classroom_code_tool"
+	FeatureClassroomCodeCollaboration FeatureKey = "classroom_code_collaboration"
 )
 
 type QuotaKey string
@@ -124,6 +128,12 @@ var featureDefinitions = map[FeatureKey]FeatureDefinition{
 	},
 	FeatureClassroomWhiteboards: {
 		Key: FeatureClassroomWhiteboards, DefaultEnabled: false,
+	},
+	FeatureClassroomCodeTool: {
+		Key: FeatureClassroomCodeTool, DefaultEnabled: true,
+	},
+	FeatureClassroomCodeCollaboration: {
+		Key: FeatureClassroomCodeCollaboration, DefaultEnabled: false,
 	},
 }
 

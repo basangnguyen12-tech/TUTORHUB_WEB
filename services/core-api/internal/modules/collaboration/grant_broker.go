@@ -129,11 +129,14 @@ func (broker *MemoryGrantBroker) Issue(
 	capability Capability,
 	input GrantExchangeInput,
 ) (GrantCredential, error) {
+	kind, knownKind := NormalizeDocumentKind(authority.DocumentKind)
 	if broker == nil || !validAccess(access) || !validCapability(capability) ||
 		authority.Document.ID == uuid.Nil || authority.ProviderDocumentName == "" ||
-		authority.WriterFence < 1 || input.Origin == "" {
+		authority.WriterFence < 1 || input.Origin == "" || !knownKind ||
+		!providerNameMatchesKind(authority.ProviderDocumentName, kind) {
 		return GrantCredential{}, ErrGrantDenied
 	}
+	authority.DocumentKind = kind
 	now := broker.clock().UTC()
 	authority.RuntimeLimits = normalizeRuntimeLimits(authority.RuntimeLimits)
 	broker.mu.Lock()
@@ -186,8 +189,10 @@ func (broker *MemoryGrantBroker) Consume(
 	broker.pruneLocked(now)
 	grant, ok := broker.grants[digest]
 	delete(broker.grants, digest)
+	requestedKind, knownKind := NormalizeDocumentKind(input.DocumentKind)
 	if !ok || !now.Before(grant.expiresAt) || input.Origin != grant.origin ||
-		input.ProviderDocumentName != grant.authority.ProviderDocumentName {
+		input.ProviderDocumentName != grant.authority.ProviderDocumentName ||
+		!knownKind || requestedKind != grant.authority.DocumentKind {
 		return GrantResolution{}, ErrGrantDenied
 	}
 	if len(broker.leases) >= broker.maximumLeases {
@@ -200,6 +205,7 @@ func (broker *MemoryGrantBroker) Consume(
 	scope := GrantScope{
 		AuthorityLease: lease, ActorID: grant.access.ActorID, Capability: grant.capability,
 		DocumentID:               grant.authority.Document.ID,
+		DocumentKind:             grant.authority.DocumentKind,
 		Generation:               grant.authority.Document.CurrentGeneration,
 		MaxConnectionsPerTenant:  grant.authority.RuntimeLimits.MaxConnectionsPerTenant,
 		MaxOperationsPerMinute:   grant.authority.RuntimeLimits.MaxOperationsPerMinute,
@@ -267,6 +273,48 @@ func (broker *MemoryGrantBroker) Revoke(documentID uuid.UUID) {
 	}
 }
 
+// RevokeTenantDocument invalidates every pending grant and active lease of
+// one tenant-scoped document, independent of its kind.
+func (broker *MemoryGrantBroker) RevokeTenantDocument(tenantID, documentID uuid.UUID) {
+	broker.revokeMatching(func(access AccessContext, documentKey uuid.UUID) bool {
+		return access.TenantID == tenantID && documentKey == documentID
+	}, tenantID, documentID)
+}
+
+// RevokeActor invalidates one actor's pending grants and active leases for a
+// tenant-scoped document. It is the immediate lease invalidation used when a
+// temporary code workspace edit grant is withdrawn.
+func (broker *MemoryGrantBroker) RevokeActor(tenantID, documentID, actorID uuid.UUID) {
+	if actorID == uuid.Nil {
+		return
+	}
+	broker.revokeMatching(func(access AccessContext, documentKey uuid.UUID) bool {
+		return access.TenantID == tenantID && access.ActorID == actorID && documentKey == documentID
+	}, tenantID, documentID)
+}
+
+func (broker *MemoryGrantBroker) revokeMatching(
+	match func(AccessContext, uuid.UUID) bool,
+	tenantID uuid.UUID,
+	documentID uuid.UUID,
+) {
+	if broker == nil || tenantID == uuid.Nil || documentID == uuid.Nil {
+		return
+	}
+	broker.mu.Lock()
+	defer broker.mu.Unlock()
+	for digest, grant := range broker.grants {
+		if match(grant.access, grant.authority.Document.ID) {
+			delete(broker.grants, digest)
+		}
+	}
+	for digest, lease := range broker.leases {
+		if match(lease.access, lease.scope.DocumentID) {
+			delete(broker.leases, digest)
+		}
+	}
+}
+
 func (broker *MemoryGrantBroker) allowIssueLocked(access AccessContext, now time.Time) bool {
 	key := issueRateKey{tenantID: access.TenantID, actorID: access.ActorID, sessionID: access.SessionID}
 	cutoff := now.Add(-broker.rateWindow)
@@ -322,6 +370,7 @@ func cloneAccess(access AccessContext) AccessContext {
 func sameGrantScope(left, right GrantScope) bool {
 	return left.AuthorityLease == right.AuthorityLease && left.ActorID == right.ActorID &&
 		left.Capability == right.Capability && left.DocumentID == right.DocumentID &&
+		sameDocumentKind(left.DocumentKind, right.DocumentKind) &&
 		left.Generation == right.Generation &&
 		left.MaxConnectionsPerTenant == right.MaxConnectionsPerTenant &&
 		left.MaxOperationsPerMinute == right.MaxOperationsPerMinute &&
@@ -329,4 +378,10 @@ func sameGrantScope(left, right GrantScope) bool {
 		left.ProviderDocumentName == right.ProviderDocumentName &&
 		left.SessionID == right.SessionID && left.TenantID == right.TenantID &&
 		left.WriterFence == right.WriterFence
+}
+
+func sameDocumentKind(left, right DocumentKind) bool {
+	normalizedLeft, leftOK := NormalizeDocumentKind(left)
+	normalizedRight, rightOK := NormalizeDocumentKind(right)
+	return leftOK && rightOK && normalizedLeft == normalizedRight
 }

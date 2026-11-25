@@ -20,6 +20,8 @@ func TestCatalogDefaultsAndStableOrder(t *testing.T) {
 		FeatureClassManagement,
 		FeatureClassSessionRecurrence,
 		FeatureClassSessionScheduling,
+		FeatureClassroomCodeCollaboration,
+		FeatureClassroomCodeTool,
 		FeatureClassroomMediaRooms,
 		FeatureClassroomWhiteboards,
 		FeatureConversations,
@@ -33,6 +35,7 @@ func TestCatalogDefaultsAndStableOrder(t *testing.T) {
 	for _, definition := range features {
 		mayDefaultOff := definition.Key == FeatureClassroomMediaRooms ||
 			definition.Key == FeatureClassroomWhiteboards ||
+			definition.Key == FeatureClassroomCodeCollaboration ||
 			definition.Key == FeatureInstantStudyRooms
 		if definition.DefaultEnabled == mayDefaultOff {
 			t.Fatalf("unexpected compiled default for feature %q: %t", definition.Key, definition.DefaultEnabled)

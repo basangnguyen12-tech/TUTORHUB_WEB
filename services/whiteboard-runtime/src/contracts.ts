@@ -8,6 +8,8 @@ export const RUNTIME_VERSIONS = {
 export const MAX_DURABLE_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 export type CollaborationCapability = "edit" | "present" | "view";
+export type CollaborationDocumentKind =
+  "code.workspace.v1" | "whiteboard.excalidraw.v1";
 export type RuntimeMode = "enabled" | "off" | "read_only";
 
 export interface CollaborationScope {
@@ -15,6 +17,11 @@ export interface CollaborationScope {
   actorId: string;
   capability: CollaborationCapability;
   documentId: string;
+  /**
+   * Typed document contract confirmed by the control plane. Absent on
+   * pre-Slice-2 scopes, which keep the whiteboard contract.
+   */
+  documentKind?: CollaborationDocumentKind;
   generation: number;
   maxConnectionsPerTenant: number;
   maxOperationsPerMinute: number;

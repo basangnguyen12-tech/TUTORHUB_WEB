@@ -1847,6 +1847,118 @@ export type paths = {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/v1/code-workspaces/{workspace_id}/actor-grants/{participant_key}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    /**
+     * Grant or extend temporary edit access for one connected attendee
+     * @description Hosts, organization admins and co-hosts may grant edit access to an attendee connected to the active RoomInstance, addressed only by the opaque participant key. At most three attendees hold an unexpired grant at once (409 code_workspace_editor_limit); grants of participants who left are withdrawn first.
+     */
+    readonly put: operations["putCodeWorkspaceActorGrant"];
+    readonly post?: never;
+    /**
+     * Revoke temporary edit access and invalidate the participant's leases immediately
+     * @description Idempotent. The participant's provider leases are invalidated at once so the runtime closes the edit connection on its next revalidation and the client reconnects read-only.
+     */
+    readonly delete: operations["deleteCodeWorkspaceActorGrant"];
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/code-workspaces/{workspace_id}/close": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Permanently close one shared code workspace and revoke every current lease */
+    readonly post: operations["closeCodeWorkspace"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/code-workspaces/{workspace_id}/grant-exchanges": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Exchange current code workspace authority for a one-time provider credential
+     * @description The exact Origin must equal the configured TutorHub web origin. The credential is one-time, expires within 60 seconds, is bound to document kind code.workspace.v1, and is never cached.
+     */
+    readonly post: operations["exchangeCodeWorkspaceGrant"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/code-workspaces/{workspace_id}/open": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Open one created shared code workspace with optimistic authority */
+    readonly post: operations["openCodeWorkspace"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/code-workspaces/{workspace_id}/resume": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Resume one suspended shared code workspace without reusing an old credential */
+    readonly post: operations["resumeCodeWorkspace"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/code-workspaces/{workspace_id}/suspend": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /** Suspend one open shared code workspace and revoke every current lease */
+    readonly post: operations["suspendCodeWorkspace"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/v1/conversations": {
     readonly parameters: {
       readonly query?: never;
@@ -2809,6 +2921,30 @@ export type paths = {
     readonly put?: never;
     /** Cancel a scheduled media space using optimistic concurrency */
     readonly post: operations["cancelMediaSpace"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/code-workspace": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Resolve the shared code workspace bound to one MediaSpace
+     * @description The server reauthorizes MediaSpace access and returns the tenant-scoped code workspace projection, can_create for current managers, and the active temporary editor grants of participants connected to the active RoomInstance. Requires classroom_code_tool and classroom_code_collaboration; when either is disabled the response is 503 feature_disabled. Foreign and inaccessible resources remain concealed as 404.
+     */
+    readonly get: operations["resolveCodeWorkspace"];
+    readonly put?: never;
+    /**
+     * Create or replay the shared code workspace bound to one MediaSpace
+     * @description Only hosts, organization admins and co-hosts may create. The server generates an opaque cw_ provider document name and never returns it.
+     */
+    readonly post: operations["createCodeWorkspace"];
     readonly delete?: never;
     readonly options?: never;
     readonly head?: never;
@@ -4981,6 +5117,55 @@ export type components = {
       readonly enrollment_status:
         components["schemas"]["ClassEnrollmentStatus"] | null;
     };
+    /** @description Authorization-filtered code workspace projection (document kind code.workspace.v1). Provider names, checkpoints and source text are intentionally absent. */
+    readonly CodeWorkspace: {
+      /** Format: date-time */
+      readonly created_at: string;
+      /** Format: int64 */
+      readonly current_generation: number;
+      /** Format: uuid */
+      readonly id: string;
+      /** Format: uuid */
+      readonly media_space_id: string;
+      /** Format: int64 */
+      readonly revoke_generation: number;
+      readonly status: components["schemas"]["WhiteboardStatus"];
+      /** Format: date-time */
+      readonly updated_at: string;
+      /** Format: int64 */
+      readonly version: number;
+      readonly viewer_capabilities: components["schemas"]["CodeWorkspaceViewerCapabilities"];
+    };
+    readonly CodeWorkspaceActorGrantRequest: {
+      /**
+       * Format: int64
+       * @description Temporary edit grant lifetime in seconds; the server applies 600 when omitted. At most three attendees hold an unexpired grant per workspace.
+       */
+      readonly ttl_seconds?: number;
+    };
+    /** @description One unexpired temporary edit grant of a participant connected to the active RoomInstance. Only the opaque RoomInstance-scoped participant key is projected; user and session identifiers never are. */
+    readonly CodeWorkspaceEditorGrant: {
+      /** Format: date-time */
+      readonly expires_at: string;
+      /** Format: uuid */
+      readonly participant_key: string;
+    };
+    /** @description Server-authoritative shared code workspace discovery for one MediaSpace. A null workspace is an explicit empty state; can_create is projected only after current MediaSpace authorization. */
+    readonly CodeWorkspaceProjection: {
+      readonly active_editor_grants: readonly components["schemas"]["CodeWorkspaceEditorGrant"][];
+      readonly can_create: boolean;
+      readonly workspace: components["schemas"]["CodeWorkspace"] | null;
+    };
+    /** @description Server-derived capability for the shared code workspace. Attendees receive edit only while an unexpired temporary grant exists and they are connected to the active RoomInstance. */
+    readonly CodeWorkspaceViewerCapabilities: {
+      readonly can_close: boolean;
+      readonly can_exchange_grant: boolean;
+      readonly can_manage_editor_grants: boolean;
+      readonly can_open: boolean;
+      readonly can_resume: boolean;
+      readonly can_suspend: boolean;
+      readonly capability: components["schemas"]["WhiteboardCapability"];
+    };
     readonly CompleteFileMultipartUploadRequest: {
       /** Format: int64 */
       readonly expected_version: number;
@@ -5154,6 +5339,9 @@ export type components = {
       readonly starts_at: string;
       readonly timezone: string;
       readonly title: string;
+    };
+    readonly CreateCodeWorkspaceRequest: {
+      readonly idempotency_key: string;
     };
     readonly CreateDirectConversationRequest: {
       /** Format: email */
@@ -7044,6 +7232,8 @@ export type components = {
       readonly class_management: components["schemas"]["FeatureCapability"];
       readonly class_session_recurrence: components["schemas"]["FeatureCapability"];
       readonly class_session_scheduling: components["schemas"]["FeatureCapability"];
+      readonly classroom_code_collaboration: components["schemas"]["FeatureCapability"];
+      readonly classroom_code_tool: components["schemas"]["FeatureCapability"];
       readonly classroom_media_rooms: components["schemas"]["FeatureCapability"];
       readonly classroom_whiteboards: components["schemas"]["FeatureCapability"];
       readonly conversations: components["schemas"]["FeatureCapability"];
@@ -7058,6 +7248,8 @@ export type components = {
       readonly class_management: boolean;
       readonly class_session_recurrence: boolean;
       readonly class_session_scheduling: boolean;
+      readonly classroom_code_collaboration: boolean;
+      readonly classroom_code_tool: boolean;
       readonly classroom_media_rooms: boolean;
       readonly classroom_whiteboards: boolean;
       readonly conversations: boolean;
@@ -7560,6 +7752,16 @@ export type components = {
         readonly "application/problem+json": components["schemas"]["Problem"];
       };
     };
+    /** @description Authorization-filtered shared code workspace control-plane projection */
+    readonly CodeWorkspaceResponse: {
+      headers: {
+        readonly "Cache-Control"?: "private, no-store";
+        readonly [name: string]: unknown;
+      };
+      content: {
+        readonly "application/json": components["schemas"]["CodeWorkspace"];
+      };
+    };
     /** @description The request conflicts with the current resource state or version */
     readonly ConflictResponse: {
       headers: {
@@ -7637,6 +7839,8 @@ export type components = {
     };
   };
   parameters: {
+    /** @description Opaque canonical code workspace identifier; never a provider document name. */
+    readonly CodeWorkspaceID: string;
     /** @description Double-submit CSRF token bound to the active authenticated session. */
     readonly CSRFToken: string;
     /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
@@ -11379,6 +11583,243 @@ export interface operations {
       readonly default: components["responses"]["ProblemResponse"];
     };
   };
+  readonly putCodeWorkspaceActorGrant: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque RoomInstance-scoped participant key; never a user, session, or provider identity. */
+        readonly participant_key: components["parameters"]["MediaParticipantKeyPath"];
+        /** @description Opaque canonical code workspace identifier; never a provider document name. */
+        readonly workspace_id: components["parameters"]["CodeWorkspaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["CodeWorkspaceActorGrantRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Current temporary edit grant */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["CodeWorkspaceEditorGrant"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly deleteCodeWorkspaceActorGrant: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque RoomInstance-scoped participant key; never a user, session, or provider identity. */
+        readonly participant_key: components["parameters"]["MediaParticipantKeyPath"];
+        /** @description Opaque canonical code workspace identifier; never a provider document name. */
+        readonly workspace_id: components["parameters"]["CodeWorkspaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Temporary edit access is not held */
+      readonly 204: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content?: never;
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly closeCodeWorkspace: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque canonical code workspace identifier; never a provider document name. */
+        readonly workspace_id: components["parameters"]["CodeWorkspaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardTransitionRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeWorkspaceResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly exchangeCodeWorkspaceGrant: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        readonly Origin: string;
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque canonical code workspace identifier; never a provider document name. */
+        readonly workspace_id: components["parameters"]["CodeWorkspaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardGrantExchangeRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Minimal short-lived provider credential */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly "Referrer-Policy"?: "no-referrer";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["WhiteboardGrantCredential"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ProblemResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 429: components["responses"]["ProblemResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly openCodeWorkspace: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque canonical code workspace identifier; never a provider document name. */
+        readonly workspace_id: components["parameters"]["CodeWorkspaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardTransitionRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeWorkspaceResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly resumeCodeWorkspace: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque canonical code workspace identifier; never a provider document name. */
+        readonly workspace_id: components["parameters"]["CodeWorkspaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardTransitionRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeWorkspaceResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly suspendCodeWorkspace: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque canonical code workspace identifier; never a provider document name. */
+        readonly workspace_id: components["parameters"]["CodeWorkspaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardTransitionRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeWorkspaceResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
   readonly listConversations: {
     readonly parameters: {
       readonly query?: {
@@ -13496,6 +13937,67 @@ export interface operations {
       readonly 400: components["responses"]["ProblemResponse"];
       readonly 401: components["responses"]["UnauthorizedResponse"];
       readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly resolveCodeWorkspace: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: string;
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Authorized shared code workspace projection */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["CodeWorkspaceProjection"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly createCodeWorkspace: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: string;
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["CreateCodeWorkspaceRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeWorkspaceResponse"];
+      readonly 201: components["responses"]["CodeWorkspaceResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
       readonly 404: components["responses"]["NotFoundResponse"];
       readonly 409: components["responses"]["ConflictResponse"];
       readonly 503: components["responses"]["ProblemResponse"];

@@ -99,6 +99,8 @@ func TestLoadDefaults(t *testing.T) {
 		cfg.FeatureControls.EnableClassroomWhiteboards ||
 		cfg.FeatureControls.EnableClassroomWhiteboardRamp ||
 		len(cfg.FeatureControls.ClassroomWhiteboardCanaryTenantIDs) != 0 ||
+		cfg.FeatureControls.DisableClassroomCodeTool ||
+		cfg.FeatureControls.EnableClassroomCodeCollaboration ||
 		cfg.FeatureControls.MaxActiveMediaSpaces != defaultFeatureActiveMediaSpaceLimit ||
 		cfg.FeatureControls.MaxMediaParticipantsPerSpace != defaultFeatureMediaParticipantsPerSpaceLimit ||
 		cfg.FeatureControls.MaxActiveMediaParticipants != defaultFeatureActiveMediaParticipantLimit ||
@@ -563,6 +565,27 @@ func TestLoadAllowsExactlyTwoWhiteboardRampTenantsOnlyWithExplicitRampFlag(t *te
 				t.Fatalf("expected %q validation error, got %v", test.want, err)
 			}
 		})
+	}
+}
+
+func TestLoadParsesClassroomCodeFeatureGuardrails(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_DISABLE_CLASSROOM_CODE_TOOL":         "true",
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_CODE_COLLABORATION": "true",
+	}))
+	if err != nil {
+		t.Fatalf("load code feature guardrails: %v", err)
+	}
+	if !cfg.FeatureControls.DisableClassroomCodeTool ||
+		!cfg.FeatureControls.EnableClassroomCodeCollaboration {
+		t.Fatalf("code feature guardrails were not parsed: %+v", cfg.FeatureControls)
+	}
+	if _, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_CODE_COLLABORATION": "maybe",
+	})); err == nil {
+		t.Fatal("expected invalid code collaboration flag to fail closed")
 	}
 }
 

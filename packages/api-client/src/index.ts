@@ -509,6 +509,17 @@ export type WhiteboardGrantExchangeRequest =
   components["schemas"]["WhiteboardGrantExchangeRequest"];
 export type WhiteboardGrantCredential =
   components["schemas"]["WhiteboardGrantCredential"];
+export type CodeWorkspaceViewerCapabilities =
+  components["schemas"]["CodeWorkspaceViewerCapabilities"];
+export type CodeWorkspace = components["schemas"]["CodeWorkspace"];
+export type CodeWorkspaceEditorGrant =
+  components["schemas"]["CodeWorkspaceEditorGrant"];
+export type CodeWorkspaceProjection =
+  components["schemas"]["CodeWorkspaceProjection"];
+export type CreateCodeWorkspaceRequest =
+  components["schemas"]["CreateCodeWorkspaceRequest"];
+export type CodeWorkspaceActorGrantRequest =
+  components["schemas"]["CodeWorkspaceActorGrantRequest"];
 export type CreateMediaSpaceRequest =
   components["schemas"]["CreateMediaSpaceRequest"];
 export type MediaSpaceTransitionRequest =
@@ -4734,6 +4745,203 @@ export async function exchangeWhiteboardGrant(
     error,
     response,
   );
+}
+
+export async function resolveCodeWorkspace(
+  tenantID: string,
+  mediaSpaceID: string,
+  options: APIRequestOptions = {},
+): Promise<CodeWorkspaceProjection> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/media/spaces/{space_id}/code-workspace",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeWorkspaceProjection>(
+    data as CodeWorkspaceProjection | undefined,
+    error,
+    response,
+  );
+}
+
+export async function createCodeWorkspace(
+  tenantID: string,
+  mediaSpaceID: string,
+  input: CreateCodeWorkspaceRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<CodeWorkspace> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/media/spaces/{space_id}/code-workspace",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeWorkspace>(
+    data as CodeWorkspace | undefined,
+    error,
+    response,
+  );
+}
+
+export async function transitionCodeWorkspace(
+  tenantID: string,
+  workspaceID: string,
+  operation: "open" | "suspend" | "resume" | "close",
+  input: WhiteboardTransitionRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<CodeWorkspace> {
+  requireTenantScope(tenantID);
+  const client = createTutorHubClient(options);
+  const request = {
+    params: {
+      path: { workspace_id: workspaceID },
+      header: {
+        "X-CSRF-Token": csrfToken,
+        "X-TutorHub-Expected-Tenant-ID": tenantID,
+      },
+    },
+    body: input,
+    headers: { Accept: "application/json" },
+    signal: options.signal,
+  } as const;
+  const result =
+    operation === "open"
+      ? await client.POST(
+          "/api/v1/code-workspaces/{workspace_id}/open",
+          request,
+        )
+      : operation === "suspend"
+        ? await client.POST(
+            "/api/v1/code-workspaces/{workspace_id}/suspend",
+            request,
+          )
+        : operation === "resume"
+          ? await client.POST(
+              "/api/v1/code-workspaces/{workspace_id}/resume",
+              request,
+            )
+          : await client.POST(
+              "/api/v1/code-workspaces/{workspace_id}/close",
+              request,
+            );
+  return requireData<CodeWorkspace>(
+    result.data as CodeWorkspace | undefined,
+    result.error,
+    result.response,
+  );
+}
+
+export async function exchangeCodeWorkspaceGrant(
+  tenantID: string,
+  workspaceID: string,
+  input: WhiteboardGrantExchangeRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<WhiteboardGrantCredential> {
+  requireTenantScope(tenantID);
+  const origin = resolvePublicRequestOrigin(options.baseUrl ?? "/api");
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/code-workspaces/{workspace_id}/grant-exchanges",
+    {
+      params: {
+        path: { workspace_id: workspaceID },
+        header: {
+          Origin: origin,
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<WhiteboardGrantCredential>(
+    data as WhiteboardGrantCredential | undefined,
+    error,
+    response,
+  );
+}
+
+export async function putCodeWorkspaceActorGrant(
+  tenantID: string,
+  workspaceID: string,
+  participantKey: string,
+  input: CodeWorkspaceActorGrantRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<CodeWorkspaceEditorGrant> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PUT(
+    "/api/v1/code-workspaces/{workspace_id}/actor-grants/{participant_key}",
+    {
+      params: {
+        path: { workspace_id: workspaceID, participant_key: participantKey },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeWorkspaceEditorGrant>(
+    data as CodeWorkspaceEditorGrant | undefined,
+    error,
+    response,
+  );
+}
+
+export async function deleteCodeWorkspaceActorGrant(
+  tenantID: string,
+  workspaceID: string,
+  participantKey: string,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<void> {
+  requireTenantScope(tenantID);
+  const { error, response } = await createTutorHubClient(options).DELETE(
+    "/api/v1/code-workspaces/{workspace_id}/actor-grants/{participant_key}",
+    {
+      params: {
+        path: { workspace_id: workspaceID, participant_key: participantKey },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      headers: { Accept: "application/problem+json" },
+      signal: options.signal,
+    },
+  );
+  if (!response.ok) {
+    throw new APIRequestError(
+      response.status,
+      isProblem(error) ? error : undefined,
+      retryAfterSeconds(response),
+    );
+  }
 }
 
 export async function createMediaSpace(

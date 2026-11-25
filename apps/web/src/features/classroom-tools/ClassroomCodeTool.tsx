@@ -24,6 +24,11 @@ export interface ClassroomCodeToolProps {
   readonly actorID: string;
   /** Whether the viewer may post in room chat right now (ADR-0042). */
   readonly chatCanPost: boolean;
+  /**
+   * Server-projected `classroom_code_tool` (ROOM-TOOLS-CODE-02A). `undefined`
+   * while tenant capabilities load; `false` renders the feature-off state.
+   */
+  readonly enabled?: boolean;
   readonly mediaSpaceID: string;
   readonly onSendToChat?: (text: string) => void;
   readonly session: ClassroomCodeSession;
@@ -55,7 +60,10 @@ class CodeToolErrorBoundary extends Component<
   }
 }
 
-export function ClassroomCodeTool(props: ClassroomCodeToolProps) {
+export function ClassroomCodeTool({
+  enabled,
+  ...props
+}: ClassroomCodeToolProps) {
   const { t } = useI18n();
   const headerSlot = useContext(ClassroomHeaderSlotContext);
   const toolActions = useContext(ClassroomToolActionsContext);
@@ -63,6 +71,23 @@ export function ClassroomCodeTool(props: ClassroomCodeToolProps) {
   const [attempt, setAttempt] = useState(0);
   const [Workspace, setWorkspace] = useState(() => lazy(loadWorkspace));
 
+  if (enabled === false) {
+    return (
+      <div className="classroom-code-state" role="status">
+        <p className="classroom-code-state__title">
+          {t("classroomTools.code.featureOff")}
+        </p>
+      </div>
+    );
+  }
+  if (enabled === undefined) {
+    return (
+      <div className="classroom-code-state" role="status">
+        <span aria-hidden="true" className="classroom-code-state__spinner" />
+        <p>{t("classroomTools.code.loading")}</p>
+      </div>
+    );
+  }
   if (!props.tenantID || !props.actorID || !props.mediaSpaceID) {
     return (
       <div className="classroom-code-state" role="alert">
