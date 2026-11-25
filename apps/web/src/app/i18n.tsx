@@ -1388,6 +1388,8 @@ const messages = {
     "capabilities.featureClassroomCodeTool": "Công cụ Code trong lớp học",
     "capabilities.featureClassroomCodeCollaboration":
       "Không gian Code cộng tác trong lớp học",
+    "capabilities.featureCodeSnippetLibrary":
+      "Kho Snippet và bản nháp Code bền vững",
     "capabilities.featureInstantStudyRooms": "Phòng học nhóm tức thời",
     "capabilities.featureInAppNotifications": "Thông báo trong ứng dụng",
     "capabilities.featureAvailabilityPolls": "Khảo sát thời gian rảnh",
@@ -1426,6 +1428,10 @@ const messages = {
       "Thao tác bảng vẽ tối đa mỗi phút",
     "capabilities.quotaWhiteboardStorageBytes":
       "Dung lượng bảng vẽ tối đa (byte)",
+    "capabilities.quotaCodeSnippetsPerMember":
+      "Snippet Code tối đa mỗi thành viên",
+    "capabilities.quotaCodeStorageBytes":
+      "Dung lượng Code tối đa mỗi workspace (byte)",
     "capabilities.quotaUsage": "{used}/{limit} đã dùng",
     "capabilities.quotaRemaining": "Còn lại {remaining}",
     "capabilities.quotaReset": "Đặt lại lúc {date}",
@@ -4894,6 +4900,8 @@ const messages = {
     "capabilities.featureClassroomCodeTool": "Classroom code tool",
     "capabilities.featureClassroomCodeCollaboration":
       "Collaborative classroom code workspace",
+    "capabilities.featureCodeSnippetLibrary":
+      "Durable code snippet library and drafts",
     "capabilities.featureInstantStudyRooms": "Instant study rooms",
     "capabilities.featureInAppNotifications": "In-app notifications",
     "capabilities.featureAvailabilityPolls": "Availability polls",
@@ -4930,6 +4938,9 @@ const messages = {
       "Whiteboard operations per minute",
     "capabilities.quotaWhiteboardStorageBytes":
       "Total whiteboard storage bytes",
+    "capabilities.quotaCodeSnippetsPerMember": "Code snippets per member",
+    "capabilities.quotaCodeStorageBytes":
+      "Total code storage bytes per workspace",
     "capabilities.quotaUsage": "{used}/{limit} used",
     "capabilities.quotaRemaining": "{remaining} remaining",
     "capabilities.quotaReset": "Resets at {date}",

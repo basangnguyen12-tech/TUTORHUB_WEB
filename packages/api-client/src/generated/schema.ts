@@ -1847,6 +1847,55 @@ export type paths = {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/v1/code-snippets": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * List personal or class code snippets with literal search and keyset pagination
+     * @description ROOM-TOOLS-CODE-03A. Requires classroom_code_tool and code_snippet_library (503 feature_disabled otherwise). scope=personal returns only the caller's own live snippets; scope=class requires class_id and current class membership or organization admin, otherwise 404 concealment. q is matched case-insensitively as literal text on title, file_name and description (% and _ never act as wildcards). The opaque cursor is bound to the caller, scope, class, language, q and limit; a tampered or re-filtered cursor is 400. Items never expose raw owner identifiers and do not include content.
+     */
+    readonly get: operations["listCodeSnippets"];
+    readonly put?: never;
+    /**
+     * Create or replay one durable code snippet
+     * @description Every active tenant member may create personal snippets. Class snippets require class teaching staff (owner, co_teacher, teaching_assistant) or an organization admin; a class member without staff rights receives 403 code_library_forbidden and a non-member a concealed 404. code_snippets_per_member and code_storage_bytes_per_tenant are enforced in the same transaction (409 code_snippet_quota_exceeded or code_storage_quota_exceeded). Replaying the same idempotency key with the same command returns 200.
+     */
+    readonly post: operations["createCodeSnippet"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/code-snippets/{snippet_id}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /** Read one authorized code snippet including its content */
+    readonly get: operations["getCodeSnippet"];
+    readonly put?: never;
+    readonly post?: never;
+    /**
+     * Soft-delete one code snippet and release its quota
+     * @description Missing, foreign, already deleted and not-deletable snippets are all concealed as 404.
+     */
+    readonly delete: operations["deleteCodeSnippet"];
+    readonly options?: never;
+    readonly head?: never;
+    /**
+     * Update one code snippet with optimistic concurrency
+     * @description The owner edits a personal snippet; the owner (while still a class member), class staff or an organization admin edit a class snippet. A readable snippet the caller may not edit is 403; a stale expected_version is 409 code_snippet_version_conflict. Growth is re-checked against code_storage_bytes_per_tenant.
+     */
+    readonly patch: operations["updateCodeSnippet"];
+    readonly trace?: never;
+  };
   readonly "/api/v1/code-workspaces/{workspace_id}/actor-grants/{participant_key}": {
     readonly parameters: {
       readonly query?: never;
@@ -2927,6 +2976,50 @@ export type paths = {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/v1/media/spaces/{space_id}/code-scratchpad": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Read the caller's unexpired durable scratchpad for one MediaSpace
+     * @description Requires MediaSpace access (404 otherwise), classroom_code_tool and code_snippet_library. An expired draft reads as null.
+     */
+    readonly get: operations["getCodeScratchpad"];
+    /**
+     * Save the caller's scratchpad with compare-and-set and a 30-day expiry
+     * @description Omit expected_version (or send 0) to create a first draft or overwrite an expired one; a live draft is replaced only when expected_version equals its version, otherwise 409 code_scratchpad_version_conflict (GET the latest draft to resolve). Every save refreshes expires_at to 30 days and is checked against code_storage_bytes_per_tenant. Overwriting an expired draft resets staff sharing.
+     */
+    readonly put: operations["putCodeScratchpad"];
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/code-scratchpad/share": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    /**
+     * Grant or revoke teaching staff access to the caller's scratchpad
+     * @description Explicit student consent replacing the V1 code-viewer IDOR. shared=true requires a live draft (409 code_scratchpad_empty otherwise); shared=false revokes staff access immediately.
+     */
+    readonly put: operations["shareCodeScratchpad"];
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/v1/media/spaces/{space_id}/code-workspace": {
     readonly parameters: {
       readonly query?: never;
@@ -3254,6 +3347,46 @@ export type paths = {
      * @description Reauthorizes the current actor and source, then atomically creates at most one opaque successor under the existing one-active-instance invariant. Provider provisioning runs after commit; stale tokens and provider identifiers are never accepted from the client.
      */
     readonly post: operations["recoverMediaSpace"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/shared-scratchpads": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * List scratchpads participants explicitly shared with the room's teaching staff
+     * @description Only organization admins, hosts, co-hosts (static or promoted in the active RoomInstance) and teaching assistants may call; everyone else receives a uniform 404. Only unexpired drafts with sharing enabled by their owner are listed; raw owner identifiers are never projected and participant_key is present only while the owner is connected to the active RoomInstance.
+     */
+    readonly get: operations["listSharedCodeScratchpads"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/shared-scratchpads/{scratchpad_id}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Read one scratchpad currently shared with the room's teaching staff
+     * @description Same staff-only authority as the list. A draft that was never shared, was revoked or has expired is a uniform 404.
+     */
+    readonly get: operations["getSharedCodeScratchpad"];
+    readonly put?: never;
+    readonly post?: never;
     readonly delete?: never;
     readonly options?: never;
     readonly head?: never;
@@ -5117,6 +5250,137 @@ export type components = {
       readonly enrollment_status:
         components["schemas"]["ClassEnrollmentStatus"] | null;
     };
+    /** @description Plain file name; names made only of dots are rejected. */
+    readonly CodeFileName: string;
+    /** @enum {string} */
+    readonly CodeLanguage:
+      | "python"
+      | "javascript"
+      | "typescript"
+      | "html"
+      | "sql"
+      | "c"
+      | "cpp"
+      | "java"
+      | "css";
+    /** @description The caller's durable room scratchpad (tutorhub.code.workspace.v1 shape). Files are case-insensitively unique, at most 256 KiB in total; stdin is at most 16 KiB. */
+    readonly CodeScratchpad: {
+      readonly active_index: number;
+      readonly byte_length: number;
+      /** Format: date-time */
+      readonly created_at: string;
+      /** Format: date-time */
+      readonly expires_at: string;
+      readonly files: readonly components["schemas"]["CodeScratchpadFile"][];
+      /** Format: uuid */
+      readonly id: string;
+      /** Format: uuid */
+      readonly media_space_id: string;
+      readonly shared_at: string | null;
+      readonly shared_with_staff: boolean;
+      readonly stdin: string;
+      /** Format: date-time */
+      readonly updated_at: string;
+      /** Format: int64 */
+      readonly version: number;
+    };
+    readonly CodeScratchpadFile: {
+      /** @description UTF-8 file text, at most 65536 bytes. */
+      readonly content: string;
+      readonly language: components["schemas"]["CodeLanguage"];
+      readonly name: components["schemas"]["CodeFileName"];
+    };
+    readonly CodeScratchpadProjection: {
+      readonly scratchpad: components["schemas"]["CodeScratchpad"] | null;
+    };
+    readonly CodeSharedScratchpad: {
+      readonly active_file_name: string;
+      readonly active_index: number;
+      readonly active_language: string;
+      readonly author_display_name: string;
+      readonly byte_length: number;
+      readonly file_count: number;
+      readonly files: readonly components["schemas"]["CodeScratchpadFile"][];
+      /** Format: uuid */
+      readonly id: string;
+      readonly participant_key: string | null;
+      /** Format: date-time */
+      readonly shared_at: string;
+      readonly stdin: string;
+      /** Format: date-time */
+      readonly updated_at: string;
+    };
+    readonly CodeSharedScratchpadList: {
+      readonly items: readonly components["schemas"]["CodeSharedScratchpadSummary"][];
+    };
+    /** @description Staff-only summary of a scratchpad its owner explicitly shared. Raw owner identifiers are never returned; participant_key is present only while the owner is connected to the active RoomInstance. */
+    readonly CodeSharedScratchpadSummary: {
+      readonly active_file_name: string;
+      readonly active_language: string;
+      readonly author_display_name: string;
+      readonly byte_length: number;
+      readonly file_count: number;
+      /** Format: uuid */
+      readonly id: string;
+      readonly participant_key: string | null;
+      /** Format: date-time */
+      readonly shared_at: string;
+      /** Format: date-time */
+      readonly updated_at: string;
+    };
+    /** @description Snippet detail including UTF-8 content (at most 64 KiB) and its SHA-256 digest. */
+    readonly CodeSnippet: {
+      readonly author_display_name: string;
+      readonly byte_length: number;
+      readonly class_id: string | null;
+      readonly content: string;
+      readonly content_sha256: string;
+      /** Format: date-time */
+      readonly created_at: string;
+      readonly description: string;
+      readonly file_name: components["schemas"]["CodeFileName"];
+      /** Format: uuid */
+      readonly id: string;
+      readonly language: components["schemas"]["CodeLanguage"];
+      readonly title: string;
+      /** Format: date-time */
+      readonly updated_at: string;
+      /** Format: int64 */
+      readonly version: number;
+      readonly viewer_capabilities: components["schemas"]["CodeSnippetViewerCapabilities"];
+      readonly visibility: components["schemas"]["CodeSnippetVisibility"];
+    };
+    readonly CodeSnippetList: {
+      readonly items: readonly components["schemas"]["CodeSnippetSummary"][];
+      readonly next_cursor: string | null;
+    };
+    /** @description Snippet list projection without content. The author is projected by display name only; raw owner identifiers are never returned. */
+    readonly CodeSnippetSummary: {
+      readonly author_display_name: string;
+      readonly byte_length: number;
+      readonly class_id: string | null;
+      /** Format: date-time */
+      readonly created_at: string;
+      readonly description: string;
+      readonly file_name: components["schemas"]["CodeFileName"];
+      /** Format: uuid */
+      readonly id: string;
+      readonly language: components["schemas"]["CodeLanguage"];
+      readonly title: string;
+      /** Format: date-time */
+      readonly updated_at: string;
+      /** Format: int64 */
+      readonly version: number;
+      readonly viewer_capabilities: components["schemas"]["CodeSnippetViewerCapabilities"];
+      readonly visibility: components["schemas"]["CodeSnippetVisibility"];
+    };
+    /** @description Server-derived management rights of the current viewer. */
+    readonly CodeSnippetViewerCapabilities: {
+      readonly can_delete: boolean;
+      readonly can_edit: boolean;
+    };
+    /** @enum {string} */
+    readonly CodeSnippetVisibility: "personal" | "class";
     /** @description Authorization-filtered code workspace projection (document kind code.workspace.v1). Provider names, checkpoints and source text are intentionally absent. */
     readonly CodeWorkspace: {
       /** Format: date-time */
@@ -5339,6 +5603,18 @@ export type components = {
       readonly starts_at: string;
       readonly timezone: string;
       readonly title: string;
+    };
+    readonly CreateCodeSnippetRequest: {
+      /** @description Required for class visibility; omit or null for personal. */
+      readonly class_id?: string | null;
+      /** @description UTF-8 source text, at most 65536 bytes, without NUL characters. */
+      readonly content: string;
+      readonly description?: string;
+      readonly file_name: components["schemas"]["CodeFileName"];
+      readonly idempotency_key: string;
+      readonly language: components["schemas"]["CodeLanguage"];
+      readonly title: string;
+      readonly visibility: components["schemas"]["CodeSnippetVisibility"];
     };
     readonly CreateCodeWorkspaceRequest: {
       readonly idempotency_key: string;
@@ -6858,6 +7134,17 @@ export type components = {
     readonly PublicAvailabilityPollMutationResponse: {
       readonly poll: components["schemas"]["PublicAvailabilityPoll"];
     };
+    readonly PutCodeScratchpadRequest: {
+      readonly active_index: number;
+      /**
+       * Format: int64
+       * @description 0 or omitted to create a first draft or overwrite an expired one; otherwise the live draft version.
+       */
+      readonly expected_version?: number;
+      readonly files: readonly components["schemas"]["CodeScratchpadFile"][];
+      /** @description At most 16384 UTF-8 bytes; defaults to empty. */
+      readonly stdin?: string;
+    };
     readonly QuotaCapability: {
       /** @description Configured tenant limit before deployment guardrails; present only when can_manage_overrides is true. */
       readonly configured_limit?: number;
@@ -7109,6 +7396,9 @@ export type components = {
      * @enum {string}
      */
     readonly SessionSelfRSVPState: "accepted" | "tentative" | "declined";
+    readonly ShareCodeScratchpadRequest: {
+      readonly shared: boolean;
+    };
     readonly SSOChallenge: {
       readonly domain: components["schemas"]["SSODomain"];
       /** @description Absolute DNS owner _tutorhub-challenge.<domain>. */
@@ -7236,6 +7526,7 @@ export type components = {
       readonly classroom_code_tool: components["schemas"]["FeatureCapability"];
       readonly classroom_media_rooms: components["schemas"]["FeatureCapability"];
       readonly classroom_whiteboards: components["schemas"]["FeatureCapability"];
+      readonly code_snippet_library: components["schemas"]["FeatureCapability"];
       readonly conversations: components["schemas"]["FeatureCapability"];
       readonly file_uploads: components["schemas"]["FeatureCapability"];
       readonly in_app_notifications: components["schemas"]["FeatureCapability"];
@@ -7252,6 +7543,7 @@ export type components = {
       readonly classroom_code_tool: boolean;
       readonly classroom_media_rooms: boolean;
       readonly classroom_whiteboards: boolean;
+      readonly code_snippet_library: boolean;
       readonly conversations: boolean;
       readonly file_uploads: boolean;
       readonly in_app_notifications: boolean;
@@ -7298,6 +7590,8 @@ export type components = {
       readonly availability_poll_participants: components["schemas"]["QuotaCapability"];
       readonly availability_poll_range_days: components["schemas"]["QuotaCapability"];
       readonly availability_poll_slots: components["schemas"]["QuotaCapability"];
+      readonly code_snippets_per_member: components["schemas"]["QuotaCapability"];
+      readonly code_storage_bytes_per_tenant: components["schemas"]["QuotaCapability"];
       readonly file_bytes_per_tenant: components["schemas"]["QuotaCapability"];
       readonly file_upload_intents_per_hour: components["schemas"]["QuotaCapability"];
       readonly files_per_tenant: components["schemas"]["QuotaCapability"];
@@ -7325,6 +7619,9 @@ export type components = {
       readonly availability_poll_participants: number;
       readonly availability_poll_range_days: number;
       readonly availability_poll_slots: number;
+      readonly code_snippets_per_member: number;
+      /** Format: int64 */
+      readonly code_storage_bytes_per_tenant: number;
       /** Format: int64 */
       readonly file_bytes_per_tenant: number;
       readonly file_upload_intents_per_hour: number;
@@ -7458,6 +7755,17 @@ export type components = {
       readonly starts_at?: string;
       /** @description IANA timezone whose rules must match supplied offsets. */
       readonly timezone?: string;
+      readonly title?: string;
+    };
+    /** @description Partial update; at least one field besides expected_version is required. */
+    readonly UpdateCodeSnippetRequest: {
+      /** @description UTF-8 source text, at most 65536 bytes, without NUL characters. */
+      readonly content?: string;
+      readonly description?: string;
+      /** Format: int64 */
+      readonly expected_version: number;
+      readonly file_name?: components["schemas"]["CodeFileName"];
+      readonly language?: components["schemas"]["CodeLanguage"];
       readonly title?: string;
     };
     readonly UpdateNotificationPreferenceRequest: {
@@ -7752,6 +8060,36 @@ export type components = {
         readonly "application/problem+json": components["schemas"]["Problem"];
       };
     };
+    /** @description The caller's unexpired scratchpad, or null */
+    readonly CodeScratchpadProjectionResponse: {
+      headers: {
+        readonly "Cache-Control"?: "private, no-store";
+        readonly [name: string]: unknown;
+      };
+      content: {
+        readonly "application/json": components["schemas"]["CodeScratchpadProjection"];
+      };
+    };
+    /** @description The caller's saved scratchpad */
+    readonly CodeScratchpadResponse: {
+      headers: {
+        readonly "Cache-Control"?: "private, no-store";
+        readonly [name: string]: unknown;
+      };
+      content: {
+        readonly "application/json": components["schemas"]["CodeScratchpad"];
+      };
+    };
+    /** @description Authorization-filtered code snippet including its content */
+    readonly CodeSnippetResponse: {
+      headers: {
+        readonly "Cache-Control"?: "private, no-store";
+        readonly [name: string]: unknown;
+      };
+      content: {
+        readonly "application/json": components["schemas"]["CodeSnippet"];
+      };
+    };
     /** @description Authorization-filtered shared code workspace control-plane projection */
     readonly CodeWorkspaceResponse: {
       headers: {
@@ -7839,6 +8177,11 @@ export type components = {
     };
   };
   parameters: {
+    readonly CodeMediaSpaceID: string;
+    /** @description Opaque shared scratchpad identifier. */
+    readonly CodeScratchpadID: string;
+    /** @description Opaque code snippet identifier. */
+    readonly CodeSnippetID: string;
     /** @description Opaque canonical code workspace identifier; never a provider document name. */
     readonly CodeWorkspaceID: string;
     /** @description Double-submit CSRF token bound to the active authenticated session. */
@@ -11583,6 +11926,160 @@ export interface operations {
       readonly default: components["responses"]["ProblemResponse"];
     };
   };
+  readonly listCodeSnippets: {
+    readonly parameters: {
+      readonly query: {
+        /** @description Required when scope=class and forbidden when scope=personal. */
+        readonly class_id?: string;
+        readonly cursor?: string;
+        readonly language?: components["schemas"]["CodeLanguage"];
+        readonly limit?: number;
+        readonly q?: string;
+        readonly scope: components["schemas"]["CodeSnippetVisibility"];
+      };
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description One authorization-filtered snippet page */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["CodeSnippetList"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly createCodeSnippet: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["CreateCodeSnippetRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeSnippetResponse"];
+      readonly 201: components["responses"]["CodeSnippetResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly getCodeSnippet: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque code snippet identifier. */
+        readonly snippet_id: components["parameters"]["CodeSnippetID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      readonly 200: components["responses"]["CodeSnippetResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly deleteCodeSnippet: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque code snippet identifier. */
+        readonly snippet_id: components["parameters"]["CodeSnippetID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description The snippet was soft-deleted */
+      readonly 204: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content?: never;
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly updateCodeSnippet: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque code snippet identifier. */
+        readonly snippet_id: components["parameters"]["CodeSnippetID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["UpdateCodeSnippetRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeSnippetResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
   readonly putCodeWorkspaceActorGrant: {
     readonly parameters: {
       readonly query?: never;
@@ -13943,6 +14440,88 @@ export interface operations {
       readonly default: components["responses"]["ProblemResponse"];
     };
   };
+  readonly getCodeScratchpad: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      readonly 200: components["responses"]["CodeScratchpadProjectionResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly putCodeScratchpad: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["PutCodeScratchpadRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeScratchpadResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 413: components["responses"]["ProblemResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly shareCodeScratchpad: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["ShareCodeScratchpadRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["CodeScratchpadProjectionResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
   readonly resolveCodeWorkspace: {
     readonly parameters: {
       readonly query?: never;
@@ -14741,6 +15320,72 @@ export interface operations {
       readonly 400: components["responses"]["ProblemResponse"];
       readonly 401: components["responses"]["UnauthorizedResponse"];
       readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly listSharedCodeScratchpads: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Shared scratchpad summaries */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["CodeSharedScratchpadList"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly getSharedCodeScratchpad: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque shared scratchpad identifier. */
+        readonly scratchpad_id: components["parameters"]["CodeScratchpadID"];
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Shared scratchpad detail */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["CodeSharedScratchpad"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
       readonly 404: components["responses"]["NotFoundResponse"];
       readonly 409: components["responses"]["ConflictResponse"];
       readonly 503: components["responses"]["ProblemResponse"];

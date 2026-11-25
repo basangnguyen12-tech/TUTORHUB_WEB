@@ -520,6 +520,39 @@ export type CreateCodeWorkspaceRequest =
   components["schemas"]["CreateCodeWorkspaceRequest"];
 export type CodeWorkspaceActorGrantRequest =
   components["schemas"]["CodeWorkspaceActorGrantRequest"];
+export type CodeLanguage = components["schemas"]["CodeLanguage"];
+export type CodeSnippetVisibility =
+  components["schemas"]["CodeSnippetVisibility"];
+export type CodeSnippetViewerCapabilities =
+  components["schemas"]["CodeSnippetViewerCapabilities"];
+export type CodeSnippetSummary = components["schemas"]["CodeSnippetSummary"];
+export type CodeSnippet = components["schemas"]["CodeSnippet"];
+export type CodeSnippetList = components["schemas"]["CodeSnippetList"];
+export type CreateCodeSnippetRequest =
+  components["schemas"]["CreateCodeSnippetRequest"];
+export type UpdateCodeSnippetRequest =
+  components["schemas"]["UpdateCodeSnippetRequest"];
+export type CodeScratchpadFile = components["schemas"]["CodeScratchpadFile"];
+export type CodeScratchpad = components["schemas"]["CodeScratchpad"];
+export type CodeScratchpadProjection =
+  components["schemas"]["CodeScratchpadProjection"];
+export type PutCodeScratchpadRequest =
+  components["schemas"]["PutCodeScratchpadRequest"];
+export type CodeSharedScratchpadSummary =
+  components["schemas"]["CodeSharedScratchpadSummary"];
+export type CodeSharedScratchpad =
+  components["schemas"]["CodeSharedScratchpad"];
+export type CodeSharedScratchpadList =
+  components["schemas"]["CodeSharedScratchpadList"];
+
+export interface CodeSnippetListQuery {
+  scope: CodeSnippetVisibility;
+  classID?: string;
+  language?: CodeLanguage;
+  query?: string;
+  cursor?: string;
+  limit?: number;
+}
 export type CreateMediaSpaceRequest =
   components["schemas"]["CreateMediaSpaceRequest"];
 export type MediaSpaceTransitionRequest =
@@ -4942,6 +4975,297 @@ export async function deleteCodeWorkspaceActorGrant(
       retryAfterSeconds(response),
     );
   }
+}
+
+// ROOM-TOOLS-CODE-03A (ADR-0043 §4 Slice 3): durable snippet library and
+// per-room scratchpads. Every call carries the expected tenant; mutations
+// also carry the BFF CSRF token. Authorization is decided by the server only.
+
+export async function listCodeSnippets(
+  tenantID: string,
+  input: CodeSnippetListQuery,
+  options: APIRequestOptions = {},
+): Promise<CodeSnippetList> {
+  requireTenantScope(tenantID);
+  if (input.scope === "class" ? !input.classID : input.classID !== undefined) {
+    throw new APIRequestError(400);
+  }
+  const query: {
+    scope: CodeSnippetVisibility;
+    class_id?: string;
+    language?: CodeLanguage;
+    q?: string;
+    cursor?: string;
+    limit?: number;
+  } = { scope: input.scope };
+  if (input.classID !== undefined) query.class_id = input.classID;
+  if (input.language !== undefined) query.language = input.language;
+  if (input.query !== undefined && input.query.trim() !== "") {
+    query.q = input.query;
+  }
+  if (input.cursor !== undefined) query.cursor = input.cursor;
+  if (input.limit !== undefined) query.limit = input.limit;
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/code-snippets",
+    {
+      params: {
+        query,
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeSnippetList>(
+    data as CodeSnippetList | undefined,
+    error,
+    response,
+  );
+}
+
+export async function createCodeSnippet(
+  tenantID: string,
+  input: CreateCodeSnippetRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<CodeSnippet> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/code-snippets",
+    {
+      params: {
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeSnippet>(
+    data as CodeSnippet | undefined,
+    error,
+    response,
+  );
+}
+
+export async function getCodeSnippet(
+  tenantID: string,
+  snippetID: string,
+  options: APIRequestOptions = {},
+): Promise<CodeSnippet> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/code-snippets/{snippet_id}",
+    {
+      params: {
+        path: { snippet_id: snippetID },
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeSnippet>(
+    data as CodeSnippet | undefined,
+    error,
+    response,
+  );
+}
+
+export async function updateCodeSnippet(
+  tenantID: string,
+  snippetID: string,
+  input: UpdateCodeSnippetRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<CodeSnippet> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PATCH(
+    "/api/v1/code-snippets/{snippet_id}",
+    {
+      params: {
+        path: { snippet_id: snippetID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeSnippet>(
+    data as CodeSnippet | undefined,
+    error,
+    response,
+  );
+}
+
+export async function deleteCodeSnippet(
+  tenantID: string,
+  snippetID: string,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<void> {
+  requireTenantScope(tenantID);
+  const { error, response } = await createTutorHubClient(options).DELETE(
+    "/api/v1/code-snippets/{snippet_id}",
+    {
+      params: {
+        path: { snippet_id: snippetID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      headers: { Accept: "application/problem+json" },
+      signal: options.signal,
+    },
+  );
+  if (!response.ok) {
+    throw new APIRequestError(
+      response.status,
+      isProblem(error) ? error : undefined,
+      retryAfterSeconds(response),
+    );
+  }
+}
+
+export async function getCodeScratchpad(
+  tenantID: string,
+  mediaSpaceID: string,
+  options: APIRequestOptions = {},
+): Promise<CodeScratchpadProjection> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/media/spaces/{space_id}/code-scratchpad",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeScratchpadProjection>(
+    data as CodeScratchpadProjection | undefined,
+    error,
+    response,
+  );
+}
+
+export async function putCodeScratchpad(
+  tenantID: string,
+  mediaSpaceID: string,
+  input: PutCodeScratchpadRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<CodeScratchpad> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PUT(
+    "/api/v1/media/spaces/{space_id}/code-scratchpad",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeScratchpad>(
+    data as CodeScratchpad | undefined,
+    error,
+    response,
+  );
+}
+
+export async function shareCodeScratchpad(
+  tenantID: string,
+  mediaSpaceID: string,
+  shared: boolean,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<CodeScratchpadProjection> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PUT(
+    "/api/v1/media/spaces/{space_id}/code-scratchpad/share",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: { shared },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeScratchpadProjection>(
+    data as CodeScratchpadProjection | undefined,
+    error,
+    response,
+  );
+}
+
+export async function listSharedCodeScratchpads(
+  tenantID: string,
+  mediaSpaceID: string,
+  options: APIRequestOptions = {},
+): Promise<CodeSharedScratchpadList> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/media/spaces/{space_id}/shared-scratchpads",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeSharedScratchpadList>(
+    data as CodeSharedScratchpadList | undefined,
+    error,
+    response,
+  );
+}
+
+export async function getSharedCodeScratchpad(
+  tenantID: string,
+  mediaSpaceID: string,
+  scratchpadID: string,
+  options: APIRequestOptions = {},
+): Promise<CodeSharedScratchpad> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/media/spaces/{space_id}/shared-scratchpads/{scratchpad_id}",
+    {
+      params: {
+        path: { space_id: mediaSpaceID, scratchpad_id: scratchpadID },
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<CodeSharedScratchpad>(
+    data as CodeSharedScratchpad | undefined,
+    error,
+    response,
+  );
 }
 
 export async function createMediaSpace(

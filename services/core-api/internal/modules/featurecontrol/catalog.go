@@ -26,6 +26,9 @@ const (
 	// default-on experience; the shared Yjs workspace stays default-off.
 	FeatureClassroomCodeTool          FeatureKey = "classroom_code_tool"
 	FeatureClassroomCodeCollaboration FeatureKey = "classroom_code_collaboration"
+	// ROOM-TOOLS-CODE-03A (ADR-0043 §4 Slice 3): durable snippet library and
+	// server scratchpads stay default-off until per-tenant rollout.
+	FeatureCodeSnippetLibrary FeatureKey = "code_snippet_library"
 )
 
 type QuotaKey string
@@ -56,6 +59,8 @@ const (
 	QuotaWhiteboardConnectionsPerTenant             QuotaKey = "whiteboard_connections_per_tenant"
 	QuotaWhiteboardStorageBytesPerTenant            QuotaKey = "whiteboard_storage_bytes_per_tenant"
 	QuotaWhiteboardOperationsPerMinute              QuotaKey = "whiteboard_operations_per_minute"
+	QuotaCodeSnippetsPerMember                      QuotaKey = "code_snippets_per_member"
+	QuotaCodeStorageBytesPerTenant                  QuotaKey = "code_storage_bytes_per_tenant"
 )
 
 type ValueSource string
@@ -134,6 +139,9 @@ var featureDefinitions = map[FeatureKey]FeatureDefinition{
 	},
 	FeatureClassroomCodeCollaboration: {
 		Key: FeatureClassroomCodeCollaboration, DefaultEnabled: false,
+	},
+	FeatureCodeSnippetLibrary: {
+		Key: FeatureCodeSnippetLibrary, DefaultEnabled: false,
 	},
 }
 
@@ -215,6 +223,12 @@ var quotaDefinitions = map[QuotaKey]QuotaDefinition{
 	},
 	QuotaWhiteboardOperationsPerMinute: {
 		Key: QuotaWhiteboardOperationsPerMinute, DefaultLimit: 6000, MinimumLimit: 1, MaximumLimit: 60000,
+	},
+	QuotaCodeSnippetsPerMember: {
+		Key: QuotaCodeSnippetsPerMember, DefaultLimit: 200, MinimumLimit: 1, MaximumLimit: 1000,
+	},
+	QuotaCodeStorageBytesPerTenant: {
+		Key: QuotaCodeStorageBytesPerTenant, DefaultLimit: 52428800, MinimumLimit: 1, MaximumLimit: 524288000,
 	},
 }
 

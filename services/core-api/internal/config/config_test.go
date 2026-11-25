@@ -101,6 +101,7 @@ func TestLoadDefaults(t *testing.T) {
 		len(cfg.FeatureControls.ClassroomWhiteboardCanaryTenantIDs) != 0 ||
 		cfg.FeatureControls.DisableClassroomCodeTool ||
 		cfg.FeatureControls.EnableClassroomCodeCollaboration ||
+		cfg.FeatureControls.EnableCodeSnippetLibrary ||
 		cfg.FeatureControls.MaxActiveMediaSpaces != defaultFeatureActiveMediaSpaceLimit ||
 		cfg.FeatureControls.MaxMediaParticipantsPerSpace != defaultFeatureMediaParticipantsPerSpaceLimit ||
 		cfg.FeatureControls.MaxActiveMediaParticipants != defaultFeatureActiveMediaParticipantLimit ||
@@ -586,6 +587,25 @@ func TestLoadParsesClassroomCodeFeatureGuardrails(t *testing.T) {
 		"FEATURE_CONTROL_ENABLE_CLASSROOM_CODE_COLLABORATION": "maybe",
 	})); err == nil {
 		t.Fatal("expected invalid code collaboration flag to fail closed")
+	}
+}
+
+func TestLoadParsesCodeSnippetLibraryGuardrail(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CODE_SNIPPET_LIBRARY": "true",
+	}))
+	if err != nil {
+		t.Fatalf("load code snippet library guardrail: %v", err)
+	}
+	if !cfg.FeatureControls.EnableCodeSnippetLibrary {
+		t.Fatalf("code snippet library guardrail was not parsed: %+v", cfg.FeatureControls)
+	}
+	if _, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CODE_SNIPPET_LIBRARY": "maybe",
+	})); err == nil {
+		t.Fatal("expected invalid code snippet library flag to fail closed")
 	}
 }
 

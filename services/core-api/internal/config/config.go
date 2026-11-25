@@ -288,6 +288,7 @@ type FeatureControlConfig struct {
 	ClassroomWhiteboardCanaryTenantIDs            []uuid.UUID
 	DisableClassroomCodeTool                      bool
 	EnableClassroomCodeCollaboration              bool
+	EnableCodeSnippetLibrary                      bool
 	MaxMembers                                    int
 	MaxActiveClasses                              int
 	MaxInviteCreationsPerHour                     int
@@ -694,6 +695,12 @@ func featureControlConfig(
 		EnableClassroomCodeCollaboration: boolValue(
 			lookup,
 			"FEATURE_CONTROL_ENABLE_CLASSROOM_CODE_COLLABORATION",
+			false,
+			validationErrors,
+		),
+		EnableCodeSnippetLibrary: boolValue(
+			lookup,
+			"FEATURE_CONTROL_ENABLE_CODE_SNIPPET_LIBRARY",
 			false,
 			validationErrors,
 		),

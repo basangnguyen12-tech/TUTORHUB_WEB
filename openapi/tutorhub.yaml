@@ -8457,6 +8457,277 @@ paths:
         "404": { $ref: "#/components/responses/NotFoundResponse" }
         "503": { $ref: "#/components/responses/ProblemResponse" }
         default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-snippets:
+    get:
+      operationId: listCodeSnippets
+      summary: List personal or class code snippets with literal search and keyset pagination
+      description: ROOM-TOOLS-CODE-03A. Requires classroom_code_tool and code_snippet_library (503 feature_disabled otherwise). scope=personal returns only the caller's own live snippets; scope=class requires class_id and current class membership or organization admin, otherwise 404 concealment. q is matched case-insensitively as literal text on title, file_name and description (% and _ never act as wildcards). The opaque cursor is bound to the caller, scope, class, language, q and limit; a tampered or re-filtered cursor is 400. Items never expose raw owner identifiers and do not include content.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ExpectedTenantID"
+        - name: scope
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/CodeSnippetVisibility"
+        - name: class_id
+          in: query
+          required: false
+          description: Required when scope=class and forbidden when scope=personal.
+          schema:
+            type: string
+            format: uuid
+        - name: language
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/CodeLanguage"
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: One authorization-filtered snippet page
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeSnippetList"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    post:
+      operationId: createCodeSnippet
+      summary: Create or replay one durable code snippet
+      description: Every active tenant member may create personal snippets. Class snippets require class teaching staff (owner, co_teacher, teaching_assistant) or an organization admin; a class member without staff rights receives 403 code_library_forbidden and a non-member a concealed 404. code_snippets_per_member and code_storage_bytes_per_tenant are enforced in the same transaction (409 code_snippet_quota_exceeded or code_storage_quota_exceeded). Replaying the same idempotency key with the same command returns 200.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCodeSnippetRequest"
+      responses:
+        "200": { $ref: "#/components/responses/CodeSnippetResponse" }
+        "201": { $ref: "#/components/responses/CodeSnippetResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/code-snippets/{snippet_id}:
+    get:
+      operationId: getCodeSnippet
+      summary: Read one authorized code snippet including its content
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeSnippetID"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "200": { $ref: "#/components/responses/CodeSnippetResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    patch:
+      operationId: updateCodeSnippet
+      summary: Update one code snippet with optimistic concurrency
+      description: The owner edits a personal snippet; the owner (while still a class member), class staff or an organization admin edit a class snippet. A readable snippet the caller may not edit is 403; a stale expected_version is 409 code_snippet_version_conflict. Growth is re-checked against code_storage_bytes_per_tenant.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeSnippetID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCodeSnippetRequest"
+      responses:
+        "200": { $ref: "#/components/responses/CodeSnippetResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    delete:
+      operationId: deleteCodeSnippet
+      summary: Soft-delete one code snippet and release its quota
+      description: Missing, foreign, already deleted and not-deletable snippets are all concealed as 404.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeSnippetID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "204":
+          description: The snippet was soft-deleted
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/code-scratchpad:
+    get:
+      operationId: getCodeScratchpad
+      summary: Read the caller's unexpired durable scratchpad for one MediaSpace
+      description: Requires MediaSpace access (404 otherwise), classroom_code_tool and code_snippet_library. An expired draft reads as null.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "200":
+          { $ref: "#/components/responses/CodeScratchpadProjectionResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    put:
+      operationId: putCodeScratchpad
+      summary: Save the caller's scratchpad with compare-and-set and a 30-day expiry
+      description: Omit expected_version (or send 0) to create a first draft or overwrite an expired one; a live draft is replaced only when expected_version equals its version, otherwise 409 code_scratchpad_version_conflict (GET the latest draft to resolve). Every save refreshes expires_at to 30 days and is checked against code_storage_bytes_per_tenant. Overwriting an expired draft resets staff sharing.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutCodeScratchpadRequest"
+      responses:
+        "200": { $ref: "#/components/responses/CodeScratchpadResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "413": { $ref: "#/components/responses/ProblemResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/code-scratchpad/share:
+    put:
+      operationId: shareCodeScratchpad
+      summary: Grant or revoke teaching staff access to the caller's scratchpad
+      description: Explicit student consent replacing the V1 code-viewer IDOR. shared=true requires a live draft (409 code_scratchpad_empty otherwise); shared=false revokes staff access immediately.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareCodeScratchpadRequest"
+      responses:
+        "200":
+          { $ref: "#/components/responses/CodeScratchpadProjectionResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/shared-scratchpads:
+    get:
+      operationId: listSharedCodeScratchpads
+      summary: List scratchpads participants explicitly shared with the room's teaching staff
+      description: Only organization admins, hosts, co-hosts (static or promoted in the active RoomInstance) and teaching assistants may call; everyone else receives a uniform 404. Only unexpired drafts with sharing enabled by their owner are listed; raw owner identifiers are never projected and participant_key is present only while the owner is connected to the active RoomInstance.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "200":
+          description: Shared scratchpad summaries
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeSharedScratchpadList"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/shared-scratchpads/{scratchpad_id}:
+    get:
+      operationId: getSharedCodeScratchpad
+      summary: Read one scratchpad currently shared with the room's teaching staff
+      description: Same staff-only authority as the list. A draft that was never shared, was revoked or has expired is a uniform 404.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/CodeScratchpadID"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "200":
+          description: Shared scratchpad detail
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeSharedScratchpad"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
   /api/v1/whiteboards:
     get:
       operationId: resolveWhiteboard
@@ -10542,6 +10813,29 @@ components:
       schema:
         type: string
         format: uuid
+    CodeSnippetID:
+      name: snippet_id
+      in: path
+      required: true
+      description: Opaque code snippet identifier.
+      schema:
+        type: string
+        format: uuid
+    CodeScratchpadID:
+      name: scratchpad_id
+      in: path
+      required: true
+      description: Opaque shared scratchpad identifier.
+      schema:
+        type: string
+        format: uuid
+    CodeMediaSpaceID:
+      name: space_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     MediaParticipantKeyPath:
       name: participant_key
       in: path
@@ -10634,6 +10928,39 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/CodeWorkspace"
+    CodeSnippetResponse:
+      description: Authorization-filtered code snippet including its content
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: private, no-store
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CodeSnippet"
+    CodeScratchpadResponse:
+      description: The caller's saved scratchpad
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: private, no-store
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CodeScratchpad"
+    CodeScratchpadProjectionResponse:
+      description: The caller's unexpired scratchpad, or null
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: private, no-store
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CodeScratchpadProjection"
     WhiteboardDocumentResponse:
       description: Authorization-filtered whiteboard control-plane projection
       headers:
@@ -12295,6 +12622,7 @@ components:
         - classroom_whiteboards
         - classroom_code_tool
         - classroom_code_collaboration
+        - code_snippet_library
       properties:
         membership_invitations:
           $ref: "#/components/schemas/FeatureCapability"
@@ -12323,6 +12651,8 @@ components:
         classroom_code_tool:
           $ref: "#/components/schemas/FeatureCapability"
         classroom_code_collaboration:
+          $ref: "#/components/schemas/FeatureCapability"
+        code_snippet_library:
           $ref: "#/components/schemas/FeatureCapability"
     TenantQuotaCapabilities:
       type: object
@@ -12353,6 +12683,8 @@ components:
         - whiteboard_connections_per_tenant
         - whiteboard_storage_bytes_per_tenant
         - whiteboard_operations_per_minute
+        - code_snippets_per_member
+        - code_storage_bytes_per_tenant
       properties:
         members:
           $ref: "#/components/schemas/QuotaCapability"
@@ -12403,6 +12735,10 @@ components:
         whiteboard_storage_bytes_per_tenant:
           $ref: "#/components/schemas/QuotaCapability"
         whiteboard_operations_per_minute:
+          $ref: "#/components/schemas/QuotaCapability"
+        code_snippets_per_member:
+          $ref: "#/components/schemas/QuotaCapability"
+        code_storage_bytes_per_tenant:
           $ref: "#/components/schemas/QuotaCapability"
     TenantOperationCapabilities:
       type: object
@@ -12552,6 +12888,7 @@ components:
         - classroom_whiteboards
         - classroom_code_tool
         - classroom_code_collaboration
+        - code_snippet_library
       properties:
         membership_invitations:
           type: boolean
@@ -12580,6 +12917,8 @@ components:
         classroom_code_tool:
           type: boolean
         classroom_code_collaboration:
+          type: boolean
+        code_snippet_library:
           type: boolean
     ContentFileStatus:
       type: string
@@ -13519,6 +13858,8 @@ components:
         - whiteboard_connections_per_tenant
         - whiteboard_storage_bytes_per_tenant
         - whiteboard_operations_per_minute
+        - code_snippets_per_member
+        - code_storage_bytes_per_tenant
       properties:
         members:
           type: integer
@@ -13621,6 +13962,15 @@ components:
           type: integer
           minimum: 1
           maximum: 60000
+        code_snippets_per_member:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        code_storage_bytes_per_tenant:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 524288000
     UpdateTenantFeatureControlsRequest:
       type: object
       additionalProperties: false
@@ -18514,6 +18864,444 @@ components:
           minimum: 60
           maximum: 1800
           description: Temporary edit grant lifetime in seconds; the server applies 600 when omitted. At most three attendees hold an unexpired grant per workspace.
+    CodeLanguage:
+      type: string
+      enum: [python, javascript, typescript, html, sql, c, cpp, java, css]
+    CodeSnippetVisibility:
+      type: string
+      enum: [personal, class]
+    CodeFileName:
+      type: string
+      minLength: 1
+      maxLength: 64
+      pattern: "^[A-Za-z0-9_.-]{1,64}$"
+      description: Plain file name; names made only of dots are rejected.
+    CodeSnippetViewerCapabilities:
+      type: object
+      additionalProperties: false
+      description: Server-derived management rights of the current viewer.
+      required: [can_edit, can_delete]
+      properties:
+        can_edit:
+          type: boolean
+        can_delete:
+          type: boolean
+    CodeSnippetSummary:
+      type: object
+      additionalProperties: false
+      description: Snippet list projection without content. The author is projected by display name only; raw owner identifiers are never returned.
+      required:
+        - id
+        - visibility
+        - class_id
+        - title
+        - description
+        - file_name
+        - language
+        - byte_length
+        - version
+        - author_display_name
+        - viewer_capabilities
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        visibility:
+          $ref: "#/components/schemas/CodeSnippetVisibility"
+        class_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 280
+        file_name:
+          $ref: "#/components/schemas/CodeFileName"
+        language:
+          $ref: "#/components/schemas/CodeLanguage"
+        byte_length:
+          type: integer
+          minimum: 0
+          maximum: 65536
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        author_display_name:
+          type: string
+        viewer_capabilities:
+          $ref: "#/components/schemas/CodeSnippetViewerCapabilities"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CodeSnippet:
+      type: object
+      additionalProperties: false
+      description: Snippet detail including UTF-8 content (at most 64 KiB) and its SHA-256 digest.
+      required:
+        - id
+        - visibility
+        - class_id
+        - title
+        - description
+        - file_name
+        - language
+        - byte_length
+        - version
+        - author_display_name
+        - viewer_capabilities
+        - created_at
+        - updated_at
+        - content
+        - content_sha256
+      properties:
+        id:
+          type: string
+          format: uuid
+        visibility:
+          $ref: "#/components/schemas/CodeSnippetVisibility"
+        class_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 280
+        file_name:
+          $ref: "#/components/schemas/CodeFileName"
+        language:
+          $ref: "#/components/schemas/CodeLanguage"
+        byte_length:
+          type: integer
+          minimum: 0
+          maximum: 65536
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        author_display_name:
+          type: string
+        viewer_capabilities:
+          $ref: "#/components/schemas/CodeSnippetViewerCapabilities"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        content:
+          type: string
+        content_sha256:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+    CodeSnippetList:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/CodeSnippetSummary"
+        next_cursor:
+          oneOf:
+            - type: string
+              maxLength: 512
+            - type: "null"
+    CreateCodeSnippetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        [idempotency_key, visibility, title, file_name, language, content]
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 16
+          maxLength: 128
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$"
+        visibility:
+          $ref: "#/components/schemas/CodeSnippetVisibility"
+        class_id:
+          description: Required for class visibility; omit or null for personal.
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 280
+        file_name:
+          $ref: "#/components/schemas/CodeFileName"
+        language:
+          $ref: "#/components/schemas/CodeLanguage"
+        content:
+          type: string
+          description: UTF-8 source text, at most 65536 bytes, without NUL characters.
+    UpdateCodeSnippetRequest:
+      type: object
+      additionalProperties: false
+      description: Partial update; at least one field besides expected_version is required.
+      required: [expected_version]
+      properties:
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 280
+        file_name:
+          $ref: "#/components/schemas/CodeFileName"
+        language:
+          $ref: "#/components/schemas/CodeLanguage"
+        content:
+          type: string
+          description: UTF-8 source text, at most 65536 bytes, without NUL characters.
+    CodeScratchpadFile:
+      type: object
+      additionalProperties: false
+      required: [name, language, content]
+      properties:
+        name:
+          $ref: "#/components/schemas/CodeFileName"
+        language:
+          $ref: "#/components/schemas/CodeLanguage"
+        content:
+          type: string
+          description: UTF-8 file text, at most 65536 bytes.
+    CodeScratchpad:
+      type: object
+      additionalProperties: false
+      description: The caller's durable room scratchpad (tutorhub.code.workspace.v1 shape). Files are case-insensitively unique, at most 256 KiB in total; stdin is at most 16 KiB.
+      required:
+        - id
+        - media_space_id
+        - files
+        - active_index
+        - stdin
+        - byte_length
+        - shared_with_staff
+        - shared_at
+        - version
+        - created_at
+        - updated_at
+        - expires_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        media_space_id:
+          type: string
+          format: uuid
+        files:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/CodeScratchpadFile"
+        active_index:
+          type: integer
+          minimum: 0
+          maximum: 7
+        stdin:
+          type: string
+        byte_length:
+          type: integer
+          minimum: 0
+          maximum: 278528
+        shared_with_staff:
+          type: boolean
+        shared_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+    CodeScratchpadProjection:
+      type: object
+      additionalProperties: false
+      required: [scratchpad]
+      properties:
+        scratchpad:
+          oneOf:
+            - $ref: "#/components/schemas/CodeScratchpad"
+            - type: "null"
+    PutCodeScratchpadRequest:
+      type: object
+      additionalProperties: false
+      required: [files, active_index]
+      properties:
+        files:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/CodeScratchpadFile"
+        active_index:
+          type: integer
+          minimum: 0
+          maximum: 7
+        stdin:
+          type: string
+          description: At most 16384 UTF-8 bytes; defaults to empty.
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 0 or omitted to create a first draft or overwrite an expired one; otherwise the live draft version.
+    ShareCodeScratchpadRequest:
+      type: object
+      additionalProperties: false
+      required: [shared]
+      properties:
+        shared:
+          type: boolean
+    CodeSharedScratchpadSummary:
+      type: object
+      additionalProperties: false
+      description: Staff-only summary of a scratchpad its owner explicitly shared. Raw owner identifiers are never returned; participant_key is present only while the owner is connected to the active RoomInstance.
+      required:
+        - id
+        - author_display_name
+        - participant_key
+        - file_count
+        - active_file_name
+        - active_language
+        - byte_length
+        - shared_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        author_display_name:
+          type: string
+        participant_key:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        file_count:
+          type: integer
+          minimum: 1
+          maximum: 8
+        active_file_name:
+          type: string
+        active_language:
+          type: string
+        byte_length:
+          type: integer
+          minimum: 0
+          maximum: 278528
+        shared_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CodeSharedScratchpad:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - author_display_name
+        - participant_key
+        - file_count
+        - active_file_name
+        - active_language
+        - byte_length
+        - shared_at
+        - updated_at
+        - files
+        - active_index
+        - stdin
+      properties:
+        id:
+          type: string
+          format: uuid
+        author_display_name:
+          type: string
+        participant_key:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        file_count:
+          type: integer
+          minimum: 1
+          maximum: 8
+        active_file_name:
+          type: string
+        active_language:
+          type: string
+        byte_length:
+          type: integer
+          minimum: 0
+          maximum: 278528
+        shared_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        files:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/CodeScratchpadFile"
+        active_index:
+          type: integer
+          minimum: 0
+          maximum: 7
+        stdin:
+          type: string
+    CodeSharedScratchpadList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/CodeSharedScratchpadSummary"
     WhiteboardSnapshot:
       type: object
       additionalProperties: false

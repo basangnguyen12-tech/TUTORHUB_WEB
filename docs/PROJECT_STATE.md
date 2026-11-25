@@ -12,10 +12,23 @@
 | Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                                              |
 | Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                                                |
 | Phase hiện tại       | Xây dựng Hệ Công cụ Lớp học Phòng học Studio (`ADR-0043` — Popover Công cụ, Code & Snippet, Bảng trắng); Phase 3 deferred carry-over vẫn hoạt động                                       |
-| Task `DONE` gần nhất | `ROOM-TOOLS-CODE-02B` Giao diện Cộng tác Code Thời gian thực (`Chung lớp` ↔ `Nháp của tôi`), `y-codemirror.next`, Con trỏ 8 Tông Màu, Theo dõi GV, Fork 1 Chạm & Cấp Quyền Sửa (`ADR-0043` Slice 2 `DONE`) |
-| Mốc repository mới   | `@tutorhub/web` `1251/1251` (`115` file), `@tutorhub/collaboration-client` `52/52`, `@tutorhub/whiteboard-runtime` `161/161`, Chromium E2E `61/61` PASS, `LazyCodeWorkspace` `+139 KiB` gzip |
-| Task hiện tại        | Phát hành nguyên khối Slice 2 (`02A` + `02B`, migration `000054` + quyền Neon/Render/Cloudflare Pages) lên `https://tutorhub.vn`                                                         |
-| Task tiếp theo       | `ROOM-TOOLS-CODE-03` (Slice 3 — Chế độ Bài tập & Test case tự chấm cục bộ `stdin`/`expected_stdout` và nộp bài lưu DB cho Giáo viên xem)                                                 |
+| Task `DONE` gần nhất | `ROOM-TOOLS-CODE-03A` Hậu phương Kho Snippet & Bản nháp Server (`000055`), Chia sẻ Bài cho Giáo viên Chống IDOR, Quota `code_*` & Gói Di động `tutorhub.code.workspace.v1` (`ADR-0043`) |
+| Mốc repository mới   | `@tutorhub/web` `1251/1251`, `@tutorhub/collaboration-client` `58/58`, `@tutorhub/api-client` `144/144`, Go `40` package PASS (migration `000055`)                                       |
+| Task hiện tại        | Triển khai `ROOM-TOOLS-CODE-03B` (Nửa sau Slice 3 — UI Kho Snippet Cá nhân/Lớp, Autosave Bản nháp Server, Gửi/Xem bài Học sinh, Tô màu mã lười trong Chat, Xuất/Nhập `.json` & E2E)     |
+| Task tiếp theo       | Phát hành nguyên khối Slice 3 (`03A` + `03B` + migration `000055` & quyền Neon/Render/Cloudflare Pages) lên `https://tutorhub.vn`, sau đó sang Slice 4 (`ADR-0044` Server Runner)        |
+
+### Checkpoint `ROOM-TOOLS-CODE-03A` Hậu phương Kho Snippet & Bản nháp Bền vững (`000055`), Chia sẻ Bài cho Giáo viên Có Đồng ý, Quota `code_*` & Gói Dự án Di động (`ADR-0043`, `DONE` — Chờ `03B` để Push Nguyên Khối) — 2026-11-25
+
+Claude Code hoàn thành nghiên cứu Phase 0 và triển khai trọn bộ hậu phương của Slice 3 (`ROOM-TOOLS-CODE-03A`); Gatekeeper (Antigravity) rà soát bảo mật/ACL, phê duyệt ma trận mã lỗi, cập nhật `docs/DATABASE.md` và ghi commit cục bộ trên `main` (giữ chưa `git push` cho tới khi `03B` xong để migrate nguyên tử `000055` + cấp quyền `SELECT/INSERT/UPDATE` trên `code_snippets` & `code_scratchpads` cho `tutorhub_runtime` trước khi Render auto-deploy):
+
+- **Migration `000055_code_snippets_and_scratchpads.{up,down}.sql` & Feature/Quota (`catalog.go`, `featureControlCatalog.ts`)**:
+  - Mở rộng `tenant_feature_overrides_key_valid` với `code_snippet_library` (mặc định tắt, guardrail `FEATURE_CONTROL_ENABLE_CODE_SNIPPET_LIBRARY=false`) cùng 2 khóa quota `code_snippets_per_member` (`200`, `1..1000`) và `code_storage_bytes_per_tenant` (`50 MiB`, `1..500 MiB`).
+  - Tạo 2 bảng `code_snippets` (`personal` / `class`, xóa mềm `deleted_at`) và `code_scratchpads` (`UNIQUE (tenant_id, owner_user_id, media_space_id)`, hết hạn `30 ngày`, cờ chủ động `shared_with_staff` / `shared_at`); xóa mềm và ghi đè bản hết hạn tại chỗ nên `tutorhub_runtime` **không bao giờ cần quyền `DELETE`**.
+- **Go Control Plane Chống IDOR & OpenAPI Client (`code_library_service.go`, `code_library_postgres_repository.go`, `code_library.go`, `openapi/tutorhub.yaml`)**:
+  - Triển khai `/api/v1/code-snippets[/{id}]`, `/api/v1/media/spaces/{space_id}/code-scratchpad[/share]` và `/api/v1/media/spaces/{space_id}/shared-scratchpads[/{id}]`; mọi quyết định quyền chạy sau khi khóa dòng trong cùng transaction, ẩn tuyệt đối `owner_user_id` ra ngoài JSON, học sinh gọi vào `shared-scratchpads` hoặc Giáo viên gọi bài chưa bật `shared_with_staff = true` đều nhận **`404` đồng nhất**.
+- **Gói Dự án Di động `tutorhub.code.workspace.v1` (`portableCodeWorkspace.ts`)**:
+  - Xuất subpath độc lập `@tutorhub/collaboration-client/portable-code-workspace` (`0` dependency runtime, không kéo `yjs`), chuẩn hóa thứ tự khóa JSON, niêm phong `contentSha256` (`SHA-256`) và quarantine khi nhập (chặn vượt `512 KiB`, sai UTF-8, `__proto__`/`constructor`/`prototype`, thừa khóa hoặc lệch mã băm).
+- **Bằng chứng Gatekeeper**: `pnpm format:check`, `pnpm api:check`, `@tutorhub/collaboration-client` (`58/58`), `@tutorhub/api-client` (`144/144`), `@tutorhub/web` (`1251/1251`) và Go `40` package + `go vet -tags=integration` **`PASS`**.
 
 ### Checkpoint `ROOM-TOOLS-CODE-02B` Giao diện Cộng tác Code Thời gian thực (`Chung lớp` ↔ `Nháp của tôi`), `y-codemirror.next`, Con trỏ 8 Tông Màu, `Theo dõi GV`, Fork 1 Chạm & Cấp Quyền Sửa Tạm Thời (`ADR-0043` Slice 2 Hoàn tất, `DONE`) — 2026-11-25
 

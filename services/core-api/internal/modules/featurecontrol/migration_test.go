@@ -3,6 +3,7 @@ package featurecontrol
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -128,5 +129,77 @@ func TestCodeWorkspaceFeatureMigrationExtendsAndRestoresFeatureAllowlist(t *test
 	}
 	if !strings.Contains(down, "DELETE FROM tutorhub.tenant_feature_overrides") {
 		t.Fatal("rollback must remove overrides for the withdrawn feature keys")
+	}
+}
+
+func TestCodeSnippetLibraryFeatureQuotaMigrationExtendsAndRestoresAllowlists(t *testing.T) {
+	t.Parallel()
+
+	migrations := filepath.Join("..", "..", "..", "migrations")
+	upContents, err := os.ReadFile(filepath.Join(migrations, "000055_code_snippets_and_scratchpads.up.sql"))
+	if err != nil {
+		t.Fatalf("read code snippet library migration: %v", err)
+	}
+	downContents, err := os.ReadFile(filepath.Join(migrations, "000055_code_snippets_and_scratchpads.down.sql"))
+	if err != nil {
+		t.Fatalf("read code snippet library rollback: %v", err)
+	}
+	up := string(upContents)
+	down := string(downContents)
+	catalog := NewDefaultCatalog()
+	if definition, ok := catalog.FeatureDefinition(FeatureCodeSnippetLibrary); !ok || definition.DefaultEnabled {
+		t.Fatalf("code_snippet_library must exist and default off: %+v", definition)
+	}
+	if !strings.Contains(up, "'"+string(FeatureCodeSnippetLibrary)+"'") {
+		t.Fatal("feature override allowlist is missing code_snippet_library")
+	}
+	for key, bound := range map[QuotaKey]string{
+		QuotaCodeSnippetsPerMember:     "limit_value BETWEEN 1 AND 1000)",
+		QuotaCodeStorageBytesPerTenant: "limit_value BETWEEN 1 AND 524288000)",
+	} {
+		definition, ok := catalog.QuotaDefinition(key)
+		if !ok {
+			t.Fatalf("catalog is missing quota %q", key)
+		}
+		fragment := "(quota_key = '" + string(key) + "' AND " + bound
+		if !strings.Contains(up, fragment) {
+			t.Fatalf("quota override bounds are missing %q", fragment)
+		}
+		if !strings.Contains(bound, strconv.FormatInt(definition.MaximumLimit, 10)) {
+			t.Fatalf("migration bound for %q drifted from catalog maximum %d", key, definition.MaximumLimit)
+		}
+		if strings.Contains(down, "(quota_key = '"+string(key)+"' AND") {
+			t.Fatalf("rollback must restore the pre-000055 quota bounds without %q", key)
+		}
+	}
+	// Every previously valid key must survive the forward constraint rewrite.
+	for _, key := range QuotaKeys() {
+		if !strings.Contains(up, "'"+string(key)+"'") {
+			t.Fatalf("forward quota allowlist dropped %q", key)
+		}
+	}
+	for _, definition := range catalog.Features() {
+		if !strings.Contains(up, "'"+string(definition.Key)+"'") {
+			t.Fatalf("forward feature allowlist dropped %q", definition.Key)
+		}
+	}
+	if strings.Contains(strings.ToUpper(up), "DELETE FROM") {
+		t.Fatal("forward code snippet library migration must not delete data")
+	}
+	for _, required := range []string{
+		"DELETE FROM tutorhub.tenant_feature_overrides",
+		"WHERE feature_key = 'code_snippet_library'",
+		"DELETE FROM tutorhub.tenant_quota_overrides",
+		"'code_snippets_per_member', 'code_storage_bytes_per_tenant'",
+		"'classroom_code_collaboration'",
+		"'whiteboard_operations_per_minute'",
+	} {
+		if !strings.Contains(down, required) {
+			t.Fatalf("code snippet library rollback is missing %q", required)
+		}
+	}
+	featureAllowlist := strings.SplitN(strings.SplitN(down, "ADD CONSTRAINT tenant_feature_overrides_key_valid", 2)[1], ");", 2)[0]
+	if strings.Contains(featureAllowlist, "code_snippet_library") {
+		t.Fatal("rollback must restore the exact 000054 feature allowlist")
 	}
 }

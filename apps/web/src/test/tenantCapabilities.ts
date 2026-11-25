@@ -51,6 +51,10 @@ export function availableTenantCapabilities(
         configured_enabled: false,
         enabled: false,
       },
+      code_snippet_library: {
+        configured_enabled: false,
+        enabled: false,
+      },
       instant_study_rooms: {
         configured_enabled: false,
         enabled: false,
@@ -210,6 +214,18 @@ export function availableTenantCapabilities(
         limit: 1073741824,
         used: 0,
         remaining: 1073741824,
+      },
+      code_snippets_per_member: {
+        configured_limit: 200,
+        limit: 200,
+        used: 0,
+        remaining: 200,
+      },
+      code_storage_bytes_per_tenant: {
+        configured_limit: 52428800,
+        limit: 52428800,
+        used: 0,
+        remaining: 52428800,
       },
     },
     operations: {

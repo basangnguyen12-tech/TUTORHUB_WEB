@@ -404,6 +404,7 @@ func run() int {
 	var collaborationService collaboration.ServiceAPI
 	var collaborationInternalService collaboration.InternalServiceAPI
 	var codeWorkspaceService collaboration.CodeWorkspaceServiceAPI
+	var codeLibraryService collaboration.CodeLibraryServiceAPI
 	if pool != nil && classroomRepository != nil {
 		var mediaLifecycleErr error
 		mediaLifecycleRepository, mediaLifecycleErr = media.NewPostgresLifecycleRepository(
@@ -424,6 +425,29 @@ func run() int {
 		if mediaLifecycleErr != nil {
 			logger.Error("initialize media lifecycle service", "error", mediaLifecycleErr)
 			return 1
+		}
+		// ROOM-TOOLS-CODE-03A: the snippet library and scratchpads need no
+		// collaboration runtime; both feature keys gate them per tenant.
+		if featureControlEnforcer != nil {
+			codeLibraryRepository, codeLibraryErr := collaboration.NewPostgresCodeLibraryRepository(
+				pool,
+				cfg.Database.QueryTimeout,
+				featureControlEnforcer,
+			)
+			if codeLibraryErr != nil {
+				logger.Error("initialize code library repository", "error", codeLibraryErr)
+				return 1
+			}
+			codeLibraryControlPlane, codeLibraryErr := collaboration.NewCodeLibraryService(
+				codeLibraryRepository,
+				mediaLifecycleService,
+				collaboration.CodeLibraryServiceConfig{NewID: uuid.New},
+			)
+			if codeLibraryErr != nil {
+				logger.Error("initialize code library service", "error", codeLibraryErr)
+				return 1
+			}
+			codeLibraryService = codeLibraryControlPlane
 		}
 		if cfg.Collaboration.Enabled {
 			collaborationRepository, collaborationErr := collaboration.NewPostgresRepository(
@@ -807,6 +831,7 @@ func run() int {
 		Collaboration:         collaborationService,
 		CollaborationInternal: collaborationInternalService,
 		CodeWorkspaces:        codeWorkspaceService,
+		CodeLibrary:           codeLibraryService,
 		CollaborationToken:    cfg.Collaboration.RuntimeToken,
 		CollaborationMode:     cfg.Collaboration.RuntimeMode,
 		InvitationRateLimiter: invitationRateLimiter,
@@ -915,6 +940,9 @@ func featureControlGuardrails(configuration config.FeatureControlConfig) feature
 	}
 	if !configuration.EnableClassroomCodeCollaboration {
 		forcedOff[featurecontrol.FeatureClassroomCodeCollaboration] = true
+	}
+	if !configuration.EnableCodeSnippetLibrary {
+		forcedOff[featurecontrol.FeatureCodeSnippetLibrary] = true
 	}
 
 	tenantQuotaCeilings := map[featurecontrol.QuotaKey]map[uuid.UUID]int64{}

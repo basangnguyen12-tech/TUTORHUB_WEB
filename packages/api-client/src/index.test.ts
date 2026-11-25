@@ -840,6 +840,7 @@ describe("getHealth", () => {
         classroom_whiteboards: { enabled: false },
         classroom_code_tool: { enabled: true },
         classroom_code_collaboration: { enabled: false },
+        code_snippet_library: { enabled: false },
       },
       quotas: {
         active_availability_polls: { limit: 20, used: 2, remaining: 18 },
@@ -942,6 +943,16 @@ describe("getHealth", () => {
           remaining: 6000,
           used: 0,
         },
+        code_snippets_per_member: {
+          limit: 200,
+          remaining: 200,
+          used: 0,
+        },
+        code_storage_bytes_per_tenant: {
+          limit: 52428800,
+          remaining: 52428800,
+          used: 0,
+        },
       },
       operations: {
         create_membership_invitation: {
@@ -1006,6 +1017,7 @@ describe("getHealth", () => {
         classroom_whiteboards: false,
         classroom_code_tool: true,
         classroom_code_collaboration: false,
+        code_snippet_library: false,
       },
       quotas: {
         active_availability_polls: 30,
@@ -1033,6 +1045,8 @@ describe("getHealth", () => {
         whiteboard_connections_per_tenant: 50,
         whiteboard_storage_bytes_per_tenant: 1073741824,
         whiteboard_operations_per_minute: 6000,
+        code_snippets_per_member: 200,
+        code_storage_bytes_per_tenant: 52428800,
       },
     };
     const updatedCapabilities: TenantCapabilities = {

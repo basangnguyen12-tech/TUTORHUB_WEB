@@ -829,13 +829,23 @@ func readQuotaUsage(
 		query = `SELECT count(*) FROM tutorhub.whiteboard_documents WHERE tenant_id = $1`
 	case QuotaWhiteboardStorageBytesPerTenant:
 		query = `SELECT COALESCE(sum(size_bytes), 0) FROM tutorhub.whiteboard_snapshots WHERE tenant_id = $1`
+	case QuotaCodeStorageBytesPerTenant:
+		// ROOM-TOOLS-CODE-03A: live snippets plus unexpired scratchpads.
+		query = `SELECT COALESCE((
+    SELECT sum(byte_length) FROM tutorhub.code_snippets
+    WHERE tenant_id = $1 AND deleted_at IS NULL
+), 0) + COALESCE((
+    SELECT sum(byte_length) FROM tutorhub.code_scratchpads
+    WHERE tenant_id = $1 AND expires_at > transaction_timestamp()
+), 0)`
 	case QuotaAvailabilityPollRangeDays,
 		QuotaAvailabilityPollSlots,
 		QuotaAvailabilityPollParticipants,
 		QuotaMediaParticipantsPerSpace,
 		QuotaSingleFileBytes,
 		QuotaWhiteboardConnectionsPerTenant,
-		QuotaWhiteboardOperationsPerMinute:
+		QuotaWhiteboardOperationsPerMinute,
+		QuotaCodeSnippetsPerMember:
 		return 0, time.Time{}, time.Time{}, nil
 	case QuotaInviteCreationsPerHour,
 		QuotaAvailabilityPollCreationsPerHour,

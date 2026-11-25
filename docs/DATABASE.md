@@ -1562,6 +1562,21 @@ trong cùng cửa sổ triển khai (vì `NeonCheckpointStore.probe()` của `se
 1. Cho role Core API (`tutorhub_runtime`): `SELECT` trên 4 bảng control-plane (`code_workspaces`, `code_workspace_generations`, `code_workspace_actor_grants`, `code_workspace_mutation_receipts`, **không** cấp trên `code_workspace_checkpoints`, **không** cấp `DELETE`/`TRUNCATE`), cùng `INSERT`/`UPDATE` đúng các cột mà `PostgresCodeWorkspaceRepository` sử dụng (`INSERT` trên 4 bảng; `UPDATE` trên `code_workspaces` và `code_workspace_actor_grants`).
 2. Cho role Collaboration Runtime (`COLLAB_DATABASE_URL`): `SELECT, INSERT, UPDATE` trên `tutorhub.code_workspace_checkpoints` (**không** cấp `DELETE`/`TRUNCATE`).
 
+## ROOM-TOOLS-CODE-03A — code snippets and scratchpads schema (`000055`)
+
+Migration `000055_code_snippets_and_scratchpads` mở rộng `tenant_feature_overrides_key_valid` với `code_snippet_library`,
+mở rộng `tenant_quota_overrides_key_valid` / `tenant_quota_overrides_limit_valid` với `code_snippets_per_member` (`1..1000`)
+và `code_storage_bytes_per_tenant` (`1..524288000`), đồng thời tạo 2 bảng có `tenant_id`, khóa ngoại tổng hợp và `REVOKE ALL FROM PUBLIC`:
+
+- `code_snippets` — snippet cá nhân (`visibility = 'personal'`, `class_id IS NULL`) hoặc chia sẻ theo lớp (`visibility = 'class'`, `class_id IS NOT NULL`), tối đa `65536` byte UTF-8, `content_sha256` 32 byte, CAS `version`, xóa mềm `deleted_at`;
+- `code_scratchpads` — bản nháp đa tệp bền vững theo `(tenant_id, owner_user_id, media_space_id)`, tối đa `256 KiB` mã + `16 KiB` `stdin_text`, hết hạn sau `30 ngày` (`expires_at`), cờ chủ động đồng ý `shared_with_staff` / `shared_at` cho đội ngũ giảng dạy xem chỉ đọc.
+
+Vì `GetCapabilities` của `featurecontrol` cũng đọc dung lượng sử dụng trên 2 bảng này, ngay trong cửa sổ chạy migration `000055`
+trên Neon phải cấp cho role Core API (`tutorhub_runtime`, **không** cấp `DELETE`/`TRUNCATE` và **không** cấp cho role collaboration runtime):
+
+- `tutorhub.code_snippets`: `SELECT` toàn bảng; `INSERT (id, tenant_id, owner_user_id, updated_by, visibility, class_id, title, description, file_name, language, content, byte_length, content_sha256, create_idempotency_key, create_request_fingerprint)`; `UPDATE (title, description, file_name, language, content, byte_length, content_sha256, version, updated_by, updated_at, deleted_at)`.
+- `tutorhub.code_scratchpads`: `SELECT` toàn bảng; `INSERT (tenant_id, owner_user_id, media_space_id, files_json, active_index, stdin_text, byte_length, expires_at)`; `UPDATE (files_json, active_index, stdin_text, byte_length, shared_with_staff, shared_at, version, updated_at, expires_at)`.
+
 ## Quy tắc thay đổi schema
 
 1. Không sửa migration đã chạy; tạo migration số tiếp theo với cặp `up/down`.

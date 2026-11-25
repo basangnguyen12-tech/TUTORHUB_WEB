@@ -41,6 +41,7 @@ const featureLabelKeys: Record<FeatureKey, TranslationKey> = {
   classroom_code_tool: "capabilities.featureClassroomCodeTool",
   classroom_code_collaboration:
     "capabilities.featureClassroomCodeCollaboration",
+  code_snippet_library: "capabilities.featureCodeSnippetLibrary",
   instant_study_rooms: "capabilities.featureInstantStudyRooms",
   in_app_notifications: "capabilities.featureInAppNotifications",
   membership_invitations: "capabilities.featureMembershipInvitations",
@@ -75,6 +76,8 @@ const quotaLabelKeys: Record<QuotaKey, TranslationKey> = {
   whiteboard_operations_per_minute: "capabilities.quotaWhiteboardOperations",
   whiteboard_storage_bytes_per_tenant:
     "capabilities.quotaWhiteboardStorageBytes",
+  code_snippets_per_member: "capabilities.quotaCodeSnippetsPerMember",
+  code_storage_bytes_per_tenant: "capabilities.quotaCodeStorageBytes",
   members: "capabilities.quotaMembers",
 };
 
@@ -128,6 +131,10 @@ function controlsDraft(capabilities: TenantCapabilities): ControlsDraft {
       classroom_code_collaboration: configuredFeature(
         capabilities,
         "classroom_code_collaboration",
+      ),
+      code_snippet_library: configuredFeature(
+        capabilities,
+        "code_snippet_library",
       ),
       instant_study_rooms: configuredFeature(
         capabilities,
@@ -215,6 +222,12 @@ function controlsDraft(capabilities: TenantCapabilities): ControlsDraft {
       ),
       whiteboard_storage_bytes_per_tenant: String(
         configuredQuota(capabilities, "whiteboard_storage_bytes_per_tenant"),
+      ),
+      code_snippets_per_member: String(
+        configuredQuota(capabilities, "code_snippets_per_member"),
+      ),
+      code_storage_bytes_per_tenant: String(
+        configuredQuota(capabilities, "code_storage_bytes_per_tenant"),
       ),
       members: String(configuredQuota(capabilities, "members")),
     },
@@ -519,6 +532,10 @@ function TenantFeatureControlsForm({
       ),
       whiteboard_storage_bytes_per_tenant: Number(
         draft.quotas.whiteboard_storage_bytes_per_tenant,
+      ),
+      code_snippets_per_member: Number(draft.quotas.code_snippets_per_member),
+      code_storage_bytes_per_tenant: Number(
+        draft.quotas.code_storage_bytes_per_tenant,
       ),
     };
     for (const key of quotaKeys) {

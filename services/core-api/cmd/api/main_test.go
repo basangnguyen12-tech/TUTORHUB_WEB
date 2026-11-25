@@ -17,6 +17,7 @@ func TestFeatureControlGuardrailsOmitFeaturesThatAreNotForcedOff(t *testing.T) {
 		EnableInstantStudyRooms:                       true,
 		EnableClassroomWhiteboards:                    true,
 		EnableClassroomCodeCollaboration:              true,
+		EnableCodeSnippetLibrary:                      true,
 		MaxMembers:                                    10_000,
 		MaxActiveClasses:                              1_000,
 		MaxInviteCreationsPerHour:                     10_000,
@@ -71,6 +72,7 @@ func TestFeatureControlGuardrailsForceOffClassSessionScheduling(t *testing.T) {
 		EnableInstantStudyRooms:                       true,
 		EnableClassroomWhiteboards:                    true,
 		EnableClassroomCodeCollaboration:              true,
+		EnableCodeSnippetLibrary:                      true,
 		MaxMembers:                                    10_000,
 		MaxActiveClasses:                              1_000,
 		MaxInviteCreationsPerHour:                     10_000,
@@ -110,6 +112,7 @@ func TestFeatureControlGuardrailsForceOffConversations(t *testing.T) {
 		EnableInstantStudyRooms:                       true,
 		EnableClassroomWhiteboards:                    true,
 		EnableClassroomCodeCollaboration:              true,
+		EnableCodeSnippetLibrary:                      true,
 		MaxMembers:                                    10_000,
 		MaxActiveClasses:                              1_000,
 		MaxInviteCreationsPerHour:                     10_000,
@@ -143,6 +146,7 @@ func TestFeatureControlGuardrailsForceOffMediaAndApplyCeilings(t *testing.T) {
 		EnableInAppNotifications:         true,
 		EnableClassroomWhiteboards:       true,
 		EnableClassroomCodeCollaboration: true,
+		EnableCodeSnippetLibrary:         true,
 		MaxActiveMediaSpaces:             80,
 		MaxMediaParticipantsPerSpace:     40,
 		MaxActiveMediaParticipants:       400,
@@ -172,6 +176,7 @@ func TestFeatureControlGuardrailsForceOffMediaAndApplyCeilings(t *testing.T) {
 		EnableInstantStudyRooms:          true,
 		EnableClassroomWhiteboards:       true,
 		EnableClassroomCodeCollaboration: true,
+		EnableCodeSnippetLibrary:         true,
 	})
 	if enabled.ForcedOffFeatures[featurecontrol.FeatureClassroomMediaRooms] ||
 		enabled.ForcedOffFeatures[featurecontrol.FeatureInstantStudyRooms] {
@@ -189,6 +194,7 @@ func TestFeatureControlGuardrailsForceOffClassroomWhiteboards(t *testing.T) {
 		EnableInstantStudyRooms:          true,
 		EnableClassroomWhiteboards:       false,
 		EnableClassroomCodeCollaboration: true,
+		EnableCodeSnippetLibrary:         true,
 	})
 	if len(guardrails.ForcedOffFeatures) != 1 ||
 		!guardrails.ForcedOffFeatures[featurecontrol.FeatureClassroomWhiteboards] {
@@ -210,6 +216,7 @@ func TestFeatureControlGuardrailsMapClassroomCodeKillSwitches(t *testing.T) {
 	disabled := featureControlGuardrails(config.FeatureControlConfig{
 		DisableClassroomCodeTool:         true,
 		EnableClassroomCodeCollaboration: true,
+		EnableCodeSnippetLibrary:         true,
 	})
 	if !disabled.ForcedOffFeatures[featurecontrol.FeatureClassroomCodeTool] ||
 		disabled.ForcedOffFeatures[featurecontrol.FeatureClassroomCodeCollaboration] {
@@ -228,6 +235,7 @@ func TestFeatureControlGuardrailsMapWhiteboardCanaryTenantAllowlist(t *testing.T
 		EnableInstantStudyRooms:            true,
 		EnableClassroomWhiteboards:         true,
 		EnableClassroomCodeCollaboration:   true,
+		EnableCodeSnippetLibrary:           true,
 		ClassroomWhiteboardCanaryTenantIDs: []uuid.UUID{firstTenantID},
 	}
 	guardrails := featureControlGuardrails(configuration)
@@ -271,6 +279,7 @@ func TestFeatureControlGuardrailsMapP520ExactTwoRampQuotaCeilings(t *testing.T) 
 		EnableInstantStudyRooms:            true,
 		EnableClassroomWhiteboards:         true,
 		EnableClassroomCodeCollaboration:   true,
+		EnableCodeSnippetLibrary:           true,
 		EnableClassroomWhiteboardRamp:      true,
 		ClassroomWhiteboardCanaryTenantIDs: []uuid.UUID{firstTenantID, secondTenantID},
 	}

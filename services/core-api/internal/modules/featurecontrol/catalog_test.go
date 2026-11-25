@@ -24,6 +24,7 @@ func TestCatalogDefaultsAndStableOrder(t *testing.T) {
 		FeatureClassroomCodeTool,
 		FeatureClassroomMediaRooms,
 		FeatureClassroomWhiteboards,
+		FeatureCodeSnippetLibrary,
 		FeatureConversations,
 		FeatureFileUploads,
 		FeatureInAppNotifications,
@@ -36,6 +37,7 @@ func TestCatalogDefaultsAndStableOrder(t *testing.T) {
 		mayDefaultOff := definition.Key == FeatureClassroomMediaRooms ||
 			definition.Key == FeatureClassroomWhiteboards ||
 			definition.Key == FeatureClassroomCodeCollaboration ||
+			definition.Key == FeatureCodeSnippetLibrary ||
 			definition.Key == FeatureInstantStudyRooms
 		if definition.DefaultEnabled == mayDefaultOff {
 			t.Fatalf("unexpected compiled default for feature %q: %t", definition.Key, definition.DefaultEnabled)
@@ -53,6 +55,8 @@ func TestCatalogDefaultsAndStableOrder(t *testing.T) {
 		QuotaAvailabilityPollParticipants,
 		QuotaAvailabilityPollRangeDays,
 		QuotaAvailabilityPollSlots,
+		QuotaCodeSnippetsPerMember,
+		QuotaCodeStorageBytesPerTenant,
 		QuotaFileBytesPerTenant,
 		QuotaFileUploadIntentsPerHour,
 		QuotaFilesPerTenant,
@@ -152,6 +156,12 @@ func TestCatalogDefaultsAndStableOrder(t *testing.T) {
 		},
 		QuotaWhiteboardOperationsPerMinute: {
 			Key: QuotaWhiteboardOperationsPerMinute, DefaultLimit: 6000, MinimumLimit: 1, MaximumLimit: 60000,
+		},
+		QuotaCodeSnippetsPerMember: {
+			Key: QuotaCodeSnippetsPerMember, DefaultLimit: 200, MinimumLimit: 1, MaximumLimit: 1000,
+		},
+		QuotaCodeStorageBytesPerTenant: {
+			Key: QuotaCodeStorageBytesPerTenant, DefaultLimit: 52428800, MinimumLimit: 1, MaximumLimit: 524288000,
 		},
 	}
 	for _, definition := range quotas {
