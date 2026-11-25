@@ -267,3 +267,74 @@ export function sanitizeWorkspaceSnapshot(
       : 0;
   return { activeIndex, files: parsed, stdin };
 }
+
+/** ADR-0043 Slice 2 `code.workspace.v1` caps (mirrors the shared authority). */
+export const LIVE_CODE_MAX_FILE_BYTES = 64 * 1024;
+export const LIVE_CODE_MAX_TOTAL_BYTES = 256 * 1024;
+
+export interface CodeForkResult {
+  /** Files copied into the personal draft. */
+  readonly copied: number;
+  /** True when the shared workspace did not fit in the 64 KB draft. */
+  readonly partial: boolean;
+  readonly snapshot: ClassroomCodeWorkspaceSnapshot;
+  /** Files in the shared workspace. */
+  readonly total: number;
+}
+
+/**
+ * ROOM-TOOLS-CODE-02B "Tạo bản nháp từ mẫu": a shared workspace may hold
+ * 256 KB while the personal draft holds 64 KB. Everything is copied when it
+ * fits; otherwise the open file (always ≤ 64 KB) comes first, then every
+ * other file that still fits, in workspace order — so a fork never fails.
+ */
+export function forkWorkspaceSnapshot(
+  files: readonly ClassroomCodeWorkspaceFile[],
+  activeIndex: number,
+  stdin: string,
+): CodeForkResult {
+  const safeStdin = utf8Bytes(stdin) <= CODE_MAX_STDIN_BYTES ? stdin : "";
+  const active = Math.min(Math.max(0, activeIndex), files.length - 1);
+  if (
+    files.length <= CODE_MAX_FILES &&
+    workspaceBytes(files) <= CODE_MAX_TOTAL_BYTES
+  ) {
+    return {
+      copied: files.length,
+      partial: false,
+      snapshot: {
+        activeIndex: Math.max(0, active),
+        files: files.map((file) => ({ ...file })),
+        stdin: safeStdin,
+      },
+      total: files.length,
+    };
+  }
+  const included = new Set<number>();
+  let used = 0;
+  const activeFile = files[active];
+  if (activeFile && utf8Bytes(activeFile.content) <= CODE_MAX_TOTAL_BYTES) {
+    included.add(active);
+    used = utf8Bytes(activeFile.content);
+  }
+  files.forEach((file, index) => {
+    if (included.has(index) || included.size >= CODE_MAX_FILES) return;
+    const bytes = utf8Bytes(file.content);
+    if (used + bytes > CODE_MAX_TOTAL_BYTES) return;
+    included.add(index);
+    used += bytes;
+  });
+  const order = [...included].sort((left, right) => left - right);
+  return {
+    copied: order.length,
+    partial: true,
+    snapshot: {
+      activeIndex: Math.max(0, order.indexOf(active)),
+      files: order.map((index) => ({
+        ...(files[index] as ClassroomCodeWorkspaceFile),
+      })),
+      stdin: safeStdin,
+    },
+    total: files.length,
+  };
+}

@@ -352,6 +352,7 @@ async function mountCodeFixture(page: Page, options: FixtureOptions = {}) {
             content: h(codeTool.ClassroomCodeTool, {
               ...scope,
               chatCanPost: canPost,
+              enabled: true,
               onSendToChat: (text: string) =>
                 chatMedia.prefillClassroomChatComposer(composerStore, text),
               session,

@@ -2768,6 +2768,14 @@ const messages = {
     "media.people.connection.reconnecting": "Đang kết nối lại…",
     "media.people.lowerHand": "Hạ tay",
     "media.people.moreActions": "Thao tác khác",
+    "media.people.code.editing": "Đang được phép sửa Code",
+    "media.people.code.grant": "Cho phép sửa Code (10 phút)",
+    "media.people.code.revoke": "Thu hồi quyền sửa Code",
+    "media.people.code.limitHint": "Đã đủ {max} học sinh đang sửa",
+    "media.people.code.limitError": "Tối đa {max} học sinh được sửa cùng lúc",
+    "media.people.code.failed":
+      "Chưa cập nhật được quyền sửa Code. Hãy thử lại.",
+    "media.people.code.menu": "Thao tác với {name}",
     "media.people.micOff": "Micro đang tắt",
     "media.people.speaking": "Đang nói",
     "media.people.lowerAll": "Hạ tất cả tay ({count})",
@@ -3402,6 +3410,74 @@ const messages = {
     "classroomTools.code.languageChanged": "Đã chuyển {name} sang {language}.",
     "classroomTools.code.newFileForLanguage": "Đã tạo tệp mẫu {name}.",
     "classroomTools.code.sandboxFrame": "Sandbox chạy mã (ẩn)",
+    "classroomTools.live.modeGroup": "Chế độ Code",
+    "classroomTools.live.modeClass": "Chung lớp",
+    "classroomTools.live.modeMine": "Nháp của tôi",
+    "classroomTools.live.modeLive": "đang mở",
+    "classroomTools.live.loading": "Đang tải buổi code chung…",
+    "classroomTools.live.connection.connecting":
+      "Đang kết nối buổi code chung…",
+    "classroomTools.live.connection.connected": "Đã kết nối buổi code chung.",
+    "classroomTools.live.connection.reconnecting": "Đang khôi phục kết nối…",
+    "classroomTools.live.connection.failed": "Mất kết nối buổi code chung.",
+    "classroomTools.live.connectionError":
+      "Không kết nối được buổi code chung. Hãy thử lại.",
+    "classroomTools.live.featureOff":
+      "Buổi code chung hiện đang tắt cho môi trường này.",
+    "classroomTools.live.forbidden":
+      "Bạn không có quyền tham gia buổi code chung này.",
+    "classroomTools.live.error": "Không tải được buổi code chung.",
+    "classroomTools.live.notStartedTitle": "Chưa bắt đầu",
+    "classroomTools.live.notStartedDescription":
+      "Giáo viên chưa bắt đầu buổi code chung. Bạn vẫn có thể viết và chạy code trong Nháp của tôi.",
+    "classroomTools.live.readyTitle": "Sẵn sàng code cùng cả lớp",
+    "classroomTools.live.readyDescription":
+      "Cả lớp sẽ thấy mã của bạn theo thời gian thực. Các tệp trong Nháp của bạn được dùng làm điểm bắt đầu.",
+    "classroomTools.live.resumeDescription":
+      "Buổi code chung đang tạm dừng. Tiếp tục để cả lớp xem lại mã.",
+    "classroomTools.live.suspendedTitle": "Đang tạm dừng",
+    "classroomTools.live.suspendedDescription":
+      "Giáo viên đã tạm dừng buổi code chung. Bạn vẫn có thể dùng Nháp của tôi.",
+    "classroomTools.live.closedTitle": "Đã kết thúc",
+    "classroomTools.live.closedDescription":
+      "Buổi code chung đã kết thúc. Bạn vẫn có thể dùng Nháp của tôi.",
+    "classroomTools.live.start": "Bắt đầu buổi code chung",
+    "classroomTools.live.starting": "Đang bắt đầu…",
+    "classroomTools.live.resume": "Tiếp tục buổi code",
+    "classroomTools.live.suspend": "Tạm dừng buổi code",
+    "classroomTools.live.close": "Kết thúc buổi code",
+    "classroomTools.live.openMine": "Mở Nháp của tôi",
+    "classroomTools.live.mutationError":
+      "Chưa thực hiện được thao tác. Hãy thử lại.",
+    "classroomTools.live.autoSwitched":
+      "Giáo viên đã bắt đầu buổi code chung — đã chuyển sang Chung lớp.",
+    "classroomTools.live.barLabel": "Trạng thái buổi code chung",
+    "classroomTools.live.statusView": "Chế độ xem — giáo viên đang giảng mẫu",
+    "classroomTools.live.statusEditGrant": "Bạn đang được quyền sửa tạm thời",
+    "classroomTools.live.statusEdit": "Bạn có thể cùng sửa mã",
+    "classroomTools.live.statusPresent":
+      "Bạn đang trình bày — cả lớp thấy mã này",
+    "classroomTools.live.remaining": "· còn {time}",
+    "classroomTools.live.follow": "Theo dõi GV",
+    "classroomTools.live.followOn": "Đang theo dõi giáo viên.",
+    "classroomTools.live.followOff": "Đã tắt Theo dõi GV.",
+    "classroomTools.live.fork": "Tạo bản nháp từ mẫu",
+    "classroomTools.live.forked":
+      "Đã tạo bản nháp từ mẫu trong Nháp của tôi. Bạn có thể sửa và chạy thử.",
+    "classroomTools.live.forkedPartial":
+      "Mẫu lớn hơn 64 KB nên chỉ chép {copied}/{total} tệp (ưu tiên tệp đang mở) vào Nháp của tôi.",
+    "classroomTools.live.forkFailed": "Chưa tạo được bản nháp từ mẫu.",
+    "classroomTools.live.upgraded": "Bạn đang được quyền sửa tạm thời.",
+    "classroomTools.live.downgraded":
+      "Quyền sửa tạm thời đã kết thúc — chuyển về chế độ xem.",
+    "classroomTools.live.usage": "{files}/{maxFiles} tệp · {bytes} KB/{max}",
+    "classroomTools.live.sizeLimit":
+      "Đã chạm giới hạn dung lượng (64 KB mỗi tệp, 256 KB cho cả buổi code).",
+    "classroomTools.live.fileError": "Chưa thay đổi được tệp. Hãy thử lại.",
+    "classroomTools.live.fileLast": "Buổi code chung cần ít nhất một tệp.",
+    "classroomTools.live.presenceTitle": "{name} đang mở tệp này",
+    "classroomTools.live.closeConfirmDescription":
+      "Tệp sẽ bị xóa khỏi buổi code chung của cả lớp.",
     "classroomTools.snippets.title": "Kho Snippet",
     "classroomTools.snippets.close": "Đóng Kho Snippet",
     "classroomTools.snippets.search": "Tìm snippet",
@@ -6207,6 +6283,14 @@ const messages = {
     "media.people.connection.reconnecting": "Reconnecting…",
     "media.people.lowerHand": "Lower hand",
     "media.people.moreActions": "More actions",
+    "media.people.code.editing": "Can edit Code",
+    "media.people.code.grant": "Let edit Code (10 min)",
+    "media.people.code.revoke": "Stop Code editing",
+    "media.people.code.limitHint": "{max} students are already editing",
+    "media.people.code.limitError":
+      "Up to {max} students can edit at the same time",
+    "media.people.code.failed": "Couldn't update Code editing. Try again.",
+    "media.people.code.menu": "Actions for {name}",
     "media.people.micOff": "Microphone off",
     "media.people.speaking": "Speaking",
     "media.people.lowerAll": "Lower all hands ({count})",
@@ -6841,6 +6925,76 @@ const messages = {
     "classroomTools.code.newFileForLanguage":
       "Created the starter file {name}.",
     "classroomTools.code.sandboxFrame": "Code sandbox (hidden)",
+    "classroomTools.live.modeGroup": "Code mode",
+    "classroomTools.live.modeClass": "Class",
+    "classroomTools.live.modeMine": "My draft",
+    "classroomTools.live.modeLive": "live",
+    "classroomTools.live.loading": "Loading the class code session…",
+    "classroomTools.live.connection.connecting":
+      "Connecting to the class code session…",
+    "classroomTools.live.connection.connected":
+      "Connected to the class code session.",
+    "classroomTools.live.connection.reconnecting": "Reconnecting…",
+    "classroomTools.live.connection.failed":
+      "Lost the class code session connection.",
+    "classroomTools.live.connectionError":
+      "Couldn't connect to the class code session. Try again.",
+    "classroomTools.live.featureOff":
+      "Class coding is turned off for this environment.",
+    "classroomTools.live.forbidden":
+      "You don't have access to this class code session.",
+    "classroomTools.live.error": "Couldn't load the class code session.",
+    "classroomTools.live.notStartedTitle": "Not started",
+    "classroomTools.live.notStartedDescription":
+      "Your teacher hasn't started class coding yet. You can still write and run code in My draft.",
+    "classroomTools.live.readyTitle": "Ready to code with the class",
+    "classroomTools.live.readyDescription":
+      "Everyone sees your code in real time. The files in your draft are the starting point.",
+    "classroomTools.live.resumeDescription":
+      "Class coding is paused. Resume it so the class sees the code again.",
+    "classroomTools.live.suspendedTitle": "Paused",
+    "classroomTools.live.suspendedDescription":
+      "Your teacher paused class coding. You can still use My draft.",
+    "classroomTools.live.closedTitle": "Ended",
+    "classroomTools.live.closedDescription":
+      "Class coding has ended. You can still use My draft.",
+    "classroomTools.live.start": "Start class coding",
+    "classroomTools.live.starting": "Starting…",
+    "classroomTools.live.resume": "Resume class coding",
+    "classroomTools.live.suspend": "Pause class coding",
+    "classroomTools.live.close": "End class coding",
+    "classroomTools.live.openMine": "Open My draft",
+    "classroomTools.live.mutationError": "That didn't work. Try again.",
+    "classroomTools.live.autoSwitched":
+      "Your teacher started class coding — switched to Class.",
+    "classroomTools.live.barLabel": "Class code session status",
+    "classroomTools.live.statusView": "View only — your teacher is presenting",
+    "classroomTools.live.statusEditGrant": "You can edit for a limited time",
+    "classroomTools.live.statusEdit": "You can edit together",
+    "classroomTools.live.statusPresent":
+      "You're presenting — the class sees this code",
+    "classroomTools.live.remaining": "· {time} left",
+    "classroomTools.live.follow": "Follow teacher",
+    "classroomTools.live.followOn": "Following the teacher.",
+    "classroomTools.live.followOff": "Stopped following the teacher.",
+    "classroomTools.live.fork": "Make my draft from this",
+    "classroomTools.live.forked":
+      "Copied into My draft. You can edit and run it.",
+    "classroomTools.live.forkedPartial":
+      "The class code is larger than 64 KB, so {copied} of {total} files (open file first) were copied into My draft.",
+    "classroomTools.live.forkFailed": "Couldn't copy the class code.",
+    "classroomTools.live.upgraded": "You can edit for a limited time.",
+    "classroomTools.live.downgraded":
+      "Your temporary edit access ended — back to view only.",
+    "classroomTools.live.usage": "{files}/{maxFiles} files · {bytes} KB/{max}",
+    "classroomTools.live.sizeLimit":
+      "Size limit reached (64 KB per file, 256 KB for the class session).",
+    "classroomTools.live.fileError": "Couldn't change the file. Try again.",
+    "classroomTools.live.fileLast":
+      "The class session needs at least one file.",
+    "classroomTools.live.presenceTitle": "{name} has this file open",
+    "classroomTools.live.closeConfirmDescription":
+      "The file is removed from the class session for everyone.",
     "classroomTools.snippets.title": "Snippet library",
     "classroomTools.snippets.close": "Close snippet library",
     "classroomTools.snippets.search": "Search snippets",

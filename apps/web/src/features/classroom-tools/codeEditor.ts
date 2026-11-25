@@ -181,11 +181,22 @@ export interface CodeEditorStateOptions {
   readonly describedBy: string;
   readonly languageCompartment: Compartment;
   readonly language: Extension;
-  /** UTF-8 bytes this file may hold (the workspace's 64 KB minus others). */
-  readonly maxBytes: () => number;
+  /**
+   * Personal drafts: UTF-8 bytes this file may hold (the workspace's 64 KB
+   * minus others). Omitted for a shared file, whose binding enforces the
+   * `code.workspace.v1` caps itself (ROOM-TOOLS-CODE-02B).
+   */
+  readonly maxBytes?: () => number;
   readonly onChange: (content: string) => void;
   /** An edit was refused because it would pass `maxBytes`. */
   readonly onLimit: () => void;
+  /**
+   * `false` for a shared file: the Yjs binding owns undo (one actor-local
+   * stack), so CodeMirror's own history must not run beside it.
+   */
+  readonly history?: boolean;
+  /** Extra extensions (the shared-file Yjs binding). */
+  readonly extensions?: Extension;
 }
 
 const encoder = new TextEncoder();
@@ -194,6 +205,8 @@ const encoder = new TextEncoder();
 export function createCodeEditorState(
   options: CodeEditorStateOptions,
 ): EditorState {
+  const withHistory = options.history !== false;
+  const maxBytes = options.maxBytes;
   const shortcuts = Prec.highest(
     keymap.of([
       {
@@ -230,7 +243,7 @@ export function createCodeEditorState(
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightSpecialChars(),
-      history(),
+      withHistory ? history() : [],
       drawSelection(),
       dropCursor(),
       EditorState.allowMultipleSelections.of(true),
@@ -246,7 +259,7 @@ export function createCodeEditorState(
         ...closeBracketsKeymap,
         ...defaultKeymap,
         ...searchKeymap,
-        ...historyKeymap,
+        ...(withHistory ? historyKeymap : []),
         indentWithTab,
       ]),
       editorTheme,
@@ -256,6 +269,11 @@ export function createCodeEditorState(
         "aria-labelledby": options.labelledBy,
         "aria-multiline": "true",
         role: "textbox",
+        // The content is already focusable (contenteditable, read-only
+        // included); an explicit tab stop lets assistive checks see that the
+        // horizontally scrolling editor (long lines at 320 px) is reachable
+        // by keyboard (WCAG 2.1.1, axe `scrollable-region-focusable`).
+        tabindex: "0",
         spellcheck: "false",
         autocapitalize: "off",
         autocorrect: "off",
@@ -263,8 +281,8 @@ export function createCodeEditorState(
       }),
       // ADR-0043 §2: the whole workspace stays within 64 KB of UTF-8.
       EditorState.transactionFilter.of((transaction) => {
-        if (!transaction.docChanged) return transaction;
-        const allowed = options.maxBytes();
+        if (!transaction.docChanged || !maxBytes) return transaction;
+        const allowed = maxBytes();
         const size = transaction.newDoc.length;
         // UTF-16 length × 3 bounds the UTF-8 size: skip encoding when clear.
         if (size * 3 <= allowed) return transaction;
@@ -280,6 +298,7 @@ export function createCodeEditorState(
       EditorView.updateListener.of((update) => {
         if (update.docChanged) options.onChange(update.state.doc.toString());
       }),
+      options.extensions ?? [],
     ],
   });
 }

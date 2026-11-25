@@ -10,12 +10,15 @@ import {
   Menu,
   MenuContent,
   MenuItem,
+  MenuSeparator,
   MenuTrigger,
 } from "@tutorhub/ui";
 import {
   Lock,
   MicOff,
   MoreVertical,
+  Pencil,
+  PencilOff,
   Unlock,
   UserMinus,
   UserPlus,
@@ -105,7 +108,25 @@ interface ClassroomModerationControlsProps {
   readonly disabled?: boolean;
 }
 
-interface ClassroomParticipantModerationMenuProps extends ClassroomModerationControlsProps {
+/**
+ * ROOM-TOOLS-CODE-02B: the temporary shared-Code edit grant for one student
+ * row, offered by the room only while the viewer may manage editor grants
+ * and the shared workspace is open (server projection).
+ */
+export interface ClassroomParticipantCodeGrantAction {
+  readonly granted: boolean;
+  readonly limitReached: boolean;
+  readonly maxEditors: number;
+  readonly pending: boolean;
+  readonly onGrant: () => void;
+  readonly onRevoke: () => void;
+}
+
+interface ClassroomParticipantModerationMenuProps {
+  readonly codeGrant?: ClassroomParticipantCodeGrantAction;
+  /** Absent when the viewer only manages Code edit grants. */
+  readonly controls?: ClassroomModerationControlsModel;
+  readonly disabled?: boolean;
   readonly displayName: string;
   readonly isSelf: boolean;
   readonly participantKey: string;
@@ -264,6 +285,7 @@ export function classroomModerationBusy(
 }
 
 export function ClassroomParticipantModerationMenu({
+  codeGrant,
   controls,
   disabled = false,
   displayName,
@@ -273,17 +295,18 @@ export function ClassroomParticipantModerationMenu({
   const { t } = useI18n();
   const trigger = useRef<HTMLButtonElement>(null);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
-  const operations = controls.participantOperations.find(
+  const operations = controls?.participantOperations.find(
     (candidate) => candidate.participantKey === participantKey,
   );
-  const busy = moderationBusy(controls);
+  const busy = controls ? moderationBusy(controls) : false;
+  const providerEffect = controls?.providerEffect;
 
   useEffect(() => {
     if (
       removeDialogOpen &&
-      controls.providerEffect.status === "applied" &&
-      controls.providerEffect.action === "remove_participant" &&
-      controls.providerEffect.targetParticipantKey === participantKey
+      providerEffect?.status === "applied" &&
+      providerEffect.action === "remove_participant" &&
+      providerEffect.targetParticipantKey === participantKey
     ) {
       const frame = globalThis.requestAnimationFrame(() => {
         setRemoveDialogOpen(false);
@@ -291,16 +314,19 @@ export function ClassroomParticipantModerationMenu({
       return () => globalThis.cancelAnimationFrame(frame);
     }
     return undefined;
-  }, [controls.providerEffect, participantKey, removeDialogOpen]);
+  }, [participantKey, providerEffect, removeDialogOpen]);
 
-  const hasAction = Boolean(
+  const hasModeration = Boolean(
     operations &&
     (operations.canPromoteCoHost ||
       operations.canDemoteCoHost ||
       operations.canRemoteMute ||
       operations.canRemove),
   );
-  if (isSelf || !operations || !hasAction) return null;
+  if (isSelf || (!hasModeration && !codeGrant)) return null;
+  const menuLabel = hasModeration
+    ? t("media.p407.participantMenu", { name: displayName })
+    : t("media.people.code.menu", { name: displayName });
 
   return (
     <span className="media-p407-participant-actions">
@@ -314,8 +340,8 @@ export function ClassroomParticipantModerationMenu({
           <IconButton
             className="media-p406-people-action media-p407-participant-trigger"
             data-people-tip={t("media.people.moreActions")}
-            disabled={disabled || busy}
-            label={t("media.p407.participantMenu", { name: displayName })}
+            disabled={hasModeration && !codeGrant ? disabled || busy : false}
+            label={menuLabel}
             ref={trigger}
             size="sm"
             variant="quiet"
@@ -325,12 +351,42 @@ export function ClassroomParticipantModerationMenu({
         </MenuTrigger>
         <MenuContent
           align="end"
-          aria-label={t("media.p407.participantMenu", { name: displayName })}
+          aria-label={menuLabel}
           className="media-p407-participant-menu"
           data-theme="dark"
         >
-          {operations.canPromoteCoHost && (
+          {codeGrant ? (
+            codeGrant.granted ? (
+              <MenuItem
+                disabled={codeGrant.pending}
+                onSelect={codeGrant.onRevoke}
+              >
+                <PencilOff aria-hidden="true" />
+                {t("media.people.code.revoke")}
+              </MenuItem>
+            ) : (
+              <MenuItem
+                disabled={codeGrant.pending || codeGrant.limitReached}
+                onSelect={codeGrant.onGrant}
+              >
+                <Pencil aria-hidden="true" />
+                <span className="media-p407-menu-item__text">
+                  <span>{t("media.people.code.grant")}</span>
+                  {codeGrant.limitReached ? (
+                    <span className="media-p407-menu-item__hint">
+                      {t("media.people.code.limitHint", {
+                        max: codeGrant.maxEditors,
+                      })}
+                    </span>
+                  ) : null}
+                </span>
+              </MenuItem>
+            )
+          ) : null}
+          {codeGrant && hasModeration ? <MenuSeparator /> : null}
+          {controls && operations?.canPromoteCoHost && (
             <MenuItem
+              disabled={disabled || busy}
               onSelect={() =>
                 runModerationCommand(() =>
                   controls.onPromoteCoHost(participantKey),
@@ -341,8 +397,9 @@ export function ClassroomParticipantModerationMenu({
               {t("media.p407.promoteCoHost")}
             </MenuItem>
           )}
-          {operations.canDemoteCoHost && (
+          {controls && operations?.canDemoteCoHost && (
             <MenuItem
+              disabled={disabled || busy}
               onSelect={() =>
                 runModerationCommand(() =>
                   controls.onDemoteCoHost(participantKey),
@@ -353,8 +410,9 @@ export function ClassroomParticipantModerationMenu({
               {t("media.p407.demoteCoHost")}
             </MenuItem>
           )}
-          {operations.canRemoteMute && (
+          {controls && operations?.canRemoteMute && (
             <MenuItem
+              disabled={disabled || busy}
               onSelect={() =>
                 runModerationCommand(() =>
                   controls.onRemoteMute(participantKey),
@@ -365,8 +423,12 @@ export function ClassroomParticipantModerationMenu({
               {t("media.p407.remoteMute")}
             </MenuItem>
           )}
-          {operations.canRemove && (
-            <MenuItem onSelect={() => setRemoveDialogOpen(true)} tone="danger">
+          {controls && operations?.canRemove && (
+            <MenuItem
+              disabled={disabled || busy}
+              onSelect={() => setRemoveDialogOpen(true)}
+              tone="danger"
+            >
               <UserRoundX aria-hidden="true" />
               {t("media.p407.remove")}
             </MenuItem>
@@ -383,7 +445,7 @@ export function ClassroomParticipantModerationMenu({
             globalThis.requestAnimationFrame(() => trigger.current?.focus());
           }
         }}
-        open={removeDialogOpen}
+        open={removeDialogOpen && controls !== undefined}
       >
         <DialogContent
           closeLabel={t("media.p407.cancel")}
@@ -406,16 +468,17 @@ export function ClassroomParticipantModerationMenu({
             <Button
               disabled={busy}
               loading={
-                controls.mutationState.status === "submitting" &&
+                controls?.mutationState.status === "submitting" &&
                 controls.mutationState.action === "remove_participant" &&
                 controls.mutationState.targetParticipantKey === participantKey
               }
               loadingLabel={t("media.p407.submitting")}
-              onClick={() =>
+              onClick={() => {
+                if (!controls) return;
                 runModerationCommand(() =>
                   controls.onRemoveParticipant(participantKey),
-                )
-              }
+                );
+              }}
               variant="danger"
             >
               {t("media.p407.confirmRemove")}

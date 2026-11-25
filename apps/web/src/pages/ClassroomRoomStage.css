@@ -6250,3 +6250,440 @@
     animation-duration: 2.4s;
   }
 }
+
+/* ---- ROOM-TOOLS-CODE-02B: shared "Chung lớp" Code workspace ----------- */
+
+/* Top Bar: [Chung lớp | Nháp của tôi] then the workspace controls. */
+.classroom-code-header-group,
+.classroom-code-header-group__slot {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.classroom-code-mode {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 999px;
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  background: rgb(255 255 255 / 6%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.classroom-code-mode__option {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.classroom-code-mode__option:hover:not(:disabled) {
+  color: #f9fafb;
+}
+
+.classroom-code-mode__option[aria-pressed="true"] {
+  background: rgb(255 255 255 / 17%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 20%),
+    0 1px 3px rgb(0 0 0 / 35%);
+  color: #fff;
+}
+
+.classroom-code-mode__option:disabled {
+  cursor: progress;
+}
+
+.classroom-code-mode__dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgb(34 197 94 / 28%);
+}
+
+/* Status line above the files. */
+.classroom-code-live-bar {
+  display: flex;
+  min-height: 34px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 4px 10px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  background: #111723;
+  color: #e5e7eb;
+  font-size: 12.5px;
+}
+
+.classroom-code-live-bar__status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.classroom-code-live-bar__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.classroom-code-live-bar__dot:is(
+  [data-connection="connecting"],
+  [data-connection="reconnecting"]
+) {
+  background: #f59e0b;
+}
+
+.classroom-code-live-bar__dot[data-connection="failed"] {
+  background: #ef4444;
+}
+
+.classroom-code-live-bar[data-capability="view"]
+  .classroom-code-live-bar__label {
+  color: #cbd5e1;
+}
+
+.classroom-code-live-bar[data-capability="edit"]
+  .classroom-code-live-bar__label {
+  color: #86efac;
+  font-weight: 600;
+}
+
+.classroom-code-live-bar__countdown,
+.classroom-code-live-bar__connection {
+  color: #fcd34d;
+  font-variant-numeric: tabular-nums;
+}
+
+.classroom-code-live-bar__spacer {
+  flex: 1 1 auto;
+}
+
+.classroom-code-live-toggle,
+.classroom-code-live-fork,
+.classroom-code-live-bar__retry {
+  display: inline-flex;
+  box-sizing: border-box;
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 6%);
+  color: #e5e7eb;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.classroom-code-live-toggle[aria-pressed="true"] {
+  border-color: rgb(147 197 253 / 55%);
+  background: rgb(59 130 246 / 22%);
+  color: #dbeafe;
+}
+
+.classroom-code-live-fork {
+  border-color: #3b82f6;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+  color: #fff;
+}
+
+:is(
+    .classroom-code-live-toggle,
+    .classroom-code-live-fork,
+    .classroom-code-live-bar__retry
+  )
+  svg {
+  width: 14px;
+  height: 14px;
+}
+
+:is(
+  .classroom-code-mode__option,
+  .classroom-code-live-toggle,
+  .classroom-code-live-fork,
+  .classroom-code-live-bar__retry
+):focus-visible {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: 2px;
+}
+
+/* Projection states ("Chưa bắt đầu", "Đang tạm dừng", Start / Resume). */
+.classroom-code-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.classroom-code-live-error {
+  margin: 8px 12px 0;
+  color: #fca5a5;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* Up to three 8-tone presence initials on each file tab. */
+.classroom-code-file__presence {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+}
+
+.classroom-code-presence-dot {
+  display: inline-grid;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin-left: -4px;
+  border: 1.5px solid #141925;
+  border-radius: 50%;
+  background: #93c5fd;
+  color: #0b0f17;
+  font-family: system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  place-items: center;
+}
+
+.classroom-code-presence-dot:first-child {
+  margin-left: 0;
+}
+
+.classroom-code-presence-dot[data-presenter] {
+  box-shadow: 0 0 0 1.5px #fde68a;
+}
+
+.classroom-code-presence-more {
+  margin-left: 3px;
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.classroom-code-presence-dot[data-tone="0"] {
+  background: #7dd3e0;
+}
+
+.classroom-code-presence-dot[data-tone="1"] {
+  background: #a5b4fc;
+}
+
+.classroom-code-presence-dot[data-tone="2"] {
+  background: #fdb49a;
+}
+
+.classroom-code-presence-dot[data-tone="3"] {
+  background: #86efac;
+}
+
+.classroom-code-presence-dot[data-tone="4"] {
+  background: #d8b4fe;
+}
+
+.classroom-code-presence-dot[data-tone="5"] {
+  background: #f5cf8b;
+}
+
+.classroom-code-presence-dot[data-tone="6"] {
+  background: #93c5fd;
+}
+
+.classroom-code-presence-dot[data-tone="7"] {
+  background: #f9a8d4;
+}
+
+/*
+ * Remote carets (y-codemirror.next). The colour is the peer's tone from the
+ * fixed palette (inline style set by the binding); the always-visible name
+ * label uses dark text, >= 8:1 on every tone. Carets never announce.
+ */
+.classroom-code .cm-editor .cm-ySelectionCaret {
+  border-right-width: 0;
+  border-left-width: 2px;
+}
+
+.classroom-code .cm-editor .cm-ySelectionCaretDot {
+  display: none;
+}
+
+.classroom-code .cm-editor .cm-ySelectionInfo {
+  top: -1.45em;
+  left: -2px;
+  padding: 1px 5px;
+  border-radius: 5px 5px 5px 0;
+  color: #0b0f17;
+  font-family: system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.3;
+  opacity: 1;
+  pointer-events: none;
+}
+
+/* People panel: a compact ✎ "may edit Code" badge in the status column. */
+.media-p406-people-code-grant {
+  display: inline-grid;
+  box-sizing: border-box;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgb(147 197 253 / 40%);
+  border-radius: 999px;
+  background: rgb(59 130 246 / 16%);
+  color: #bfdbfe;
+  place-items: center;
+}
+
+.media-p406-people-code-grant svg {
+  width: 12px;
+  height: 12px;
+}
+
+.media-p406-people__code-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid rgb(248 113 113 / 42%);
+  border-radius: 10px;
+  background: rgb(127 29 29 / 34%);
+  color: #fecaca;
+  font-size: 12.5px;
+}
+
+.media-p406-people__code-alert > span {
+  flex: 1 1 auto;
+}
+
+.media-p407-menu-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.media-p407-menu-item__hint {
+  font-size: 11.5px;
+  opacity: 0.85;
+}
+
+@media (max-width: 959px) {
+  .classroom-code-mode__option {
+    padding: 0 8px;
+  }
+}
+
+@media (max-width: 479px) {
+  .classroom-code-header-group {
+    gap: 4px;
+  }
+
+  .classroom-code-mode__option {
+    padding: 0 6px;
+    font-size: 11.5px;
+  }
+
+  .classroom-code-header-group .classroom-code-select {
+    max-width: 76px;
+    padding-right: 20px;
+    background-position: right 7px center;
+  }
+
+  .classroom-code-live-bar {
+    padding: 4px 8px;
+  }
+}
+
+@media (forced-colors: active) {
+  .classroom-code-mode,
+  .classroom-code-mode__option,
+  .classroom-code-live-bar,
+  .classroom-code-live-toggle,
+  .classroom-code-live-fork,
+  .classroom-code-live-bar__retry,
+  .media-p406-people-code-grant,
+  .media-p406-people__code-alert {
+    border: 1px solid CanvasText;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .classroom-code-mode__option[aria-pressed="true"],
+  .classroom-code-live-toggle[aria-pressed="true"] {
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  .classroom-code-mode__dot,
+  .classroom-code-live-bar__dot {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .classroom-code-presence-dot {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .classroom-code .cm-editor .cm-ySelectionCaret {
+    border-color: Highlight !important;
+    forced-color-adjust: none;
+  }
+
+  .classroom-code .cm-editor .cm-ySelectionInfo {
+    background: Highlight !important;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .classroom-code .cm-editor .cm-ySelection {
+    background: transparent !important;
+    outline: 1px solid Highlight;
+    forced-color-adjust: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .classroom-code-mode__option,
+  .classroom-code .cm-editor .cm-ySelectionInfo {
+    transition: none;
+  }
+}

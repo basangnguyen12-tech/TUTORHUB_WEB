@@ -12,6 +12,10 @@ import { useContext, useEffect, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
 import { MediaLobbyFilterContext } from "../../components/MediaLobbyPanel";
+import {
+  ClassroomCodeEditorGrantsContext,
+  type ClassroomCodeEditorGrantsModel,
+} from "../classroom-tools/codeEditorGrantsContext";
 import type { ClassroomModerationControlsModel } from "./ClassroomModerationControls";
 import {
   ClassroomPeoplePanel,
@@ -413,5 +417,210 @@ describe("ClassroomPeoplePanel (ROOM-PEOPLE-03)", () => {
       }),
     );
     expect(screen.getByText("Nobody is in the class yet.")).toBeVisible();
+  });
+});
+
+describe("ClassroomPeoplePanel Code edit grants (ROOM-TOOLS-CODE-02B)", () => {
+  const classroom = () =>
+    signals({
+      projection: projection({
+        roster: [
+          person(1, "Thu Hà", { instance_role: "host" }),
+          person(2, "Minh Anh"),
+          person(3, "Gia Bảo"),
+          person(4, "Phạm Quỳnh Như", { connection_state: "reconnecting" }),
+          person(7, "Lan Chi"),
+          person(8, "Tuấn Tú"),
+          person(9, "Hoà Bình"),
+        ],
+        raised_hands: [],
+      }),
+    });
+
+  function codeGrants(
+    overrides: Partial<ClassroomCodeEditorGrantsModel> = {},
+  ): ClassroomCodeEditorGrantsModel {
+    return {
+      activeParticipantKeys: new Set<string>(),
+      canManage: true,
+      error: null,
+      maxEditors: 3,
+      pendingParticipantKey: null,
+      onDismissError: vi.fn(),
+      onGrant: vi.fn(),
+      onRevoke: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  function renderWithGrants(
+    grants: ClassroomCodeEditorGrantsModel | null,
+    overrides: Partial<ClassroomPeoplePanelProps> = {},
+    language: "en" | "vi" = "en",
+  ) {
+    const panel = (value: ClassroomCodeEditorGrantsModel | null) => (
+      <I18nProvider initialLanguage={language}>
+        <ClassroomCodeEditorGrantsContext value={value}>
+          <ClassroomPeoplePanel
+            moderationDisabled={false}
+            onLowerAll={vi.fn()}
+            onLowerHand={vi.fn()}
+            signals={classroom()}
+            {...overrides}
+          />
+        </ClassroomCodeEditorGrantsContext>
+      </I18nProvider>
+    );
+    const view = render(panel(grants));
+    return {
+      ...view,
+      update: (value: ClassroomCodeEditorGrantsModel | null) =>
+        view.rerender(panel(value)),
+    };
+  }
+
+  const row = (name: string) =>
+    screen.getByText(name).closest("li") as HTMLElement;
+
+  async function openMenu(name: string) {
+    const trigger = screen.getByRole("button", { name });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    return screen.findByRole("menu", { name });
+  }
+
+  it("marks only students holding an edit grant and changes nothing without a shared session", () => {
+    const view = renderWithGrants(null);
+    expect(
+      screen.queryByRole("img", { name: "Can edit Code" }),
+    ).not.toBeInTheDocument();
+    // No Code session and no moderation: no ⋮ key at all.
+    expect(
+      screen.queryByRole("button", { name: /^(Actions for|Moderate) / }),
+    ).not.toBeInTheDocument();
+
+    view.update(
+      codeGrants({
+        activeParticipantKeys: new Set([key(2), key(1)]),
+        canManage: false,
+      }),
+    );
+    expect(
+      within(row("Minh Anh")).getByRole("img", { name: "Can edit Code" }),
+    ).toBeVisible();
+    // Staff never carry the badge; other students neither.
+    expect(
+      within(row("Thu Hà")).queryByRole("img", { name: "Can edit Code" }),
+    ).toBeNull();
+    expect(
+      within(row("Lan Chi")).queryByRole("img", { name: "Can edit Code" }),
+    ).toBeNull();
+    // Seeing the badge is not managing it.
+    expect(
+      screen.queryByRole("button", { name: "Actions for Minh Anh" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("grants and revokes from the ⋮ menu even without room moderation rights", async () => {
+    const grants = codeGrants();
+    const view = renderWithGrants(grants);
+
+    // Only connected students other than you are grant targets.
+    expect(
+      screen.queryByRole("button", { name: "Actions for Gia Bảo" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Actions for Thu Hà" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Actions for Phạm Quỳnh Như" }),
+    ).not.toBeInTheDocument();
+
+    let menu = await openMenu("Actions for Minh Anh");
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Let edit Code (10 min)" }),
+    );
+    expect(grants.onGrant).toHaveBeenCalledWith(key(2));
+    expect(grants.onRevoke).not.toHaveBeenCalled();
+
+    const granted = codeGrants({ activeParticipantKeys: new Set([key(2)]) });
+    view.update(granted);
+    expect(
+      within(row("Minh Anh")).getByRole("img", { name: "Can edit Code" }),
+    ).toBeVisible();
+    menu = await openMenu("Actions for Minh Anh");
+    expect(
+      within(menu).queryByRole("menuitem", { name: /Let edit Code/ }),
+    ).toBeNull();
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Stop Code editing" }),
+    );
+    expect(granted.onRevoke).toHaveBeenCalledWith(key(2));
+    expect(granted.onGrant).not.toHaveBeenCalled();
+  });
+
+  it("puts the Code grant above the moderation actions in one menu", async () => {
+    renderWithGrants(codeGrants(), { moderation: moderation([2]) });
+    const menu = await openMenu("Moderate Minh Anh");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Let edit Code (10 min)",
+      "Promote to co-host",
+      "Mute microphone remotely",
+    ]);
+    expect(within(menu).getByRole("separator")).toBeInTheDocument();
+  });
+
+  it("locks granting once three other students edit, while revoking stays available", async () => {
+    const grants = codeGrants({
+      activeParticipantKeys: new Set([key(7), key(8), key(9)]),
+    });
+    renderWithGrants(grants);
+
+    const menu = await openMenu("Actions for Minh Anh");
+    const grant = within(menu).getByRole("menuitem", {
+      name: /Let edit Code \(10 min\)/,
+    });
+    expect(grant).toHaveAttribute("aria-disabled", "true");
+    expect(grant).toHaveTextContent("3 students are already editing");
+    fireEvent.click(grant);
+    expect(grants.onGrant).not.toHaveBeenCalled();
+    fireEvent.keyDown(menu, { key: "Escape" });
+
+    const other = await openMenu("Actions for Lan Chi");
+    const revoke = within(other).getByRole("menuitem", {
+      name: "Stop Code editing",
+    });
+    expect(revoke).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(revoke);
+    expect(grants.onRevoke).toHaveBeenCalledWith(key(7));
+  });
+
+  it("disables the row's item while its grant change is in flight", async () => {
+    renderWithGrants(codeGrants({ pendingParticipantKey: key(2) }));
+    const menu = await openMenu("Actions for Minh Anh");
+    expect(
+      within(menu).getByRole("menuitem", { name: "Let edit Code (10 min)" }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("reports the three-editor limit and a failed change as dismissible alerts", () => {
+    const grants = codeGrants({ error: "limit" });
+    const view = renderWithGrants(grants, {}, "vi");
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Tối đa 3 học sinh được sửa cùng lúc");
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Đóng thông báo" }),
+    );
+    expect(grants.onDismissError).toHaveBeenCalledTimes(1);
+
+    view.update(codeGrants({ error: "failed" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Chưa cập nhật được quyền sửa Code. Hãy thử lại.",
+    );
+    view.update(codeGrants());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

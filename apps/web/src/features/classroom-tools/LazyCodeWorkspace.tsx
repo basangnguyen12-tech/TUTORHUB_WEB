@@ -10,13 +10,16 @@ import {
   Menu,
   MenuContent,
   MenuItem,
+  MenuSeparator,
   MenuTrigger,
 } from "@tutorhub/ui";
 import {
   BookOpen,
+  CopyPlus,
   FileDown,
   MessageSquareCode,
   MoreHorizontal,
+  Pause,
   Pencil,
   Play,
   Plus,
@@ -40,13 +43,15 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { LanguageSupport } from "@codemirror/language";
+import type { Extension } from "@codemirror/state";
+import { useCodeWorkspaceTool } from "../../app/codeWorkspaces";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 import {
   Compartment,
+  EditorState,
   EditorView,
   createCodeEditorState,
   loadEditorLanguage,
-  type EditorState,
 } from "./codeEditor";
 import type { ClassroomCodeToolProps } from "./ClassroomCodeTool";
 import {
@@ -54,6 +59,17 @@ import {
   writeCodeDraft,
   type CodeDraftScope,
 } from "./codeDraftStorage";
+import {
+  localPresenceIdentity,
+  peersOnFile,
+  publishLocalPresence,
+  readCodePresencePeers,
+  type CodePresencePeer,
+} from "./codePresence";
+import {
+  LiveCodeWorkspace,
+  type LiveWorkspaceBinding,
+} from "./LiveCodeWorkspace";
 import { buildCodeFence } from "./codeFence";
 import {
   CODE_LANGUAGE_IDS,
@@ -80,8 +96,10 @@ import { CodeSnippetDrawer } from "./CodeSnippetDrawer";
 import {
   CODE_MAX_FILES,
   CODE_MAX_TOTAL_BYTES,
+  LIVE_CODE_MAX_TOTAL_BYTES,
   defaultWorkspace,
   fileNameProblem,
+  forkWorkspaceSnapshot,
   isStarterContent,
   languageForName,
   renameForLanguage,
@@ -89,6 +107,7 @@ import {
   starterFile,
   uniqueFileName,
   utf8Bytes,
+  type CodeForkResult,
 } from "./codeWorkspaceModel";
 import { buildPreviewDocument } from "./sandbox/previewDocument";
 import {
@@ -123,6 +142,19 @@ export interface CodeWorkspaceProps extends ClassroomCodeToolProps {
   /** Classroom Top Bar slot; `undefined` outside a classroom stage. */
   readonly headerSlot: HTMLElement | null | undefined;
   readonly toolActions: ClassroomToolActions | null;
+}
+
+/**
+ * ROOM-TOOLS-CODE-02B: one workspace component renders both modes, so the
+ * Top Bar, sandbox, output and snippets stay identical. `live` switches the
+ * file model to the shared `code.workspace.v1` authority (Yjs binding,
+ * actor-local undo, no local draft); without it this is the Slice 1 personal
+ * workspace, unchanged.
+ */
+interface CodeWorkspaceViewProps extends CodeWorkspaceProps {
+  /** Focus the editor once mounted (after "Tạo bản nháp từ mẫu"). */
+  readonly focusOnMount?: boolean;
+  readonly live?: LiveWorkspaceBinding;
 }
 
 interface WorkspaceFile {
@@ -196,6 +228,106 @@ function buildInitialWorkspace(
   };
 }
 
+function liveFiles(live: LiveWorkspaceBinding): WorkspaceFile[] {
+  try {
+    return live.authority.listFiles().map((file) => ({
+      id: file.id,
+      language: file.language,
+      name: file.name,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function buildLiveWorkspace(live: LiveWorkspaceBinding): InitialWorkspace {
+  const files = liveFiles(live);
+  const preferred = live.initialFileId() ?? live.authority.activeFileId();
+  return {
+    activeID:
+      files.find((file) => file.id === preferred)?.id ?? files[0]?.id ?? null,
+    contents: new Map(),
+    files,
+    restored: false,
+    stdin: "",
+  };
+}
+
+function sharedText(live: LiveWorkspaceBinding, fileID: string): string {
+  try {
+    return live.authority.text(fileID).toString();
+  } catch {
+    return "";
+  }
+}
+
+/** Read-only keeps focus, selection, copy, search and Tab escape. */
+function readOnlyExtension(readOnly: boolean): Extension {
+  return readOnly
+    ? [
+        EditorState.readOnly.of(true),
+        EditorView.contentAttributes.of({ "aria-readonly": "true" }),
+      ]
+    : [];
+}
+
+function liveUsage(live: LiveWorkspaceBinding): number {
+  try {
+    return live.authority.usage().totalBytes;
+  } catch {
+    return 0;
+  }
+}
+
+function sameFiles(
+  left: readonly WorkspaceFile[],
+  right: readonly WorkspaceFile[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (file, index) =>
+        file.id === right[index]?.id &&
+        file.name === right[index]?.name &&
+        file.language === right[index]?.language,
+    )
+  );
+}
+
+/** Message for a refused shared-workspace mutation (authority error code). */
+function liveErrorKey(error: unknown): TranslationKey {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? (error as { code: unknown }).code
+      : null;
+  switch (code) {
+    case "file_limit":
+      return "classroomTools.code.fileLimit";
+    case "file_too_large":
+    case "workspace_too_large":
+      return "classroomTools.live.sizeLimit";
+    case "file_duplicate_name":
+      return "classroomTools.code.fileNameDuplicate";
+    case "file_name_invalid":
+      return "classroomTools.code.fileNameInvalid";
+    case "file_last":
+      return "classroomTools.live.fileLast";
+    default:
+      return "classroomTools.live.fileError";
+  }
+}
+
+const NO_PEERS: readonly CodePresencePeer[] = [];
+
+const FOLLOW_NAVIGATION_KEYS: ReadonlySet<string> = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+]);
+
 async function transpileTypeScript(code: string): Promise<string> {
   const { transform } = await import("sucrase");
   return transform(code, {
@@ -218,17 +350,19 @@ function downloadText(name: string, content: string, mimeType: string) {
   globalThis.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-export default function LazyCodeWorkspace({
+function CodeWorkspace({
   actorID,
   chatCanPost,
   chatMaxCharacters,
+  focusOnMount = false,
   headerSlot,
+  live,
   mediaSpaceID,
   onSendToChat,
   session,
   tenantID,
   toolActions,
-}: CodeWorkspaceProps) {
+}: CodeWorkspaceViewProps) {
   const { language: uiLanguage, t } = useI18n();
   const locale = uiLanguage === "vi" ? "vi-VN" : "en-US";
   const id = useId();
@@ -240,9 +374,15 @@ export default function LazyCodeWorkspace({
     () => ({ actorID, mediaSpaceID, tenantID }),
     [actorID, mediaSpaceID, tenantID],
   );
+  // ROOM-TOOLS-CODE-02B: in the shared workspace a `view` grant (or a grant
+  // being swapped) is read-only: focus, selection, copy, search and Run stay.
+  const readOnly = live ? live.readOnly : false;
+  const liveRef = useRef(live);
 
   const [initial] = useState(() =>
-    buildInitialWorkspace(session, scope, uiLanguage),
+    live
+      ? buildLiveWorkspace(live)
+      : buildInitialWorkspace(session, scope, uiLanguage),
   );
   const [files, setFiles] = useState<readonly WorkspaceFile[]>(initial.files);
   const [activeID, setActiveID] = useState<string | null>(initial.activeID);
@@ -280,6 +420,24 @@ export default function LazyCodeWorkspace({
   );
 
   const [compartment] = useState(() => new Compartment());
+  const [readOnlyCompartment] = useState(() => new Compartment());
+  const readOnlyRef = useRef(readOnly);
+  // Shared workspace: "⇆ Theo dõi GV" (on by default for a `view` grant),
+  // peers' presence and the presenter's file from the shared meta.
+  const [following, setFollowing] = useState(
+    () => live !== undefined && live.capability === "view",
+  );
+  const [awarenessPeers, setPeers] = useState<readonly CodePresencePeer[]>([]);
+  const [sharedPresenterFile, setSharedPresenterFile] = useState<string | null>(
+    () => {
+      try {
+        return live?.authority.presenterFileId() ?? null;
+      } catch {
+        return null;
+      }
+    },
+  );
+  const [topLine, setTopLine] = useState(1);
   const contentsRef = useRef(initial.contents);
   const filesRef = useRef(files);
   const activeIDRef = useRef(activeID);
@@ -300,6 +458,7 @@ export default function LazyCodeWorkspace({
   const mountedRef = useRef(true);
   const commandsRef = useRef<EditorCommands>(NO_COMMANDS);
   const [usedBytes, setUsedBytes] = useState(() => {
+    if (live) return liveUsage(live);
     let sum = 0;
     for (const content of initial.contents.values()) sum += utf8Bytes(content);
     return sum;
@@ -309,6 +468,8 @@ export default function LazyCodeWorkspace({
     filesRef.current = files;
     activeIDRef.current = activeID;
     stdinRef.current = stdin;
+    liveRef.current = live;
+    readOnlyRef.current = readOnly;
   });
 
   const activeFile = files.find((file) => file.id === activeID) ?? null;
@@ -333,9 +494,14 @@ export default function LazyCodeWorkspace({
     }
     revisionTimer.current = globalThis.setTimeout(() => {
       revisionTimer.current = null;
+      const shared = liveRef.current;
       let sum = 0;
-      for (const file of filesRef.current) {
-        sum += utf8Bytes(contentsRef.current.get(file.id) ?? "");
+      if (shared) {
+        sum = liveUsage(shared);
+      } else {
+        for (const file of filesRef.current) {
+          sum += utf8Bytes(contentsRef.current.get(file.id) ?? "");
+        }
       }
       setUsedBytes(sum);
       setRevision((value) => value + 1);
@@ -392,28 +558,51 @@ export default function LazyCodeWorkspace({
 
   const createState = useCallback(
     (file: WorkspaceFile): EditorState => {
-      const state = createCodeEditorState({
-        commands: {
-          run: () => commandsRef.current.run(),
-          stop: () => commandsRef.current.stop(),
-          toggleTabFocus: (view) => commandsRef.current.toggleTabFocus(view),
-        },
-        content: contentsRef.current.get(file.id) ?? "",
-        describedBy: helpID,
-        labelledBy: labelID,
-        language: resolvedLanguages.get(file.language) ?? [],
-        languageCompartment: compartment,
-        maxBytes: () => CODE_MAX_TOTAL_BYTES - otherFilesBytes(file.id),
-        onChange: (content) => {
-          contentsRef.current.set(file.id, content);
-          scheduleRevision();
-        },
-        onLimit: () =>
-          announce(
-            t("classroomTools.code.sizeLimit", { max: "64 KB" }),
-            "error",
-          ),
-      });
+      const commands = {
+        run: () => commandsRef.current.run(),
+        stop: () => commandsRef.current.stop(),
+        toggleTabFocus: (view: EditorView) =>
+          commandsRef.current.toggleTabFocus(view),
+      };
+      const shared = liveRef.current;
+      const state = shared
+        ? createCodeEditorState({
+            commands,
+            content: sharedText(shared, file.id),
+            describedBy: helpID,
+            // The Yjs binding owns undo: one actor-local stack per file.
+            extensions: [
+              shared.createExtensions(file.id, () =>
+                announce(t("classroomTools.live.sizeLimit"), "error"),
+              ),
+              readOnlyCompartment.of(readOnlyExtension(readOnlyRef.current)),
+            ],
+            history: false,
+            labelledBy: labelID,
+            language: resolvedLanguages.get(file.language) ?? [],
+            languageCompartment: compartment,
+            onChange: () => scheduleRevision(),
+            onLimit: () =>
+              announce(t("classroomTools.live.sizeLimit"), "error"),
+          })
+        : createCodeEditorState({
+            commands,
+            content: contentsRef.current.get(file.id) ?? "",
+            describedBy: helpID,
+            labelledBy: labelID,
+            language: resolvedLanguages.get(file.language) ?? [],
+            languageCompartment: compartment,
+            maxBytes: () => CODE_MAX_TOTAL_BYTES - otherFilesBytes(file.id),
+            onChange: (content) => {
+              contentsRef.current.set(file.id, content);
+              scheduleRevision();
+            },
+            onLimit: () =>
+              announce(
+                t("classroomTools.code.sizeLimit", { max: "64 KB" }),
+                "error",
+              ),
+          });
       if (!resolvedLanguages.has(file.language)) {
         // Applied once loaded (the state is stored or shown by then).
         globalThis.setTimeout(() => ensureLanguage(file.id, file.language), 0);
@@ -427,6 +616,7 @@ export default function LazyCodeWorkspace({
       helpID,
       labelID,
       otherFilesBytes,
+      readOnlyCompartment,
       scheduleRevision,
       t,
     ],
@@ -441,30 +631,72 @@ export default function LazyCodeWorkspace({
     viewRef.current = view;
     return () => {
       const shown = shownFileRef.current;
-      if (shown) states.set(shown, view.state);
+      if (shown && !liveRef.current) states.set(shown, view.state);
       view.destroy();
       viewRef.current = null;
       shownFileRef.current = null;
     };
   }, []);
 
+  // A shared file's state is rebuilt whenever it is shown or the session is
+  // swapped (a detached state would miss remote updates); undo history lives
+  // in the authority's Y.UndoManager, so nothing is lost.
+  const liveKey = live?.key;
+  const shownKeyRef = useRef<string | undefined>(liveKey);
   useLayoutEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const file = files.find((item) => item.id === activeID);
-    if (!file || shownFileRef.current === file.id) return;
-    const shown = shownFileRef.current;
-    if (shown && files.some((item) => item.id === shown)) {
-      statesRef.current.set(shown, view.state);
+    if (
+      !file ||
+      (shownFileRef.current === file.id && shownKeyRef.current === liveKey)
+    ) {
+      return;
     }
-    view.setState(statesRef.current.get(file.id) ?? createState(file));
+    const shown = shownFileRef.current;
+    if (liveKey === undefined) {
+      if (shown && files.some((item) => item.id === shown)) {
+        statesRef.current.set(shown, view.state);
+      }
+      view.setState(statesRef.current.get(file.id) ?? createState(file));
+    } else {
+      // Same file, new session (grant upgrade/downgrade): keep the caret and
+      // scroll position so the code on screen does not jump.
+      const keep =
+        shown === file.id
+          ? {
+              head: view.state.selection.main.head,
+              scrollTop: view.scrollDOM.scrollTop,
+            }
+          : null;
+      view.setState(createState(file));
+      if (keep) {
+        view.dispatch({
+          selection: {
+            anchor: Math.min(keep.head, view.state.doc.length),
+          },
+        });
+        view.scrollDOM.scrollTop = keep.scrollTop;
+      }
+    }
     shownFileRef.current = file.id;
-  }, [activeID, createState, files]);
+    shownKeyRef.current = liveKey;
+  }, [activeID, createState, files, liveKey]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || liveKey === undefined) return;
+    view.dispatch({
+      effects: readOnlyCompartment.reconfigure(readOnlyExtension(readOnly)),
+    });
+  }, [liveKey, readOnly, readOnlyCompartment]);
 
   const currentContent = useCallback((fileID: string): string => {
     const view = viewRef.current;
     if (view && shownFileRef.current === fileID)
       return view.state.doc.toString();
+    const shared = liveRef.current;
+    if (shared) return sharedText(shared, fileID);
     return contentsRef.current.get(fileID) ?? "";
   }, []);
 
@@ -479,6 +711,8 @@ export default function LazyCodeWorkspace({
   );
 
   const persist = useCallback(() => {
+    // The shared workspace keeps no local draft; "Tạo bản nháp từ mẫu" forks.
+    if (liveRef.current) return false;
     const workspaceFiles = snapshotFiles();
     const activeIndex = Math.max(
       0,
@@ -495,11 +729,12 @@ export default function LazyCodeWorkspace({
 
   // Debounced bounded draft (ADR-0029): after edits, file and stdin changes.
   useEffect(() => {
+    if (liveKey !== undefined) return undefined;
     const timer = globalThis.setTimeout(() => {
       setDraftStatus(persist() ? "saved" : "failed");
     }, 600);
     return () => globalThis.clearTimeout(timer);
-  }, [activeID, files, persist, revision, stdin]);
+  }, [activeID, files, liveKey, persist, revision, stdin]);
 
   const flushOnLeave = useEffectEvent(() => {
     persist();
@@ -520,12 +755,299 @@ export default function LazyCodeWorkspace({
     };
   }, []);
 
+  // ROOM-TOOLS-CODE-02B: the shared file list follows the authority (remote
+  // adds, renames, language changes and deletes), and the presenter's file
+  // from the shared meta.
+  const liveAuthority = live?.authority;
+  useEffect(() => {
+    const shared = liveRef.current;
+    if (!liveAuthority || !shared) return undefined;
+    const authority = liveAuthority;
+    const sync = () => {
+      const next = liveFiles(shared);
+      try {
+        setSharedPresenterFile(authority.presenterFileId());
+      } catch {
+        setSharedPresenterFile(null);
+      }
+      scheduleRevision();
+      if (sameFiles(filesRef.current, next)) return;
+      filesRef.current = next;
+      setFiles(next);
+      if (!next.some((file) => file.id === activeIDRef.current)) {
+        setActiveID(next[0]?.id ?? null);
+      }
+    };
+    sync();
+    return authority.subscribe(sync);
+  }, [liveAuthority, scheduleRevision]);
+
+  // A remote language change re-highlights the open file.
+  const activeLanguage = activeFile?.language;
+  useEffect(() => {
+    if (liveKey === undefined || !activeID || !activeLanguage) return;
+    ensureLanguage(activeID, activeLanguage);
+  }, [activeID, activeLanguage, ensureLanguage, liveKey]);
+
+  // Peers' presence, re-derived at most four times a second and only stored
+  // when something the UI shows changed (never on every remote caret move).
+  const awareness = live?.awareness ?? null;
+  const peers = awareness ? awarenessPeers : NO_PEERS;
+  const roster = live?.roster ?? null;
+  const fallbackName = live ? live.fallbackName : "";
+  useEffect(() => {
+    if (!awareness) return undefined;
+    let timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+    let lastKey = "";
+    const refresh = () => {
+      timer = null;
+      const next = readCodePresencePeers(awareness, roster, fallbackName);
+      const key = next
+        .map(
+          (peer) =>
+            `${peer.clientID}:${peer.fileId ?? ""}:${peer.tone}:${peer.name}:${
+              peer.presenter ? `p${peer.line ?? ""}` : ""
+            }`,
+        )
+        .join("|");
+      if (key === lastKey) return;
+      lastKey = key;
+      setPeers(next);
+    };
+    const onChange = () => {
+      if (timer === null) timer = globalThis.setTimeout(refresh, 250);
+    };
+    refresh();
+    awareness.on("change", onChange);
+    return () => {
+      awareness.off("change", onChange);
+      if (timer !== null) globalThis.clearTimeout(timer);
+    };
+  }, [awareness, fallbackName, roster]);
+
+  // Publish this viewer's presence (file, top line) for the 8-tone dots and
+  // for followers of the presenter.
+  useEffect(() => {
+    if (!awareness) return;
+    const identity = localPresenceIdentity(roster, fallbackName);
+    publishLocalPresence(awareness, {
+      fileId: activeID,
+      line: topLine,
+      name: identity.name,
+      participantKey: identity.participantKey,
+      tone: identity.tone,
+    });
+  }, [activeID, awareness, fallbackName, roster, topLine]);
+
+  // The presenter's open file is shared through the workspace meta so a
+  // follower that joins later lands on it.
+  const presenting = live?.capability === "present" && !readOnly;
+  useEffect(() => {
+    if (!presenting || !liveAuthority || !activeID) return;
+    try {
+      if (liveAuthority.presenterFileId() !== activeID) {
+        liveAuthority.setPresenterFile(activeID);
+      }
+    } catch {
+      // A workspace in violation refuses writes; presence still works.
+    }
+  }, [activeID, liveAuthority, presenting]);
+
+  // The top visible line, throttled (it rides on the awareness budget).
+  useEffect(() => {
+    const view = viewRef.current;
+    if (liveKey === undefined || !view) return undefined;
+    let timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const measure = () => {
+      timer = null;
+      const current = viewRef.current;
+      if (!current) return;
+      try {
+        const block = current.lineBlockAtHeight(current.scrollDOM.scrollTop);
+        setTopLine(current.state.doc.lineAt(block.from).number);
+      } catch {
+        // Layout is not measurable (hidden editor).
+      }
+    };
+    const onScroll = () => {
+      if (timer === null) timer = globalThis.setTimeout(measure, 250);
+    };
+    view.scrollDOM.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      view.scrollDOM.removeEventListener("scroll", onScroll);
+      if (timer !== null) globalThis.clearTimeout(timer);
+    };
+  }, [liveKey]);
+
+  // "⇆ Theo dõi GV": follow the server-stamped presenter's file and line.
+  const presenterPeer = peers.find((peer) => peer.presenter) ?? null;
+  const followFileId =
+    presenterPeer?.fileId &&
+    files.some((file) => file.id === presenterPeer.fileId)
+      ? presenterPeer.fileId
+      : sharedPresenterFile &&
+          files.some((file) => file.id === sharedPresenterFile)
+        ? sharedPresenterFile
+        : null;
+  const followLine = presenterPeer?.line ?? null;
+  const canFollow = live !== undefined && live.capability !== "present";
+  const followActive = canFollow && following;
+  useEffect(() => {
+    if (!followActive || !followFileId) return;
+    if (activeIDRef.current !== followFileId) setActiveID(followFileId);
+  }, [followActive, followFileId]);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (
+      !followActive ||
+      !view ||
+      followLine === null ||
+      shownFileRef.current !== followFileId
+    ) {
+      return;
+    }
+    try {
+      const line = view.state.doc.line(
+        Math.min(Math.max(1, followLine), view.state.doc.lines),
+      );
+      const top = view.lineBlockAt(line.from).top;
+      const reduce =
+        typeof globalThis.matchMedia === "function" &&
+        globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (typeof view.scrollDOM.scrollTo === "function") {
+        view.scrollDOM.scrollTo({
+          behavior: reduce ? "auto" : "smooth",
+          top,
+        });
+      } else {
+        view.scrollDOM.scrollTop = top;
+      }
+    } catch {
+      // Nothing to scroll yet.
+    }
+  }, [activeID, followActive, followFileId, followLine, liveKey]);
+
+  const stopFollowing = useCallback(() => {
+    setFollowing((current) => {
+      if (current) {
+        announce(t("classroomTools.live.followOff"));
+      }
+      return false;
+    });
+  }, [announce, t]);
+
+  // Scrolling the code yourself (wheel, touch, navigation keys) hands
+  // control back: following never fights the student.
+  useEffect(() => {
+    const host = editorHostRef.current;
+    if (!followActive || !host) return undefined;
+    const onWheel = () => stopFollowing();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (FOLLOW_NAVIGATION_KEYS.has(event.key)) stopFollowing();
+    };
+    host.addEventListener("wheel", onWheel, { passive: true });
+    host.addEventListener("touchmove", onWheel, { passive: true });
+    host.addEventListener("keydown", onKeyDown);
+    return () => {
+      host.removeEventListener("wheel", onWheel);
+      host.removeEventListener("touchmove", onWheel);
+      host.removeEventListener("keydown", onKeyDown);
+    };
+  }, [followActive, stopFollowing]);
+
+  const toggleFollowing = () => {
+    const next = !following;
+    setFollowing(next);
+    announce(
+      t(
+        next ? "classroomTools.live.followOn" : "classroomTools.live.followOff",
+      ),
+    );
+    if (next && followFileId && activeIDRef.current !== followFileId) {
+      setActiveID(followFileId);
+    }
+  };
+
+  // An upgrade to `edit` never keeps following (no caret jumps while typing).
+  const liveCapability = live?.capability;
+  const previousCapabilityRef = useRef(liveCapability);
+  useEffect(() => {
+    const previous = previousCapabilityRef.current;
+    previousCapabilityRef.current = liveCapability;
+    if (previous === "view" && liveCapability === "edit") setFollowing(false);
+  }, [liveCapability]);
+
+  useEffect(() => {
+    if (!focusOnMount) return undefined;
+    const timer = globalThis.setTimeout(() => viewRef.current?.focus(), 0);
+    return () => globalThis.clearTimeout(timer);
+  }, [focusOnMount]);
+
+  const forkToDraft = () => {
+    const shared = liveRef.current;
+    if (!shared) return;
+    let snapshot;
+    try {
+      snapshot = shared.authority.snapshot();
+    } catch {
+      announce(t("classroomTools.live.forkFailed"), "error");
+      return;
+    }
+    const activeIndex = Math.max(
+      0,
+      filesRef.current.findIndex((file) => file.id === activeIDRef.current),
+    );
+    // The open file's live text (the view may be ahead of a remote echo).
+    const forkFiles = snapshot.files.map((file, index) =>
+      index === activeIndex && activeIDRef.current
+        ? { ...file, content: currentContent(activeIDRef.current) }
+        : file,
+    );
+    shared.onFork(
+      forkWorkspaceSnapshot(forkFiles, activeIndex, stdinRef.current),
+    );
+  };
+
   const addFile = useCallback(
     (
       file: { content: string; language: CodeFileLanguage; name: string },
       announceKey: TranslationKey = "classroomTools.code.fileAdded",
     ): boolean => {
       const current = filesRef.current;
+      const shared = liveRef.current;
+      if (shared) {
+        if (readOnlyRef.current) return false;
+        if (current.length >= CODE_MAX_FILES) {
+          announce(
+            t("classroomTools.code.fileLimit", { max: CODE_MAX_FILES }),
+            "error",
+          );
+          return false;
+        }
+        const name = uniqueFileName(
+          fileNameProblem(file.name, []) === null
+            ? file.name
+            : CODE_LANGUAGES[file.language].defaultFileName,
+          current,
+        );
+        try {
+          const fileID = shared.authority.addFile({
+            content: file.content,
+            language: file.language,
+            name,
+          });
+          const next = liveFiles(shared);
+          filesRef.current = next;
+          setFiles(next);
+          setActiveID(fileID);
+          scheduleRevision();
+          announce(t(announceKey, { name }));
+          return true;
+        } catch (error) {
+          announce(t(liveErrorKey(error), { max: CODE_MAX_FILES }), "error");
+          return false;
+        }
+      }
       if (current.length >= CODE_MAX_FILES) {
         announce(
           t("classroomTools.code.fileLimit", { max: CODE_MAX_FILES }),
@@ -573,8 +1095,10 @@ export default function LazyCodeWorkspace({
     }
   });
 
-  // "Open in Code" from chat: queued blocks become new tabs (never run).
+  // "Open in Code" from chat: queued blocks become new tabs (never run). The
+  // shared workspace leaves them queued: the mode switch opens "Nháp của tôi".
   useEffect(() => {
+    if (liveKey !== undefined) return undefined;
     let timer: number | null = null;
     const drain = () => {
       timer = null;
@@ -590,7 +1114,7 @@ export default function LazyCodeWorkspace({
       if (timer !== null) globalThis.clearTimeout(timer);
       unsubscribe();
     };
-  }, [session]);
+  }, [liveKey, session]);
 
   const ensureController = (): CodeSandboxController | null => {
     if (controllerRef.current) return controllerRef.current;
@@ -859,6 +1383,8 @@ export default function LazyCodeWorkspace({
 
   const activate = (fileID: string) => {
     setRenaming(null);
+    // Choosing another file yourself hands control back (no tug of war).
+    if (followActive && fileID !== followFileId) stopFollowing();
     setActiveID(fileID);
   };
 
@@ -867,8 +1393,35 @@ export default function LazyCodeWorkspace({
       (item) => item.id === activeIDRef.current,
     );
     if (!file || pickerLanguage(file.language) === language) return;
+    if (readOnlyRef.current) return;
     const content = currentContent(file.id);
-    if (isStarterContent(content)) {
+    const shared = liveRef.current;
+    if (shared && isStarterContent(content)) {
+      const name = uniqueFileName(
+        renameForLanguage(file.name, language),
+        filesRef.current.filter((item) => item.id !== file.id),
+      );
+      try {
+        shared.authority.replaceFileText(
+          file.id,
+          starterContent(language, uiLanguage),
+        );
+        shared.authority.setFileLanguage(file.id, language);
+        if (name !== file.name) shared.authority.renameFile(file.id, name);
+      } catch (error) {
+        announce(t(liveErrorKey(error), { max: CODE_MAX_FILES }), "error");
+        return;
+      }
+      ensureLanguage(file.id, language);
+      announce(
+        t("classroomTools.code.languageChanged", {
+          language: CODE_LANGUAGES[language].label,
+          name,
+        }),
+      );
+      return;
+    }
+    if (!shared && isStarterContent(content)) {
       // Unedited starter: convert this file in place.
       const name = uniqueFileName(
         renameForLanguage(file.name, language),
@@ -950,6 +1503,7 @@ export default function LazyCodeWorkspace({
     );
     const view = viewRef.current;
     if (!file || !view || shownFileRef.current !== file.id) return;
+    if (readOnlyRef.current) return;
     // A normal edit, so Ctrl+Z brings the previous content back.
     view.dispatch({
       changes: {
@@ -986,7 +1540,7 @@ export default function LazyCodeWorkspace({
 
   const insertSnippetHere = (snippet: CodeSnippet) => {
     const view = viewRef.current;
-    if (!view || !activeIDRef.current) return;
+    if (!view || !activeIDRef.current || readOnlyRef.current) return;
     const { from, to } = view.state.selection.main;
     const before = view.state.doc.toString();
     view.dispatch({
@@ -1005,6 +1559,7 @@ export default function LazyCodeWorkspace({
   };
 
   const startRename = (file: WorkspaceFile) => {
+    if (readOnlyRef.current) return;
     setRenaming({ error: null, id: file.id, value: file.name });
   };
 
@@ -1029,6 +1584,18 @@ export default function LazyCodeWorkspace({
       return;
     }
     const language = languageForName(value, file.language);
+    const shared = liveRef.current;
+    if (shared) {
+      try {
+        if (value !== file.name) shared.authority.renameFile(file.id, value);
+        if (language !== file.language) {
+          shared.authority.setFileLanguage(file.id, language);
+        }
+      } catch (error) {
+        setRenaming({ ...renaming, error: liveErrorKey(error) });
+        return;
+      }
+    }
     const next = filesRef.current.map((item) =>
       item.id === file.id ? { ...item, language, name: value } : item,
     );
@@ -1046,6 +1613,16 @@ export default function LazyCodeWorkspace({
     const current = filesRef.current;
     const index = current.findIndex((item) => item.id === file.id);
     if (index < 0) return;
+    const shared = liveRef.current;
+    if (shared) {
+      try {
+        shared.authority.deleteFile(file.id);
+      } catch (error) {
+        setClosing(null);
+        announce(t(liveErrorKey(error), { max: CODE_MAX_FILES }), "error");
+        return;
+      }
+    }
     const next = current.filter((item) => item.id !== file.id);
     contentsRef.current.delete(file.id);
     statesRef.current.delete(file.id);
@@ -1069,6 +1646,7 @@ export default function LazyCodeWorkspace({
   };
 
   const requestClose = (file: WorkspaceFile) => {
+    if (readOnlyRef.current) return;
     if (isStarterContent(currentContent(file.id))) removeFile(file);
     else setClosing(file);
   };
@@ -1159,7 +1737,7 @@ export default function LazyCodeWorkspace({
       </label>
       <select
         className="classroom-code-select"
-        disabled={!activeFile || running}
+        disabled={!activeFile || running || readOnly}
         id={languageSelectID}
         onChange={(event) => {
           const value = event.target.value;
@@ -1221,6 +1799,40 @@ export default function LazyCodeWorkspace({
           }}
           sideOffset={8}
         >
+          {live && live.lifecycle.canSuspend ? (
+            <MenuItem
+              disabled={live.lifecycle.pending}
+              onSelect={() => live.lifecycle.onTransition("suspend")}
+            >
+              <Pause aria-hidden="true" />
+              {t("classroomTools.live.suspend")}
+            </MenuItem>
+          ) : null}
+          {live && live.lifecycle.canResume ? (
+            <MenuItem
+              disabled={live.lifecycle.pending}
+              onSelect={() => live.lifecycle.onTransition("resume")}
+            >
+              <Play aria-hidden="true" />
+              {t("classroomTools.live.resume")}
+            </MenuItem>
+          ) : null}
+          {live && live.lifecycle.canClose ? (
+            <MenuItem
+              disabled={live.lifecycle.pending}
+              onSelect={() => live.lifecycle.onTransition("close")}
+              tone="danger"
+            >
+              <Square aria-hidden="true" />
+              {t("classroomTools.live.close")}
+            </MenuItem>
+          ) : null}
+          {live &&
+          (live.lifecycle.canSuspend ||
+            live.lifecycle.canResume ||
+            live.lifecycle.canClose) ? (
+            <MenuSeparator />
+          ) : null}
           <MenuItem
             disabled={!activeFile || !onSendToChat}
             onSelect={sendToChat}
@@ -1236,7 +1848,10 @@ export default function LazyCodeWorkspace({
             <FileDown aria-hidden="true" />
             {t("classroomTools.code.download")}
           </MenuItem>
-          <MenuItem disabled={!activeFile} onSelect={restoreStarter}>
+          <MenuItem
+            disabled={!activeFile || readOnly}
+            onSelect={restoreStarter}
+          >
             <RotateCcw aria-hidden="true" />
             {t("classroomTools.code.restoreStarter")}
           </MenuItem>
@@ -1285,6 +1900,16 @@ export default function LazyCodeWorkspace({
         </div>
       )}
 
+      {live ? (
+        <LiveCodeStatusBar
+          canFollow={canFollow}
+          following={following}
+          live={live}
+          onFork={forkToDraft}
+          onToggleFollowing={toggleFollowing}
+        />
+      ) : null}
+
       <div
         aria-label={t("classroomTools.code.files")}
         className="classroom-code-files"
@@ -1294,6 +1919,7 @@ export default function LazyCodeWorkspace({
           {files.map((file) => {
             const active = file.id === activeID;
             const isRenaming = renaming?.id === file.id;
+            const presence = live ? peersOnFile(peers, file.id) : null;
             return (
               <li
                 className="classroom-code-file"
@@ -1360,7 +1986,7 @@ export default function LazyCodeWorkspace({
                     onClick={() => activate(file.id)}
                     onDoubleClick={() => startRename(file)}
                     onKeyDown={(event) => {
-                      if (event.key === "F2") {
+                      if (event.key === "F2" && !readOnly) {
                         event.preventDefault();
                         startRename(file);
                       }
@@ -1375,9 +2001,34 @@ export default function LazyCodeWorkspace({
                       {CODE_LANGUAGES[file.language].extension}
                     </span>
                     {file.name}
+                    {presence && presence.shown.length > 0 ? (
+                      <span
+                        aria-hidden="true"
+                        className="classroom-code-file__presence"
+                      >
+                        {presence.shown.map((peer) => (
+                          <span
+                            className="classroom-code-presence-dot"
+                            data-presenter={peer.presenter || undefined}
+                            data-tone={peer.tone}
+                            key={peer.clientID}
+                            title={t("classroomTools.live.presenceTitle", {
+                              name: peer.name,
+                            })}
+                          >
+                            {peer.initial}
+                          </span>
+                        ))}
+                        {presence.extra > 0 ? (
+                          <span className="classroom-code-presence-more">
+                            +{presence.extra}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
                   </button>
                 )}
-                {active && !isRenaming && (
+                {active && !isRenaming && !readOnly && (
                   <button
                     aria-label={t("classroomTools.code.renameFile", {
                       name: file.name,
@@ -1392,7 +2043,7 @@ export default function LazyCodeWorkspace({
                     <Pencil aria-hidden="true" />
                   </button>
                 )}
-                {!isRenaming && (
+                {!isRenaming && !readOnly && (
                   <button
                     aria-label={t("classroomTools.code.closeFile", {
                       name: file.name,
@@ -1411,38 +2062,40 @@ export default function LazyCodeWorkspace({
             );
           })}
         </ul>
-        <Menu modal={false}>
-          <MenuTrigger asChild>
-            <button
-              aria-label={t("classroomTools.code.addFile")}
-              className="classroom-code-file__add"
-              data-tooltip={t("classroomTools.code.addFile")}
-              disabled={files.length >= CODE_MAX_FILES}
-              type="button"
-            >
-              <Plus aria-hidden="true" />
-            </button>
-          </MenuTrigger>
-          <MenuContent
-            aria-label={t("classroomTools.code.addFile")}
-            className="whiteboard-topbar-menu classroom-code-menu"
-            data-theme="dark"
-            sideOffset={6}
-          >
-            {([...CODE_LANGUAGE_IDS, "css"] as const).map((language) => (
-              <MenuItem
-                key={language}
-                onSelect={() =>
-                  addFile(starterFile(language, uiLanguage, filesRef.current))
-                }
+        {readOnly ? null : (
+          <Menu modal={false}>
+            <MenuTrigger asChild>
+              <button
+                aria-label={t("classroomTools.code.addFile")}
+                className="classroom-code-file__add"
+                data-tooltip={t("classroomTools.code.addFile")}
+                disabled={files.length >= CODE_MAX_FILES}
+                type="button"
               >
-                {t("classroomTools.code.addFileOf", {
-                  language: CODE_LANGUAGES[language].label,
-                })}
-              </MenuItem>
-            ))}
-          </MenuContent>
-        </Menu>
+                <Plus aria-hidden="true" />
+              </button>
+            </MenuTrigger>
+            <MenuContent
+              aria-label={t("classroomTools.code.addFile")}
+              className="whiteboard-topbar-menu classroom-code-menu"
+              data-theme="dark"
+              sideOffset={6}
+            >
+              {([...CODE_LANGUAGE_IDS, "css"] as const).map((language) => (
+                <MenuItem
+                  key={language}
+                  onSelect={() =>
+                    addFile(starterFile(language, uiLanguage, filesRef.current))
+                  }
+                >
+                  {t("classroomTools.code.addFileOf", {
+                    language: CODE_LANGUAGES[language].label,
+                  })}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
+        )}
         <span aria-hidden="true" className="classroom-code-files__spacer" />
         <button
           aria-expanded={snippetsOpen}
@@ -1498,7 +2151,7 @@ export default function LazyCodeWorkspace({
             hidden={!activeFile}
             ref={editorHostRef}
           />
-          {!activeFile && (
+          {!activeFile && !live && (
             <div className="classroom-code-state classroom-code-state--empty">
               <p className="classroom-code-state__title">
                 {t("classroomTools.code.emptyTitle")}
@@ -1527,11 +2180,17 @@ export default function LazyCodeWorkspace({
               )}
             </span>
             <span className="classroom-code__usage">
-              {t("classroomTools.code.usage", {
-                bytes: (usedBytes / 1024).toFixed(1),
-                files: files.length,
-                maxFiles: CODE_MAX_FILES,
-              })}
+              {t(
+                live
+                  ? "classroomTools.live.usage"
+                  : "classroomTools.code.usage",
+                {
+                  bytes: (usedBytes / 1024).toFixed(1),
+                  files: files.length,
+                  max: `${LIVE_CODE_MAX_TOTAL_BYTES / 1024} KB`,
+                  maxFiles: CODE_MAX_FILES,
+                },
+              )}
               {draftStatus === "saved"
                 ? ` · ${t("classroomTools.code.draftSaved")}`
                 : draftStatus === "failed"
@@ -1597,7 +2256,8 @@ export default function LazyCodeWorkspace({
         </div>
         {snippetsOpen && (
           <CodeSnippetDrawer
-            canInsertIntoCurrent={activeFile !== null}
+            canInsertIntoCurrent={activeFile !== null && !readOnly}
+            canInsertNew={!readOnly}
             onClose={closeSnippets}
             onInsertCurrent={insertSnippetHere}
             onInsertNew={insertSnippetAsFile}
@@ -1629,7 +2289,11 @@ export default function LazyCodeWorkspace({
               })}
             </DialogTitle>
             <DialogDescription>
-              {t("classroomTools.code.closeConfirmDescription")}
+              {t(
+                live
+                  ? "classroomTools.live.closeConfirmDescription"
+                  : "classroomTools.code.closeConfirmDescription",
+              )}
             </DialogDescription>
             <DialogFooter>
               <DialogClose asChild>
@@ -1646,4 +2310,299 @@ export default function LazyCodeWorkspace({
       </Dialog>
     </div>
   );
+}
+
+/**
+ * ROOM-TOOLS-CODE-02B: the thin "Chung lớp" status line above the files —
+ * who may edit, the temporary grant countdown, the connection state, and the
+ * pedagogy keys "⇆ Theo dõi GV" and "Tạo bản nháp từ mẫu" for everyone but
+ * the presenter. Not a live region: changes are announced by the workspace.
+ */
+function LiveCodeStatusBar({
+  canFollow,
+  following,
+  live,
+  onFork,
+  onToggleFollowing,
+}: {
+  readonly canFollow: boolean;
+  readonly following: boolean;
+  readonly live: LiveWorkspaceBinding;
+  readonly onFork: () => void;
+  readonly onToggleFollowing: () => void;
+}) {
+  const { t } = useI18n();
+  const status =
+    live.capability === "present"
+      ? t("classroomTools.live.statusPresent")
+      : live.capability === "edit"
+        ? live.grantExpiresAt
+          ? t("classroomTools.live.statusEditGrant")
+          : t("classroomTools.live.statusEdit")
+        : t("classroomTools.live.statusView");
+  return (
+    <div
+      aria-label={t("classroomTools.live.barLabel")}
+      className="classroom-code-live-bar"
+      data-capability={live.capability}
+      role="group"
+    >
+      <span className="classroom-code-live-bar__status">
+        <span
+          aria-hidden="true"
+          className="classroom-code-live-bar__dot"
+          data-connection={live.connection}
+        />
+        <span className="classroom-code-live-bar__label">{status}</span>
+        {live.capability === "edit" && live.grantExpiresAt ? (
+          <CodeGrantCountdown expiresAt={live.grantExpiresAt} />
+        ) : null}
+      </span>
+      {live.connection !== "connected" ? (
+        <span className="classroom-code-live-bar__connection">
+          {t(`classroomTools.live.connection.${live.connection}`)}
+        </span>
+      ) : null}
+      {live.notice ?? null}
+      <span aria-hidden="true" className="classroom-code-live-bar__spacer" />
+      {canFollow ? (
+        <button
+          aria-pressed={following}
+          className="classroom-code-live-toggle"
+          onClick={onToggleFollowing}
+          type="button"
+        >
+          <span aria-hidden="true">⇆</span>
+          {t("classroomTools.live.follow")}
+        </button>
+      ) : null}
+      {canFollow ? (
+        <button
+          className="classroom-code-live-fork"
+          onClick={onFork}
+          type="button"
+        >
+          <CopyPlus aria-hidden="true" />
+          {t("classroomTools.live.fork")}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** mm:ss left on the viewer's temporary edit grant (ticks on its own). */
+function CodeGrantCountdown({ expiresAt }: { readonly expiresAt: string }) {
+  const { t } = useI18n();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = globalThis.setInterval(() => setNow(Date.now()), 1_000);
+    return () => globalThis.clearInterval(timer);
+  }, []);
+  const deadline = Date.parse(expiresAt);
+  if (!Number.isFinite(deadline)) return null;
+  const remaining = Math.max(0, Math.round((deadline - now) / 1_000));
+  const minutes = String(Math.floor(remaining / 60)).padStart(2, "0");
+  const seconds = String(remaining % 60).padStart(2, "0");
+  return (
+    <span className="classroom-code-live-bar__countdown">
+      {t("classroomTools.live.remaining", { time: `${minutes}:${seconds}` })}
+    </span>
+  );
+}
+
+type CodeMode = "class" | "mine";
+
+/**
+ * ROOM-TOOLS-CODE-02B: with `classroom_code_collaboration` on, the Code tool
+ * has two modes in one Top Bar pill — "Chung lớp" (the shared workspace) and
+ * "Nháp của tôi" (the Slice 1 personal draft). The first mode is chosen from
+ * the server projection: an open session, or a viewer who may start one,
+ * lands in "Chung lớp"; everyone else starts in their own draft and is moved
+ * to "Chung lớp" once per `workspace:generation` when the teacher opens it.
+ */
+function CollaborativeCodeWorkspace(props: CodeWorkspaceProps) {
+  const { actorID, headerSlot, mediaSpaceID, session, tenantID } = props;
+  const { language: uiLanguage, t } = useI18n();
+  const tool = useCodeWorkspaceTool(tenantID, mediaSpaceID, true);
+  const projection = tool.isSuccess ? tool.data : undefined;
+  const workspace = projection?.workspace ?? null;
+  const capabilities = workspace?.viewer_capabilities;
+  const coordinator = Boolean(
+    projection?.can_create ||
+    capabilities?.can_open ||
+    capabilities?.can_resume,
+  );
+  const openKey =
+    workspace?.status === "open" && capabilities?.can_exchange_grant
+      ? `${workspace.id}:${workspace.current_generation}`
+      : null;
+  const resolved = tool.isSuccess || tool.isError;
+  const [mode, setMode] = useState<CodeMode | null>(null);
+  const [handledOpenKey, setHandledOpenKey] = useState<string | null>(null);
+  const [focusMine, setFocusMine] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [innerSlot, setInnerSlot] = useState<HTMLSpanElement | null>(null);
+  const scope = useMemo<CodeDraftScope>(
+    () => ({ actorID, mediaSpaceID, tenantID }),
+    [actorID, mediaSpaceID, tenantID],
+  );
+
+  // Adjust state while rendering (store information from previous renders):
+  // the first mode, then one automatic switch per open workspace key.
+  if (mode === null && resolved) {
+    setMode(openKey || (tool.isSuccess && coordinator) ? "class" : "mine");
+    setHandledOpenKey(openKey);
+  } else if (mode !== null && openKey !== null && openKey !== handledOpenKey) {
+    setHandledOpenKey(openKey);
+    if (mode === "mine") {
+      setMode("class");
+      setFocusMine(false);
+      setNotice(t("classroomTools.live.autoSwitched"));
+    }
+  }
+
+  // "Open in Code" from chat lands in the personal draft.
+  useEffect(
+    () =>
+      session.subscribe(() => {
+        setMode((current) => (current === "class" ? "mine" : current));
+      }),
+    [session],
+  );
+
+  const switchMode = (next: CodeMode) => {
+    if (next === mode) return;
+    setFocusMine(false);
+    setNotice("");
+    setMode(next);
+  };
+
+  const handleFork = useCallback(
+    (result: CodeForkResult) => {
+      session.saveSnapshot(result.snapshot);
+      writeCodeDraft(scope, result.snapshot);
+      setFocusMine(true);
+      setMode("mine");
+      setNotice(
+        result.partial
+          ? t("classroomTools.live.forkedPartial", {
+              copied: result.copied,
+              total: result.total,
+            })
+          : t("classroomTools.live.forked"),
+      );
+    },
+    [scope, session, t],
+  );
+
+  const seedSnapshot = useCallback(
+    () => session.readSnapshot() ?? readCodeDraft(scope),
+    [scope, session],
+  );
+  const fallbackFiles = useMemo(
+    () => defaultWorkspace(uiLanguage).files,
+    [uiLanguage],
+  );
+
+  const group = (
+    <div className="classroom-code-header-group">
+      <div
+        aria-label={t("classroomTools.live.modeGroup")}
+        className="classroom-code-mode"
+        role="group"
+      >
+        <button
+          aria-pressed={mode === "class"}
+          className="classroom-code-mode__option"
+          data-mode="class"
+          disabled={mode === null}
+          onClick={() => switchMode("class")}
+          type="button"
+        >
+          {workspace?.status === "open" ? (
+            <span aria-hidden="true" className="classroom-code-mode__dot" />
+          ) : null}
+          {t("classroomTools.live.modeClass")}
+          {workspace?.status === "open" ? (
+            <span className="visually-hidden">
+              {` (${t("classroomTools.live.modeLive")})`}
+            </span>
+          ) : null}
+        </button>
+        <button
+          aria-pressed={mode === "mine"}
+          className="classroom-code-mode__option"
+          data-mode="mine"
+          disabled={mode === null}
+          onClick={() => switchMode("mine")}
+          type="button"
+        >
+          {t("classroomTools.live.modeMine")}
+        </button>
+      </div>
+      <span className="classroom-code-header-group__slot" ref={setInnerSlot} />
+    </div>
+  );
+
+  return (
+    <>
+      {headerSlot
+        ? createPortal(group, headerSlot)
+        : headerSlot === undefined
+          ? group
+          : null}
+      <p
+        aria-atomic="true"
+        aria-live="polite"
+        className="visually-hidden"
+        role="status"
+      >
+        {notice}
+      </p>
+      {mode === null ? (
+        <div className="classroom-code-state" role="status">
+          <span aria-hidden="true" className="classroom-code-state__spinner" />
+          <p>{t("classroomTools.live.loading")}</p>
+        </div>
+      ) : mode === "mine" ? (
+        <CodeWorkspace
+          {...props}
+          focusOnMount={focusMine}
+          headerSlot={innerSlot}
+          key="mine"
+        />
+      ) : (
+        <LiveCodeWorkspace
+          actorID={actorID}
+          fallbackFiles={fallbackFiles}
+          fallbackName={props.displayName ?? ""}
+          mediaSpaceID={mediaSpaceID}
+          onAnnounce={setNotice}
+          onFork={handleFork}
+          onOpenMine={() => switchMode("mine")}
+          renderWorkspace={(live) => (
+            <CodeWorkspace
+              {...props}
+              headerSlot={innerSlot}
+              key="class"
+              live={live}
+            />
+          )}
+          roster={props.codeRoster ?? null}
+          seedSnapshot={seedSnapshot}
+          tenantID={tenantID}
+          tool={tool}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * The lazy chunk entry. Without `classroom_code_collaboration` this is the
+ * Slice 1 personal workspace exactly; with it, the two-mode wrapper.
+ */
+export default function LazyCodeWorkspace(props: CodeWorkspaceProps) {
+  if (props.collaborationEnabled !== true) return <CodeWorkspace {...props} />;
+  return <CollaborativeCodeWorkspace {...props} />;
 }

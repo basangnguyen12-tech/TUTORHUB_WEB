@@ -1,15 +1,35 @@
 import { Button, IconButton, Skeleton, SkeletonGroup } from "@tutorhub/ui";
-import { ChevronUp, Hand, MicOff, RefreshCw, Search, X } from "lucide-react";
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import {
+  ChevronUp,
+  Hand,
+  MicOff,
+  Pencil,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
+import {
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 import {
   MediaLobbyFilterContext,
   type MediaLobbyFilter,
 } from "../../components/MediaLobbyPanel";
+import {
+  ClassroomCodeEditorGrantsContext,
+  type ClassroomCodeEditorGrantsModel,
+} from "../classroom-tools/codeEditorGrantsContext";
 import { normalizeEmojiSearch } from "./classroomChatMedia";
 import {
   ClassroomParticipantModerationMenu,
   type ClassroomModerationControlsModel,
+  type ClassroomParticipantCodeGrantAction,
 } from "./ClassroomModerationControls";
 import {
   fnv1aHash,
@@ -91,6 +111,8 @@ export function ClassroomPeoplePanel({
     Readonly<Partial<Record<PeopleGroupID, boolean>>>
   >({});
   const slowSync = useDelayedFlag(Boolean(signals?.refreshing), SLOW_SYNC_MS);
+  // ROOM-TOOLS-CODE-02B: temporary shared-Code edit grants (room context).
+  const codeGrants = useContext(ClassroomCodeEditorGrantsContext);
 
   const normalizedQuery = normalizeEmojiSearch(query);
   const filterActive = normalizedQuery !== "";
@@ -194,6 +216,28 @@ export function ClassroomPeoplePanel({
         </p>
       ) : null}
 
+      {codeGrants?.error ? (
+        <div className="media-p406-people__code-alert" role="alert">
+          <span>
+            {t(
+              codeGrants.error === "limit"
+                ? "media.people.code.limitError"
+                : "media.people.code.failed",
+              { max: codeGrants.maxEditors },
+            )}
+          </span>
+          <IconButton
+            className="media-p406-people__code-alert-dismiss"
+            label={t("media.room.dismiss")}
+            onClick={codeGrants.onDismissError}
+            size="sm"
+            variant="quiet"
+          >
+            <X />
+          </IconButton>
+        </div>
+      ) : null}
+
       <div className="media-p406-people__body">
         {lobby && (
           <div className="media-p406-roster-lobby">
@@ -206,6 +250,7 @@ export function ClassroomPeoplePanel({
         {signals && (
           <PeopleInClass
             baseID={baseID}
+            codeGrants={codeGrants}
             collapsed={collapsed}
             handByKey={handByKey}
             mediaStates={mediaStates}
@@ -266,6 +311,7 @@ export function ClassroomPeoplePanel({
 
 function PeopleInClass({
   baseID,
+  codeGrants,
   collapsed,
   handByKey,
   mediaStates,
@@ -277,6 +323,7 @@ function PeopleInClass({
   visibleGroups,
 }: {
   readonly baseID: string;
+  readonly codeGrants: ClassroomCodeEditorGrantsModel | null;
   readonly collapsed: Readonly<Partial<Record<PeopleGroupID, boolean>>>;
   readonly handByKey: ReadonlyMap<string, ClassroomRaisedHandProjection>;
   readonly mediaStates?: ReadonlyMap<string, ClassroomPeopleMediaState>;
@@ -334,6 +381,12 @@ function PeopleInClass({
     );
   } else {
     const canModerateHands = projection.viewer_operations.can_moderate_hands;
+    const codeGrantTarget = (person: ClassroomRosterParticipant) =>
+      codeGrants?.canManage === true &&
+      person.instance_role === "attendee" &&
+      person.connection_state === "connected" &&
+      person.participant_key !== projection.self_participant_key;
+    const codeGrantRows = projection.roster.some(codeGrantTarget);
     // Every row reserves the same action width, so status icons line up in
     // one column whether or not a row shows a lower-hand key.
     const actionSlots =
@@ -343,7 +396,8 @@ function PeopleInClass({
       )
         ? 1
         : 0) +
-      (moderation?.participantOperations.some(
+      (codeGrantRows ||
+      moderation?.participantOperations.some(
         (operations) =>
           operations.canPromoteCoHost ||
           operations.canDemoteCoHost ||
@@ -403,6 +457,17 @@ function PeopleInClass({
                 <PeopleRow
                   actionSlots={actionSlots}
                   canModerateHands={canModerateHands}
+                  codeEditing={
+                    person.instance_role === "attendee" &&
+                    codeGrants?.activeParticipantKeys.has(
+                      person.participant_key,
+                    ) === true
+                  }
+                  codeGrant={
+                    codeGrants && codeGrantTarget(person)
+                      ? codeGrantAction(codeGrants, person.participant_key)
+                      : undefined
+                  }
                   hand={handByKey.get(person.participant_key)}
                   isSelf={
                     person.participant_key === projection.self_participant_key
@@ -433,9 +498,27 @@ function PeopleInClass({
   );
 }
 
+function codeGrantAction(
+  grants: ClassroomCodeEditorGrantsModel,
+  participantKey: string,
+): ClassroomParticipantCodeGrantAction {
+  const granted = grants.activeParticipantKeys.has(participantKey);
+  return {
+    granted,
+    limitReached:
+      !granted && grants.activeParticipantKeys.size >= grants.maxEditors,
+    maxEditors: grants.maxEditors,
+    pending: grants.pendingParticipantKey === participantKey,
+    onGrant: () => grants.onGrant(participantKey),
+    onRevoke: () => grants.onRevoke(participantKey),
+  };
+}
+
 function PeopleRow({
   actionSlots,
   canModerateHands,
+  codeEditing,
+  codeGrant,
   hand,
   isSelf,
   media,
@@ -448,6 +531,8 @@ function PeopleRow({
 }: {
   readonly actionSlots: number;
   readonly canModerateHands: boolean;
+  readonly codeEditing: boolean;
+  readonly codeGrant?: ClassroomParticipantCodeGrantAction;
   readonly hand?: ClassroomRaisedHandProjection;
   readonly isSelf: boolean;
   readonly media?: ClassroomPeopleMediaState;
@@ -509,6 +594,16 @@ function PeopleRow({
         )}
       </span>
       <span className="media-p406-people-row__status">
+        {codeEditing && (
+          <span
+            aria-label={t("media.people.code.editing")}
+            className="media-p406-people-code-grant"
+            data-people-tip={t("media.people.code.editing")}
+            role="img"
+          >
+            <Pencil aria-hidden="true" />
+          </span>
+        )}
         {hand && (
           <span
             className="media-p406-people-hand"
@@ -564,8 +659,9 @@ function PeopleRow({
               <Hand />
             </IconButton>
           )}
-          {moderation && (
+          {(moderation || codeGrant) && (
             <ClassroomParticipantModerationMenu
+              codeGrant={codeGrant}
               controls={moderation}
               disabled={moderationDisabled}
               displayName={name}

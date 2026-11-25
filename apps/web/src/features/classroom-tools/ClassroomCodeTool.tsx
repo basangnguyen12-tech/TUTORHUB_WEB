@@ -11,6 +11,7 @@ import {
 import { useI18n } from "../../app/i18n";
 import { ClassroomHeaderSlotContext } from "../media/ClassroomMediaShell";
 import { CHAT_MAX_MESSAGE_CHARACTERS } from "../media/classroomChatMedia";
+import type { CodePresenceRoster } from "./codePresence";
 import type { ClassroomCodeSession } from "./codeSession";
 import { ClassroomToolActionsContext } from "./toolActions";
 
@@ -24,6 +25,19 @@ export interface ClassroomCodeToolProps {
   readonly actorID: string;
   /** Whether the viewer may post in room chat right now (ADR-0042). */
   readonly chatCanPost: boolean;
+  /**
+   * ROOM-TOOLS-CODE-02B: the server roster (participant keys, sequences and
+   * names) used to colour shared-workspace cursors with the 8-tone palette.
+   */
+  readonly codeRoster?: CodePresenceRoster | null;
+  /**
+   * `classroom_code_tool` and `classroom_code_collaboration` are both on:
+   * the tool offers "Chung lớp" beside "Nháp của tôi". Off (the default)
+   * keeps the Slice 1 personal workspace exactly.
+   */
+  readonly collaborationEnabled?: boolean;
+  /** Fallback presence name when the roster has no entry for the viewer. */
+  readonly displayName?: string;
   /**
    * Server-projected `classroom_code_tool` (ROOM-TOOLS-CODE-02A). `undefined`
    * while tenant capabilities load; `false` renders the feature-off state.

@@ -33,6 +33,12 @@ import {
   useMediaSpaceRoomChat,
 } from "../components/MediaSpaceChatPanel";
 import { ClassroomCodeTool } from "../features/classroom-tools/ClassroomCodeTool";
+import {
+  ClassroomCodeEditorGrantsContext,
+  type ClassroomCodeEditorGrantError,
+  type ClassroomCodeEditorGrantsModel,
+} from "../features/classroom-tools/codeEditorGrantsContext";
+import type { CodePresenceRoster } from "../features/classroom-tools/codePresence";
 import { createClassroomCodeSession } from "../features/classroom-tools/codeSession";
 import { ClassroomWhiteboardTool } from "../features/collaboration/ClassroomWhiteboardTool";
 import {
@@ -49,12 +55,22 @@ import {
   type ClassroomReactionType,
 } from "../features/media/classroomSignals";
 
+import {
+  CODE_WORKSPACE_MAX_EDITORS,
+  isCodeWorkspaceEditorLimitError,
+  useCodeWorkspaceTool,
+  useDeleteCodeWorkspaceEditorGrant,
+  usePutCodeWorkspaceEditorGrant,
+} from "../app/codeWorkspaces";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { useWhiteboardTool } from "../app/whiteboards";
 import "./ClassroomRoomStage.css";
 
 /** How often a connected room re-reads the whiteboard projection. */
 const whiteboardPollIntervalMs = 4_000;
+/** ROOM-TOOLS-CODE-02B: the shared code workspace projection poll. */
+const codeWorkspacePollIntervalMs = 4_000;
+const NO_EDITOR_GRANTS: readonly { readonly participant_key: string }[] = [];
 
 export function MediaSpaceRoomPage() {
   const { spaceId, roomInstanceId } = useParams();
@@ -65,6 +81,7 @@ export function MediaSpaceRoomPage() {
 
   return (
     <MediaSpaceRoomSession
+      displayName={session.currentUser?.user.display_name ?? ""}
       key={scopeKey}
       roomInstanceId={roomInstanceId}
       spaceId={spaceId}
@@ -76,12 +93,14 @@ export function MediaSpaceRoomPage() {
 }
 
 function MediaSpaceRoomSession({
+  displayName,
   roomInstanceId,
   spaceId,
   tenantId,
   userId,
   workspaceName,
 }: {
+  displayName: string;
   roomInstanceId: string | undefined;
   spaceId: string | undefined;
   tenantId: string;
@@ -116,6 +135,11 @@ function MediaSpaceRoomSession({
     : tenantCapabilities.isError
       ? false
       : undefined;
+  // ROOM-TOOLS-CODE-02B: the shared "Chung lớp" mode needs both switches.
+  const codeCollaborationEnabled =
+    codeToolEnabled === true &&
+    tenantCapabilities.data?.features.classroom_code_collaboration.enabled ===
+      true;
   const [handoff, setHandoff] = useState(() => {
     if (!spaceId || !roomInstanceId || !tenantId || !userId) {
       clearMediaRoomEscrow();
@@ -199,6 +223,107 @@ function MediaSpaceRoomSession({
     whiteboardDocument.viewer_capabilities.can_exchange_grant
       ? `${whiteboardDocument.id}:${whiteboardDocument.current_generation}`
       : null;
+  // ROOM-TOOLS-CODE-02B: like the whiteboard, an open shared code workspace
+  // brings the Code tool onto every stage once per workspace generation; the
+  // tool reuses this cache entry.
+  const codeWorkspaceTool = useCodeWorkspaceTool(
+    tenantId,
+    spaceId ?? "",
+    codeCollaborationEnabled && signalScopeReady && roomLive,
+    { pollIntervalMs: codeWorkspacePollIntervalMs },
+  );
+  const codeProjection =
+    codeCollaborationEnabled && codeWorkspaceTool.isSuccess
+      ? codeWorkspaceTool.data
+      : undefined;
+  const codeWorkspace = codeProjection?.workspace ?? null;
+  const codeAutoOpenKey =
+    codeWorkspace?.status === "open" &&
+    codeWorkspace.viewer_capabilities.can_exchange_grant
+      ? `${codeWorkspace.id}:${codeWorkspace.current_generation}`
+      : null;
+  const signalSnapshot = signalQuery.data;
+  const codeRoster = useMemo<CodePresenceRoster | null>(
+    () =>
+      signalSnapshot
+        ? {
+            participants: signalSnapshot.participants,
+            roomInstanceID: signalSnapshot.room_instance_id,
+            selfParticipantKey: signalSnapshot.self_participant_key,
+          }
+        : null,
+    [signalSnapshot],
+  );
+  const putEditorGrant = usePutCodeWorkspaceEditorGrant(
+    tenantId,
+    spaceId ?? "",
+  );
+  const deleteEditorGrant = useDeleteCodeWorkspaceEditorGrant(
+    tenantId,
+    spaceId ?? "",
+  );
+  const { mutate: grantEditor } = putEditorGrant;
+  const { mutate: revokeEditor } = deleteEditorGrant;
+  const [codeGrantError, setCodeGrantError] =
+    useState<ClassroomCodeEditorGrantError | null>(null);
+  const [pendingGrantKey, setPendingGrantKey] = useState<string | null>(null);
+  const codeWorkspaceID = codeWorkspace?.id ?? null;
+  const codeGrantsManageable =
+    codeWorkspace?.status === "open" &&
+    codeWorkspace.viewer_capabilities.can_manage_editor_grants;
+  const activeEditorGrants =
+    codeProjection?.active_editor_grants ?? NO_EDITOR_GRANTS;
+  const codeEditorGrants = useMemo<ClassroomCodeEditorGrantsModel | null>(
+    () =>
+      codeWorkspaceID === null
+        ? null
+        : {
+            activeParticipantKeys: new Set(
+              activeEditorGrants.map((grant) => grant.participant_key),
+            ),
+            canManage: codeGrantsManageable,
+            error: codeGrantError,
+            maxEditors: CODE_WORKSPACE_MAX_EDITORS,
+            pendingParticipantKey: pendingGrantKey,
+            onDismissError: () => setCodeGrantError(null),
+            onGrant: (participantKey) => {
+              setCodeGrantError(null);
+              setPendingGrantKey(participantKey);
+              grantEditor(
+                { participantKey, workspaceID: codeWorkspaceID },
+                {
+                  onError: (error) =>
+                    setCodeGrantError(
+                      isCodeWorkspaceEditorLimitError(error)
+                        ? "limit"
+                        : "failed",
+                    ),
+                  onSettled: () => setPendingGrantKey(null),
+                },
+              );
+            },
+            onRevoke: (participantKey) => {
+              setCodeGrantError(null);
+              setPendingGrantKey(participantKey);
+              revokeEditor(
+                { participantKey, workspaceID: codeWorkspaceID },
+                {
+                  onError: () => setCodeGrantError("failed"),
+                  onSettled: () => setPendingGrantKey(null),
+                },
+              );
+            },
+          },
+    [
+      activeEditorGrants,
+      codeGrantError,
+      codeGrantsManageable,
+      codeWorkspaceID,
+      grantEditor,
+      pendingGrantKey,
+      revokeEditor,
+    ],
+  );
   const signalMutation = useMutateMediaSignal(
     tenantId,
     spaceId ?? "",
@@ -537,10 +662,14 @@ function MediaSpaceRoomSession({
         title: t("whiteboard.title"),
       },
       {
+        autoOpenKey: codeAutoOpenKey,
         content: (
           <ClassroomCodeTool
             actorID={userId}
             chatCanPost={chatCanPost}
+            codeRoster={codeRoster}
+            collaborationEnabled={codeCollaborationEnabled}
+            displayName={displayName}
             enabled={codeToolEnabled}
             mediaSpaceID={spaceId}
             onSendToChat={sendCodeToChat}
@@ -563,7 +692,14 @@ function MediaSpaceRoomSession({
         LiveKit room subtree keeps a stable position and never reconnects.
       */}
       <MediaLobbyWaitingCountProvider {...lobbyScope}>
-        <ClassroomLiveKitRoom {...roomProps} />
+        {/*
+          ROOM-TOOLS-CODE-02B: always rendered (value may be null) so the
+          LiveKit room keeps its position; the People panel reads the Code
+          edit grants from here.
+        */}
+        <ClassroomCodeEditorGrantsContext value={codeEditorGrants}>
+          <ClassroomLiveKitRoom {...roomProps} />
+        </ClassroomCodeEditorGrantsContext>
       </MediaLobbyWaitingCountProvider>
       {roomError && (
         <section className="media-p403-alert" role="alert">

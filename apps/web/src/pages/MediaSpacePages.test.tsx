@@ -14,6 +14,7 @@ import {
 import {
   APIRequestError,
   type CurrentUser,
+  type CodeWorkspaceProjection,
   type MediaSpace,
   type WhiteboardToolProjection,
 } from "@tutorhub/api-client";
@@ -53,6 +54,7 @@ const apiMocks = vi.hoisted(() => ({
   mutateSignal: vi.fn(),
   recordDiagnostic: vi.fn(),
   recoverMediaSpace: vi.fn(),
+  resolveCodeWorkspace: vi.fn(),
   resolveWhiteboard: vi.fn(),
   rotateCSRFToken: vi.fn(),
   updateProfile: vi.fn(),
@@ -74,6 +76,7 @@ const liveKitMocks = vi.hoisted(() => {
     },
   );
   return {
+    codeGrantsRender: vi.fn(),
     listeners: new Map<string, Set<(...args: unknown[]) => void>>(),
     roomConnect: vi.fn().mockResolvedValue(undefined),
     roomConstruct: vi.fn(),
@@ -139,6 +142,7 @@ vi.mock("@tutorhub/api-client", async (importOriginal) => {
     mutateMediaSpaceSignal: apiMocks.mutateSignal,
     recordMediaSpaceDiagnostic: apiMocks.recordDiagnostic,
     recoverMediaSpace: apiMocks.recoverMediaSpace,
+    resolveCodeWorkspace: apiMocks.resolveCodeWorkspace,
     resolveWhiteboard: apiMocks.resolveWhiteboard,
     rotateCSRFToken: apiMocks.rotateCSRFToken,
     updateProfile: apiMocks.updateProfile,
@@ -157,28 +161,38 @@ vi.mock("@livekit/components-react", () => ({
   setLogLevel: liveKitMocks.setComponentsLogLevel,
 }));
 
-vi.mock("../features/media/ClassroomMediaShell", () => ({
-  ClassroomMediaShell: (props: {
-    controlAbortSignal?: AbortSignal;
-    onLeave: () => void;
-    onTerminalMediaCleanup: () => Promise<void>;
-    tools?: Array<{
-      autoOpenKey?: string | null;
-      content?: { props?: { enabled?: boolean } };
-      id: string;
-    }>;
-  }) => {
-    liveKitMocks.shellRender(props);
-    return (
-      <section>
-        <h1>TutorHub classroom</h1>
-        <button onClick={props.onLeave} type="button">
-          Mock leave room
-        </button>
-      </section>
-    );
-  },
-}));
+vi.mock("../features/media/ClassroomMediaShell", async () => {
+  const { useContext } = await import("react");
+  const { ClassroomCodeEditorGrantsContext } =
+    await import("../features/classroom-tools/codeEditorGrantsContext");
+  return {
+    ClassroomMediaShell: (props: {
+      controlAbortSignal?: AbortSignal;
+      onLeave: () => void;
+      onTerminalMediaCleanup: () => Promise<void>;
+      tools?: Array<{
+        autoOpenKey?: string | null;
+        content?: { props?: { enabled?: boolean } };
+        id: string;
+      }>;
+    }) => {
+      liveKitMocks.shellRender(props);
+      // ROOM-TOOLS-CODE-02B: the room provides Code edit grants around the
+      // LiveKit room (read by the People panel inside the shell).
+      liveKitMocks.codeGrantsRender(
+        useContext(ClassroomCodeEditorGrantsContext),
+      );
+      return (
+        <section>
+          <h1>TutorHub classroom</h1>
+          <button onClick={props.onLeave} type="button">
+            Mock leave room
+          </button>
+        </section>
+      );
+    },
+  };
+});
 
 vi.mock("livekit-client", () => ({
   DisconnectReason: {
@@ -622,6 +636,94 @@ function whiteboardProjection(
   };
 }
 
+const codeWorkspaceID = "5b0c6f0e-3d7a-4c38-9f15-2a7f9a3d1c11";
+
+function tenantCapabilitiesWithCodeCollaboration(
+  codeTool: boolean,
+  collaboration: boolean,
+) {
+  const capabilities = tenantCapabilitiesWithCodeTool(codeTool);
+  return {
+    ...capabilities,
+    features: {
+      ...capabilities.features,
+      classroom_code_collaboration: {
+        configured_enabled: collaboration,
+        enabled: collaboration,
+      },
+    },
+  };
+}
+
+function codeWorkspaceProjection(
+  overrides: {
+    canExchangeGrant?: boolean;
+    status?: "created" | "open" | "suspended" | "closed";
+  } = {},
+): CodeWorkspaceProjection {
+  return {
+    active_editor_grants: [
+      {
+        expires_at: "2030-08-03T00:10:00Z",
+        participant_key: participantOpaqueID,
+      },
+    ],
+    can_create: false,
+    workspace: {
+      created_at: "2030-08-03T00:00:00Z",
+      current_generation: 4,
+      id: codeWorkspaceID,
+      media_space_id: spaceID,
+      revoke_generation: 2,
+      status: overrides.status ?? "open",
+      updated_at: "2030-08-03T00:02:00Z",
+      version: 6,
+      viewer_capabilities: {
+        can_close: false,
+        can_exchange_grant: overrides.canExchangeGrant ?? true,
+        can_manage_editor_grants: false,
+        can_open: false,
+        can_resume: false,
+        can_suspend: false,
+        capability: "view",
+      },
+    },
+  };
+}
+
+function renderedCodeTool():
+  | {
+      autoOpenKey?: string | null;
+      props?: {
+        codeRoster?: unknown;
+        collaborationEnabled?: boolean;
+        displayName?: string;
+        enabled?: boolean;
+      };
+    }
+  | undefined {
+  const shellProps = liveKitMocks.shellRender.mock.lastCall?.[0] as
+    | {
+        tools?: Array<{
+          autoOpenKey?: string | null;
+          content?: {
+            props?: {
+              codeRoster?: unknown;
+              collaborationEnabled?: boolean;
+              displayName?: string;
+              enabled?: boolean;
+            };
+          };
+          id: string;
+        }>;
+      }
+    | undefined;
+  const tool = shellProps?.tools?.find((candidate) => candidate.id === "code");
+  return tool
+    ? { autoOpenKey: tool.autoOpenKey, props: tool.content?.props }
+    : undefined;
+}
+
 function putCanonicalRoomEscrow(
   choices: {
     audioEnabled: boolean;
@@ -732,9 +834,11 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     apiMocks.mutateSignal.mockReset();
     apiMocks.recordDiagnostic.mockReset();
     apiMocks.recoverMediaSpace.mockReset();
+    apiMocks.resolveCodeWorkspace.mockReset();
     apiMocks.resolveWhiteboard.mockReset();
     apiMocks.rotateCSRFToken.mockReset();
     apiMocks.updateProfile.mockReset();
+    liveKitMocks.codeGrantsRender.mockReset();
     liveKitMocks.listeners.clear();
     liveKitMocks.roomConnect.mockReset().mockResolvedValue(undefined);
     liveKitMocks.roomConstruct.mockClear();
@@ -962,6 +1066,138 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     await waitFor(() =>
       expect(renderedWhiteboardAutoOpenKey()).toBe(`${whiteboardDocumentID}:3`),
     );
+  });
+
+  it("turns on shared Code and auto-opens it only with both switches and an open, exchangeable workspace (ROOM-TOOLS-CODE-02B)", async () => {
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithCodeCollaboration(true, true),
+    );
+    apiMocks.resolveWhiteboard.mockResolvedValue(
+      whiteboardProjection({ status: "suspended" }),
+    );
+    apiMocks.resolveCodeWorkspace.mockResolvedValue(codeWorkspaceProjection());
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    await waitFor(() =>
+      expect(renderedCodeTool()?.props?.collaborationEnabled).toBe(true),
+    );
+    // Read only once the LiveKit room is connected.
+    expect(apiMocks.resolveCodeWorkspace).not.toHaveBeenCalled();
+    expect(renderedCodeTool()?.autoOpenKey).toBeNull();
+    expect(liveKitMocks.codeGrantsRender).toHaveBeenLastCalledWith(null);
+
+    act(() => emitRoomEvent("connected"));
+
+    await waitFor(() =>
+      expect(renderedCodeTool()?.autoOpenKey).toBe(`${codeWorkspaceID}:4`),
+    );
+    expect(apiMocks.resolveCodeWorkspace).toHaveBeenCalledWith(
+      tenantID,
+      spaceID,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    const code = renderedCodeTool()?.props;
+    expect(code).toMatchObject({
+      collaborationEnabled: true,
+      displayName: "Student One",
+      enabled: true,
+    });
+    await waitFor(() =>
+      expect(renderedCodeTool()?.props?.codeRoster).toEqual({
+        participants: [
+          expect.objectContaining({
+            display_name: "Student One",
+            participant_key: participantOpaqueID,
+          }),
+        ],
+        roomInstanceID,
+        selfParticipantKey: participantOpaqueID,
+      }),
+    );
+    // The People panel reads the grants from the room context; a viewer
+    // without can_manage_editor_grants only sees who is editing.
+    const grants = liveKitMocks.codeGrantsRender.mock.lastCall?.[0] as
+      | {
+          activeParticipantKeys: ReadonlySet<string>;
+          canManage: boolean;
+          maxEditors: number;
+        }
+      | null
+      | undefined;
+    expect(grants?.canManage).toBe(false);
+    expect(grants?.maxEditors).toBe(3);
+    expect([...(grants?.activeParticipantKeys ?? [])]).toEqual([
+      participantOpaqueID,
+    ]);
+  });
+
+  it.each([
+    { code: true, collaboration: false, label: "the collaboration switch off" },
+    { code: false, collaboration: true, label: "the Code tool switch off" },
+  ])(
+    "keeps the personal Code tool and never polls the workspace with $label",
+    async ({ code, collaboration }) => {
+      apiMocks.getTenantCapabilities.mockResolvedValue(
+        tenantCapabilitiesWithCodeCollaboration(code, collaboration),
+      );
+      apiMocks.resolveWhiteboard.mockResolvedValue(whiteboardProjection());
+      apiMocks.resolveCodeWorkspace.mockResolvedValue(
+        codeWorkspaceProjection(),
+      );
+      putCanonicalRoomEscrow();
+      renderCanonicalRoom();
+
+      await screen.findByRole("heading", { name: "TutorHub classroom" });
+      await waitFor(() => expect(renderedCodeToolEnabled()).toBe(code));
+      act(() => emitRoomEvent("connected"));
+      await waitFor(() =>
+        expect(renderedWhiteboardAutoOpenKey()).toBe(
+          `${whiteboardDocumentID}:3`,
+        ),
+      );
+      expect(apiMocks.resolveCodeWorkspace).not.toHaveBeenCalled();
+      expect(renderedCodeTool()?.props?.collaborationEnabled).toBe(false);
+      expect(renderedCodeTool()?.autoOpenKey).toBeNull();
+      expect(liveKitMocks.codeGrantsRender).toHaveBeenLastCalledWith(null);
+    },
+  );
+
+  it.each([
+    {
+      label: "a workspace that is not open",
+      overrides: { status: "suspended" as const },
+    },
+    {
+      label: "a workspace without a grant exchange",
+      overrides: { canExchangeGrant: false },
+    },
+  ])("keeps the Code stage closed for $label", async ({ overrides }) => {
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithCodeCollaboration(true, true),
+    );
+    apiMocks.resolveWhiteboard.mockResolvedValue(
+      whiteboardProjection({ status: "suspended" }),
+    );
+    apiMocks.resolveCodeWorkspace.mockResolvedValue(
+      codeWorkspaceProjection(overrides),
+    );
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    await waitFor(() =>
+      expect(renderedCodeTool()?.props?.collaborationEnabled).toBe(true),
+    );
+
+    act(() => emitRoomEvent("connected"));
+
+    await waitFor(() =>
+      expect(apiMocks.resolveCodeWorkspace).toHaveBeenCalledTimes(1),
+    );
+    await act(async () => Promise.resolve());
+    expect(renderedCodeTool()?.autoOpenKey).toBeNull();
+    expect(renderedCodeTool()?.props?.collaborationEnabled).toBe(true);
   });
 
   it("renders the Enter Meeting studio with only the reference surfaces", async () => {

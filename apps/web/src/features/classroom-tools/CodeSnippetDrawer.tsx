@@ -35,11 +35,14 @@ function loadSnippets(): Promise<SnippetModule> {
  */
 export function CodeSnippetDrawer({
   canInsertIntoCurrent,
+  canInsertNew = true,
   onClose,
   onInsertCurrent,
   onInsertNew,
 }: {
   canInsertIntoCurrent: boolean;
+  /** `false` in a read-only shared workspace (ROOM-TOOLS-CODE-02B). */
+  canInsertNew?: boolean;
   onClose: () => void;
   onInsertCurrent: (snippet: CodeSnippet) => void;
   onInsertNew: (snippet: CodeSnippet) => void;
@@ -199,6 +202,7 @@ export function CodeSnippetDrawer({
                   <button
                     aria-describedby={titleID}
                     className="classroom-code-text-button"
+                    disabled={!canInsertNew}
                     onClick={() => onInsertNew(snippet)}
                     type="button"
                   >
