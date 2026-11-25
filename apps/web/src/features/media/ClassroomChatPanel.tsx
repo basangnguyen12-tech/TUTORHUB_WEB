@@ -22,6 +22,7 @@ import {
   Pencil,
   RotateCcw,
   SendHorizontal,
+  SquareCode,
   Trash2,
   X,
 } from "lucide-react";
@@ -41,6 +42,11 @@ import {
   type RefObject,
 } from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
+import { splitChatCodeBlocks } from "../classroom-tools/codeFence";
+import {
+  CODE_LANGUAGES,
+  type CodeFileLanguage,
+} from "../classroom-tools/codeLanguages";
 import { ClassroomEmojiPicker } from "./ClassroomEmojiPicker";
 import {
   CHAT_COUNTER_THRESHOLD,
@@ -60,10 +66,17 @@ import {
   linkifyChatText,
   prefetchClassroomEmojiCatalog,
   prepareChatImage,
+  subscribeClassroomChatComposer,
   type AttachmentObjectURLCache,
   type ClassroomChatComposerStore,
   type ClassroomChatStagedAttachment,
 } from "./classroomChatMedia";
+
+/** ROOM-TOOLS-CODE-01: a fenced block handed to the Code tool. */
+export interface ClassroomChatCodeBlock {
+  code: string;
+  language: CodeFileLanguage | null;
+}
 
 export type {
   ClassroomChatComposerStore,
@@ -112,6 +125,11 @@ export interface ClassroomChatPanelProps {
   onSend: (input: ClassroomChatSendInput) => Promise<void>;
   onToggleParticipantChat: (enabled: boolean) => Promise<void>;
   onUpload: (input: ClassroomChatUploadInput) => Promise<MessageAttachment>;
+  /**
+   * ROOM-TOOLS-CODE-01: opens a code card's block as a new tab in the Code
+   * tool (never runs it). Without it, code cards only offer Copy.
+   */
+  onOpenInCode?: (block: ClassroomChatCodeBlock) => void;
   /** Test seam; defaults to the canvas EXIF-stripping re-encoder. */
   prepareImage?: typeof prepareChatImage;
 }
@@ -189,6 +207,7 @@ export function ClassroomChatPanel({
   onSend,
   onToggleParticipantChat,
   onUpload,
+  onOpenInCode,
   prepareImage = prepareChatImage,
 }: ClassroomChatPanelProps) {
   const { language, t } = useI18n();
@@ -379,6 +398,29 @@ export function ClassroomChatPanel({
     element.style.height = `${element.scrollHeight}px`;
   }, []);
   useLayoutEffect(resizeComposer, [draft, resizeComposer]);
+
+  // ROOM-TOOLS-CODE-01: the Code tool's "Send to chat" prefills the composer
+  // store. Pick the text up live (or on mount when the inspector was closed)
+  // and move focus to the composer so the person reviews it and presses Send.
+  useEffect(() => {
+    if (!composerStore) return undefined;
+    const focusComposer = () => {
+      if (!composerStore.focusRequested) return;
+      composerStore.focusRequested = false;
+      // After the inspector's own open auto-focus has run.
+      globalThis.setTimeout(() => {
+        const element = textareaRef.current;
+        if (!element) return;
+        element.focus();
+        element.setSelectionRange(element.value.length, element.value.length);
+      }, 0);
+    };
+    focusComposer();
+    return subscribeClassroomChatComposer(composerStore, () => {
+      setDraftState(composerStore.draft);
+      focusComposer();
+    });
+  }, [composerStore]);
 
   // ROOM-CHAT-EMOJI-02: after an emoji lands, park the caret right after it
   // (without stealing focus from the picker) so the next pick follows it.
@@ -692,6 +734,23 @@ export function ClassroomChatPanel({
     }
   };
 
+  const copyCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setAnnouncement(t("media.chat.codeCopied"));
+    } catch {
+      setAnnouncement(t("media.chat.copyFailed"));
+    }
+  };
+
+  // Received code never runs: it only becomes a new tab in the Code tool.
+  const openInCode = onOpenInCode
+    ? (block: ClassroomChatCodeBlock) => {
+        onOpenInCode(block);
+        setAnnouncement(t("media.chat.codeOpened"));
+      }
+    : undefined;
+
   const objectURLFor = useCallback(
     (attachment: MessageAttachment) =>
       cache
@@ -964,12 +1023,12 @@ export function ClassroomChatPanel({
                           </div>
                         ) : (
                           active.content && (
-                            <div
-                              className="classroom-chat__bubble"
-                              data-jumbo={jumbo || undefined}
-                            >
-                              <ChatText text={active.content} />
-                            </div>
+                            <ChatBubble
+                              jumbo={jumbo}
+                              onCopyCode={(code) => void copyCode(code)}
+                              onOpenInCode={openInCode}
+                              text={active.content}
+                            />
                           )
                         )}
                         {active !== null && attachments.length > 0 && (
@@ -1291,6 +1350,113 @@ export function ClassroomChatPanel({
         )}
       </Dialog>
     </section>
+  );
+}
+
+/**
+ * ROOM-TOOLS-CODE-01: a message bubble. Fenced ```lang blocks become
+ * read-only code cards; every piece is a React text node (never HTML).
+ */
+function ChatBubble({
+  jumbo,
+  onCopyCode,
+  onOpenInCode,
+  text,
+}: {
+  jumbo: boolean;
+  onCopyCode: (code: string) => void;
+  onOpenInCode: ((block: ClassroomChatCodeBlock) => void) | undefined;
+  text: string;
+}) {
+  const pieces = useMemo(() => splitChatCodeBlocks(text), [text]);
+  const hasCode = pieces.some((piece) => piece.kind === "code");
+  return (
+    <div
+      className="classroom-chat__bubble"
+      data-has-code={hasCode || undefined}
+      data-jumbo={(jumbo && !hasCode) || undefined}
+    >
+      {hasCode ? (
+        pieces.map((piece, index) =>
+          piece.kind === "code" ? (
+            <ChatCodeCard
+              code={piece.code}
+              key={`code-${index}`}
+              language={piece.language}
+              onCopy={onCopyCode}
+              onOpenInCode={onOpenInCode}
+              tag={piece.tag}
+            />
+          ) : (
+            <p className="classroom-chat__text-piece" key={`text-${index}`}>
+              <ChatText text={piece.text} />
+            </p>
+          ),
+        )
+      ) : (
+        <ChatText text={text} />
+      )}
+    </div>
+  );
+}
+
+function ChatCodeCard({
+  code,
+  language,
+  onCopy,
+  onOpenInCode,
+  tag,
+}: {
+  code: string;
+  language: CodeFileLanguage | null;
+  onCopy: (code: string) => void;
+  onOpenInCode: ((block: ClassroomChatCodeBlock) => void) | undefined;
+  tag: string;
+}) {
+  const { t } = useI18n();
+  const labelID = useId();
+  const languageLabel = language
+    ? CODE_LANGUAGES[language].label
+    : tag.trim() || t("media.chat.codeUnknownLanguage");
+  return (
+    <figure aria-labelledby={labelID} className="classroom-chat__code">
+      <figcaption className="classroom-chat__code-header">
+        <span className="classroom-chat__code-language">
+          <SquareCode aria-hidden="true" />
+          <span aria-hidden="true">{languageLabel}</span>
+          <span className="classroom-chat__sr" id={labelID}>
+            {t("media.chat.codeCardLabel", { language: languageLabel })}
+          </span>
+        </span>
+        <span className="classroom-chat__code-actions">
+          <button
+            aria-label={t("media.chat.codeCopy")}
+            className="classroom-chat__code-action"
+            data-tooltip={t("media.chat.codeCopy")}
+            onClick={() => onCopy(code)}
+            type="button"
+          >
+            <Copy aria-hidden="true" />
+          </button>
+          {onOpenInCode && (
+            <button
+              className="classroom-chat__code-action classroom-chat__code-action--open"
+              onClick={() => onOpenInCode({ code, language })}
+              type="button"
+            >
+              {t("media.chat.codeOpen")}
+            </button>
+          )}
+        </span>
+      </figcaption>
+      <pre
+        aria-labelledby={labelID}
+        className="classroom-chat__code-body"
+        tabIndex={0}
+      >
+        <code>{code}</code>
+      </pre>
+    </figure>
   );
 }
 

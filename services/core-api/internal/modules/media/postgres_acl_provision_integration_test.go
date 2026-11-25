@@ -539,7 +539,7 @@ func p402MediaACLExpectations() []mediaACLExpectation {
 		{
 			relation: "tutorhub.media_reaction_events",
 			selectColumns: []string{
-				"accepted_at", "expires_at", "reaction", "room_instance_id", "signal_sequence",
+				"accepted_at", "expires_at", "participant_session_id", "reaction", "room_instance_id", "signal_sequence",
 				"space_id", "tenant_id",
 			},
 			insertColumns: []string{

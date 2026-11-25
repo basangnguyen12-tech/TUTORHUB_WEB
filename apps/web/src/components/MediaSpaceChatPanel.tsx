@@ -15,7 +15,14 @@ import {
   SkeletonGroup,
 } from "@tutorhub/ui";
 import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   fetchConversationAttachmentBlob,
   useConversation,
@@ -30,8 +37,11 @@ import {
 } from "../app/conversations";
 import { useI18n } from "../app/i18n";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
+import type { ClassroomCodeSession } from "../features/classroom-tools/codeSession";
+import { ClassroomToolActionsContext } from "../features/classroom-tools/toolActions";
 import {
   ClassroomChatPanel,
+  type ClassroomChatCodeBlock,
   type ClassroomChatSendInput,
   type ClassroomChatUploadInput,
 } from "../features/media/ClassroomChatPanel";
@@ -346,8 +356,24 @@ export function useMediaSpaceRoomChat({
   };
 }
 
-export function MediaSpaceChatPanel({ chat }: { chat: MediaSpaceRoomChat }) {
+export function MediaSpaceChatPanel({
+  chat,
+  codeSession,
+}: {
+  chat: MediaSpaceRoomChat;
+  /** ROOM-TOOLS-CODE-01: where "Open in Code" queues a chat code block. */
+  codeSession?: ClassroomCodeSession;
+}) {
   const { t } = useI18n();
+  const toolActions = useContext(ClassroomToolActionsContext);
+  const openInCode = useMemo(() => {
+    if (!codeSession || !toolActions?.hasTool("code")) return undefined;
+    return (block: ClassroomChatCodeBlock) => {
+      // Queued first, so a Code tool that mounts now picks it up; never run.
+      codeSession.push({ code: block.code, language: block.language });
+      toolActions.openTool("code");
+    };
+  }, [codeSession, toolActions]);
 
   if (chat.status === "disabled") {
     return (
@@ -424,6 +450,7 @@ export function MediaSpaceChatPanel({ chat }: { chat: MediaSpaceRoomChat }) {
       onDelete={chat.onDelete}
       onEdit={chat.onEdit}
       onLoadOlder={chat.loadOlder}
+      onOpenInCode={openInCode}
       onSend={chat.onSend}
       onToggleParticipantChat={chat.onToggleParticipantChat}
       onUpload={chat.onUpload}

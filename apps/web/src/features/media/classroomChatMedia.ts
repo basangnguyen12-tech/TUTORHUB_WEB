@@ -750,10 +750,17 @@ export interface ClassroomChatStagedAttachment {
 export interface ClassroomChatComposerStore {
   draft: string;
   staged: ClassroomChatStagedAttachment[];
+  /**
+   * ROOM-TOOLS-CODE-01: set by `prefillClassroomChatComposer` so the panel
+   * focuses its composer when it next mounts (the inspector was closed) or
+   * as soon as it is notified (already open).
+   */
+  focusRequested?: boolean;
+  listeners?: Set<() => void>;
 }
 
 export function createClassroomChatComposerStore(): ClassroomChatComposerStore {
-  return { draft: "", staged: [] };
+  return { draft: "", listeners: new Set(), staged: [] };
 }
 
 export function disposeClassroomChatComposerStore(
@@ -764,4 +771,31 @@ export function disposeClassroomChatComposerStore(
   }
   store.staged = [];
   store.draft = "";
+  store.focusRequested = false;
+  store.listeners?.clear();
+}
+
+/**
+ * ROOM-TOOLS-CODE-01 "Send to chat": replaces the composer draft with text
+ * (for example a fenced code block) and asks the panel to focus it. Nothing
+ * is sent: the person still presses Send, and a host who paused participant
+ * chat still blocks posting.
+ */
+export function prefillClassroomChatComposer(
+  store: ClassroomChatComposerStore,
+  text: string,
+) {
+  store.draft = text;
+  store.focusRequested = true;
+  for (const listener of store.listeners ?? []) listener();
+}
+
+export function subscribeClassroomChatComposer(
+  store: ClassroomChatComposerStore,
+  listener: () => void,
+): () => void {
+  store.listeners ??= new Set();
+  const listeners = store.listeners;
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

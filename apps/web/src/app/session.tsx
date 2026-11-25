@@ -139,11 +139,36 @@ export function clearChatEmojiRecentStorage(
   }
 }
 
+/**
+ * ROOM-TOOLS-CODE-01 (ADR-0043 §2, ADR-0029): the classroom Code tool keeps a
+ * bounded 8-hour draft in localStorage under
+ * `tutorhub:code-draft:v1:<tenant>:<actor>:<media space>`. The prefix is owned
+ * here so sign-out wipes every draft without loading the Code tool chunk.
+ */
+export const CODE_DRAFT_STORAGE_PREFIX = "tutorhub:code-draft:";
+
+export function clearCodeDraftStorage(
+  storage: Storage | null = defaultChatEmojiStorage(),
+) {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(CODE_DRAFT_STORAGE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // Storage may be blocked; drafts stay scoped per (tenant, actor, space).
+  }
+}
+
 export async function clearPrivateSessionCache(queryClient: QueryClient) {
   advancePrincipalGeneration(queryClient);
   clearClientDrafts();
   clearMediaRoomEscrow();
   clearChatEmojiRecentStorage();
+  clearCodeDraftStorage();
   // ADR-0041: personal backgrounds (IndexedDB) and the effect preference are
   // device-local and scoped per (tenant, user); none of it outlives sign-out.
   await Promise.all([
@@ -341,6 +366,15 @@ function RemoteSessionProvider({ children }: PropsWithChildren) {
       clearExpiredSessionCaches(queryClient);
     }
   }, [queryClient, sessionQuery.isError]);
+
+  // ROOM-TOOLS-CODE-01 (ADR-0043 §2): a lost session (/me 401) wipes Code
+  // drafts like sign-out does; transient failures (network, 503) keep them.
+  const sessionLost =
+    sessionQuery.error instanceof APIRequestError &&
+    sessionQuery.error.status === 401;
+  useEffect(() => {
+    if (sessionLost) clearCodeDraftStorage();
+  }, [sessionLost]);
 
   return (
     <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

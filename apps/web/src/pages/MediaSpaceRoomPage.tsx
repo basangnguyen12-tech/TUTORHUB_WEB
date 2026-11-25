@@ -4,7 +4,7 @@ import {
 } from "@tutorhub/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { DisconnectReason } from "livekit-client";
-import { PenTool } from "lucide-react";
+import { CodeXml, PenTool } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useI18n, type TranslationKey } from "../app/i18n";
@@ -32,6 +32,8 @@ import {
   MediaSpaceChatPanel,
   useMediaSpaceRoomChat,
 } from "../components/MediaSpaceChatPanel";
+import { ClassroomCodeTool } from "../features/classroom-tools/ClassroomCodeTool";
+import { createClassroomCodeSession } from "../features/classroom-tools/codeSession";
 import { ClassroomWhiteboardTool } from "../features/collaboration/ClassroomWhiteboardTool";
 import {
   ClassroomLiveKitRoom,
@@ -41,6 +43,7 @@ import type {
   ClassroomConnectionStatus,
   ClassroomSignalControls,
 } from "../features/media/ClassroomMediaShell";
+import { prefillClassroomChatComposer } from "../features/media/classroomChatMedia";
 import {
   projectClassroomSignalSnapshot,
   type ClassroomReactionType,
@@ -169,6 +172,17 @@ function MediaSpaceRoomSession({
     open: chatOpen,
     tenantID: tenantId,
   });
+  // ROOM-TOOLS-CODE-01: per-room-session Code tool memory (open files across
+  // Whiteboard ↔ Code switches, chat "Open in Code" queue). "Send to chat"
+  // only prefills the composer; the person still presses Send.
+  const [codeSession] = useState(createClassroomCodeSession);
+  const chatComposerStore = roomChat.composerStore;
+  const sendCodeToChat = useCallback(
+    (text: string) => prefillClassroomChatComposer(chatComposerStore, text),
+    [chatComposerStore],
+  );
+  const chatCanPost =
+    roomChat.conversation?.viewer_access.can_post_messages === true;
   const whiteboardDocument =
     whiteboardEnabled && whiteboardTool.isSuccess
       ? (whiteboardTool.data?.document ?? null)
@@ -483,7 +497,7 @@ function MediaSpaceRoomSession({
 
   const roomProps: ClassroomLiveKitRoomProps = {
     choices: handoff.choices,
-    chat: <MediaSpaceChatPanel chat={roomChat} />,
+    chat: <MediaSpaceChatPanel chat={roomChat} codeSession={codeSession} />,
     chatUnreadCapped: roomChat.unreadCapped,
     chatUnreadCount: roomChat.unreadCount,
     onChatOpenChange: setChatOpen,
@@ -512,8 +526,24 @@ function MediaSpaceRoomSession({
         ),
         icon: <PenTool />,
         id: "whiteboard",
-        label: t("whiteboard.openTool"),
+        label: t("classroomTools.whiteboardLabel"),
         title: t("whiteboard.title"),
+      },
+      {
+        content: (
+          <ClassroomCodeTool
+            actorID={userId}
+            chatCanPost={chatCanPost}
+            mediaSpaceID={spaceId}
+            onSendToChat={sendCodeToChat}
+            session={codeSession}
+            tenantID={tenantId}
+          />
+        ),
+        icon: <CodeXml />,
+        id: "code",
+        label: t("classroomTools.codeLabel"),
+        title: t("classroomTools.codeTitle"),
       },
     ],
   };

@@ -34,6 +34,7 @@ import {
   loadChatEmojiRecents,
   normalizeEmojiSearch,
   parseClassroomEmojiCatalog,
+  prefillClassroomChatComposer,
   recordChatEmojiRecent,
   searchClassroomEmoji,
 } from "./classroomChatMedia";
@@ -785,6 +786,162 @@ describe("ClassroomChatPanel", () => {
       fireEvent.click(pill);
     });
     expect(screen.queryByRole("button", { name: "Tin nhắn mới" })).toBeNull();
+  });
+
+  describe("ROOM-TOOLS-CODE-01 code cards", () => {
+    let writeText: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      writeText = vi.fn(async () => undefined);
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText },
+      });
+    });
+
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, "clipboard");
+    });
+
+    it("renders a fenced python block as a read-only card with Copy and Open in Code", async () => {
+      const code = "for i in range(3):\n    print('xin chào', i)";
+      const onOpenInCode = vi.fn();
+      const { props, view } = renderPanel({
+        messages: [message(`Thử đoạn này nhé:\n\`\`\`python\n${code}\n\`\`\``)],
+        onOpenInCode,
+      });
+
+      const card = screen.getByRole("figure", { name: "Đoạn mã Python" });
+      const body = card.querySelector("pre code");
+      expect(body?.textContent).toBe(code);
+      // Read-only: a focusable <pre>, never an editable field.
+      expect(card.querySelector("pre")).toHaveAttribute("tabindex", "0");
+      expect(within(card).queryByRole("textbox")).toBeNull();
+      expect(card.querySelector("[contenteditable]")).toBeNull();
+      expect(screen.getByText("Thử đoạn này nhé:")).toBeInTheDocument();
+      expect(
+        view.container.querySelector(".classroom-chat__bubble"),
+      ).toHaveAttribute("data-has-code", "true");
+
+      fireEvent.click(
+        within(card).getByRole("button", { name: "Sao chép mã" }),
+      );
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(code));
+      expect(await screen.findByText("Đã sao chép mã.")).toBeInTheDocument();
+
+      fireEvent.click(
+        within(card).getByRole("button", { name: "Mở trong Code" }),
+      );
+      expect(onOpenInCode).toHaveBeenCalledTimes(1);
+      expect(onOpenInCode).toHaveBeenCalledWith({ code, language: "python" });
+      // Opening hands the text over only: nothing is sent or posted back.
+      expect(props.onSend).not.toHaveBeenCalled();
+      view.unmount();
+
+      // Without a Code tool the card still offers Copy, but no Open in Code.
+      renderPanel({
+        messages: [message(`\`\`\`python\n${code}\n\`\`\``)],
+      });
+      const plain = screen.getByRole("figure", { name: "Đoạn mã Python" });
+      expect(
+        within(plain).getByRole("button", { name: "Sao chép mã" }),
+      ).toBeInTheDocument();
+      expect(
+        within(plain).queryByRole("button", { name: "Mở trong Code" }),
+      ).toBeNull();
+    });
+
+    it("renders HTML payloads inside fences and text as plain text nodes", () => {
+      const alertSpy = vi.fn();
+      vi.stubGlobal("alert", alertSpy);
+      const payload = "<img src=x onerror=alert(1)>";
+      const { view } = renderPanel({
+        messages: [
+          message(
+            `<b>đậm</b><script>alert(2)</script>\n\`\`\`html\n${payload}\n\`\`\``,
+          ),
+        ],
+        onOpenInCode: vi.fn(),
+      });
+
+      const bubble = view.container.querySelector(
+        ".classroom-chat__bubble",
+      ) as HTMLElement;
+      expect(bubble).not.toBeNull();
+      expect(bubble.querySelector("img, script, b, iframe")).toBeNull();
+      const card = within(bubble).getByRole("figure", {
+        name: "Đoạn mã HTML / CSS / JS",
+      });
+      const body = card.querySelector("pre code") as HTMLElement;
+      expect(body.textContent).toBe(payload);
+      expect(
+        Array.from(body.childNodes).every(
+          (node) => node.nodeType === Node.TEXT_NODE,
+        ),
+      ).toBe(true);
+      expect(
+        within(bubble).getByText("<b>đậm</b><script>alert(2)</script>"),
+      ).toBeInTheDocument();
+      expect(view.container.querySelector("img[onerror]")).toBeNull();
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
+
+    it("prefills the composer from the Code tool without sending or touching the host lock", async () => {
+      const fence = "```python\nprint(1)\n```";
+      const store = createClassroomChatComposerStore();
+      const host = renderPanel({
+        composerStore: store,
+        conversation: roomConversation(
+          { participant_chat_enabled: false },
+          { can_moderate_chat: true },
+        ),
+      });
+      const toggle = screen.getByRole("switch", {
+        name: "Cho phép người tham gia gửi tin nhắn",
+      });
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+
+      act(() => prefillClassroomChatComposer(store, fence));
+      expect(composer()).toHaveValue(fence);
+      await waitFor(() => expect(composer()).toHaveFocus());
+      expect(store.focusRequested).toBe(false);
+      expect(host.props.onSend).not.toHaveBeenCalled();
+      expect(host.props.onToggleParticipantChat).not.toHaveBeenCalled();
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+      // The teacher still sends deliberately.
+      fireEvent.click(screen.getByRole("button", { name: "Gửi" }));
+      await waitFor(() => expect(host.props.onSend).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(host.props.onSend).mock.calls[0]?.[0].content).toBe(
+        fence,
+      );
+      expect(host.props.onToggleParticipantChat).not.toHaveBeenCalled();
+      host.view.unmount();
+
+      // A student whose chat the teacher paused gets no composer at all: the
+      // prefilled text waits in the store and is never posted.
+      const studentStore = createClassroomChatComposerStore();
+      prefillClassroomChatComposer(studentStore, fence);
+      const student = renderPanel({
+        composerStore: studentStore,
+        conversation: roomConversation(
+          { participant_chat_enabled: false },
+          { can_post_messages: false, can_upload_attachments: false },
+        ),
+      });
+      expect(
+        screen.getByText(
+          "Giáo viên đã tạm tắt gửi tin nhắn cho người tham gia.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("textbox", { name: "Nội dung tin nhắn" }),
+      ).toBeNull();
+      expect(screen.queryByRole("button", { name: "Gửi" })).toBeNull();
+      expect(screen.queryByRole("switch")).toBeNull();
+      act(() => prefillClassroomChatComposer(studentStore, `${fence}\n`));
+      expect(student.props.onSend).not.toHaveBeenCalled();
+      expect(student.props.onToggleParticipantChat).not.toHaveBeenCalled();
+    });
   });
 });
 

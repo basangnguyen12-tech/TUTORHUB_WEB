@@ -775,6 +775,57 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     });
   });
 
+  it("registers both the whiteboard and code tools for the classroom (ROOM-TOOLS-CODE-01)", async () => {
+    apiMocks.getTenantCapabilities.mockResolvedValue(
+      tenantCapabilitiesWithWhiteboard(true),
+    );
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    await waitFor(() => expect(renderedWhiteboardEnabled()).toBe(true));
+    const shellProps = liveKitMocks.shellRender.mock.lastCall?.[0] as
+      | {
+          chat?: { props?: { codeSession?: unknown } };
+          tools?: Array<{
+            content?: {
+              props?: {
+                actorID?: string;
+                chatCanPost?: boolean;
+                mediaSpaceID?: string;
+                onSendToChat?: unknown;
+                session?: unknown;
+                tenantID?: string;
+              };
+            };
+            icon?: unknown;
+            id: string;
+            label: string;
+            title: string;
+          }>;
+        }
+      | undefined;
+    const tools = shellProps?.tools ?? [];
+    expect(tools.map((tool) => tool.id)).toEqual(["whiteboard", "code"]);
+    expect(tools.map(({ label, title }) => ({ label, title }))).toEqual([
+      { label: "Whiteboard", title: "Classroom whiteboard" },
+      { label: "Code", title: "Code tool" },
+    ]);
+    for (const tool of tools) expect(tool.icon).toBeTruthy();
+
+    const code = tools.find((tool) => tool.id === "code")?.content?.props;
+    expect(code).toMatchObject({
+      actorID: userID,
+      mediaSpaceID: spaceID,
+      tenantID,
+    });
+    expect(typeof code?.chatCanPost).toBe("boolean");
+    expect(typeof code?.onSendToChat).toBe("function");
+    // One per-room-session Code memory shared with chat "Open in Code".
+    expect(code?.session).toBeTruthy();
+    expect(shellProps?.chat?.props?.codeSession).toBe(code?.session);
+  });
+
   it("passes a presenter auto-open key only for an open whiteboard the viewer can join", async () => {
     apiMocks.getTenantCapabilities.mockResolvedValue(
       tenantCapabilitiesWithWhiteboard(true),

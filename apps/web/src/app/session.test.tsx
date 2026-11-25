@@ -14,15 +14,34 @@ import {
 import { APIRequestError, getCurrentCSRFToken } from "@tutorhub/api-client";
 import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  readCodeDraft,
+  writeCodeDraft,
+} from "../features/classroom-tools/codeDraftStorage";
+import type { ClassroomCodeWorkspaceSnapshot } from "../features/classroom-tools/codeSession";
 import { createTutorHubQueryClient } from "./queryClient";
 import {
   CHAT_EMOJI_RECENT_STORAGE_PREFIX,
   clearChatEmojiRecentStorage,
+  clearCodeDraftStorage,
   clearPrivateSessionCache,
+  CODE_DRAFT_STORAGE_PREFIX,
   nativeSignOutTarget,
   SessionProvider,
   useSession,
 } from "./session";
+
+const codeWorkspace: ClassroomCodeWorkspaceSnapshot = {
+  activeIndex: 0,
+  files: [{ content: "print('nháp')", language: "python", name: "main.py" }],
+  stdin: "",
+};
+
+function codeDraftKeys() {
+  return Object.keys(localStorage).filter((key) =>
+    key.startsWith(CODE_DRAFT_STORAGE_PREFIX),
+  );
+}
 
 function SessionProbe() {
   const session = useSession();
@@ -191,6 +210,7 @@ describe("remote session provider", () => {
   afterEach(() => {
     cleanup();
     sessionStorage.clear();
+    localStorage.clear();
     vi.unstubAllGlobals();
   });
 
@@ -337,6 +357,57 @@ describe("remote session provider", () => {
       },
     } as unknown as Storage;
     expect(() => clearChatEmojiRecentStorage(blocked)).not.toThrow();
+  });
+
+  it("wipes every classroom Code draft on sign-out (ROOM-TOOLS-CODE-01)", async () => {
+    const queryClient = new QueryClient();
+    const now = Date.now();
+    const scopes = [
+      { actorID: "actor-a", mediaSpaceID: "space-1", tenantID: "tenant-a" },
+      { actorID: "actor-a", mediaSpaceID: "space-2", tenantID: "tenant-a" },
+      { actorID: "actor-b", mediaSpaceID: "space-9", tenantID: "tenant-b" },
+    ];
+    for (const scope of scopes) {
+      expect(writeCodeDraft(scope, codeWorkspace, now)).toBe(true);
+    }
+    localStorage.setItem("tutorhub:unrelated-preference", "keep");
+    expect(codeDraftKeys()).toHaveLength(3);
+
+    await clearPrivateSessionCache(queryClient);
+
+    expect(codeDraftKeys()).toEqual([]);
+    for (const scope of scopes) expect(readCodeDraft(scope, now)).toBeNull();
+    expect(localStorage.getItem("tutorhub:unrelated-preference")).toBe("keep");
+    localStorage.clear();
+
+    const blocked = {
+      get length(): number {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    } as unknown as Storage;
+    expect(() => clearCodeDraftStorage(blocked)).not.toThrow();
+  });
+
+  it("wipes Code drafts when the session is lost but keeps them on a transient /me failure", async () => {
+    const scope = {
+      actorID: "actor-a",
+      mediaSpaceID: "space-1",
+      tenantID: "tenant-a",
+    };
+    writeCodeDraft(scope, codeWorkspace);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(problemResponse(503)));
+    renderRemoteSession();
+    expect(await screen.findByText("error:anonymous")).toBeInTheDocument();
+    expect(readCodeDraft(scope)).toEqual(codeWorkspace);
+    cleanup();
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(problemResponse(401)));
+    renderRemoteSession();
+    expect(
+      await screen.findByText("unauthenticated:anonymous"),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(codeDraftKeys()).toEqual([]));
+    localStorage.clear();
   });
 
   it("purges private caches and rechecks /me after a mutation-only 401", async () => {

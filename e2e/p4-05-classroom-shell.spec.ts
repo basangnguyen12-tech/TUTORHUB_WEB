@@ -711,7 +711,7 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
         {
           id: "whiteboard",
           icon: React.createElement(icons.PenTool),
-          label: vietnamese ? "Mở bảng trắng" : "Open whiteboard",
+          label: vietnamese ? "Bảng trắng" : "Whiteboard",
           title: vietnamese ? "Bảng trắng" : "Whiteboard",
           content: whiteboardContent,
         },
@@ -1099,6 +1099,15 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
   expect(pageErrors).toEqual([]);
   await expect(page.locator(".media-p405-shell")).toBeVisible();
   expect(sockets).toEqual([]);
+}
+
+/**
+ * ROOM-TOOLS-CODE-01: one Classroom tools key in the Dock opens the tools
+ * popover; its Whiteboard tile puts the board on the stage.
+ */
+async function openWhiteboardStage(page: Page) {
+  await page.locator("#media-p506-control-tools").click();
+  await page.locator("#media-p506-tool-option-whiteboard").click();
 }
 
 async function readMediaProbe(page: Page) {
@@ -1581,7 +1590,7 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
     "Giơ tay",
     "Gửi reaction",
     "Mở trò chuyện trong phòng",
-    "Mở bảng trắng",
+    "Công cụ lớp học",
     "Bố cục",
     "Mở danh sách lớp học",
   ];
@@ -1845,9 +1854,9 @@ test("ROOM-STUDIO-02 opens the whiteboard stage beside a 256px camera strip with
   });
   expect(tagged).toBe(4);
 
-  const board = page.getByRole("button", { name: "Mở bảng trắng" });
-  await board.click();
-  await expect(board).toHaveAttribute("aria-expanded", "true");
+  const board = page.locator("#media-p506-control-tools");
+  await openWhiteboardStage(page);
+  await expect(board).toHaveClass(/th-button--primary/);
   await expect(
     page.getByRole("heading", { name: "Bảng trắng", level: 2 }),
   ).toBeFocused();
@@ -1895,6 +1904,11 @@ test("ROOM-STUDIO-02 opens the whiteboard stage beside a 256px camera strip with
   await expect(toolStage).toHaveCount(0);
   await expect(board).toBeFocused();
   await expect(board).toHaveAttribute("aria-expanded", "false");
+  // Enter opens the tools popover on its first tile; Enter chooses it.
+  await page.keyboard.press("Enter");
+  await expect(
+    page.locator("#media-p506-tool-option-whiteboard"),
+  ).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("heading", { name: "Bảng trắng", level: 2 }),
@@ -2163,7 +2177,7 @@ test("WHITEBOARD-PAPER-01 picks classroom paper from a Liquid Glass popover and 
     studio: { language: "vi", whiteboard: "paper" },
   });
   await loadRoomStudioStyles(page);
-  await page.getByRole("button", { name: "Mở bảng trắng" }).click();
+  await openWhiteboardStage(page);
 
   const canvasRegion = page.getByRole("region", {
     name: "Bề mặt bảng trắng tương tác",
@@ -2402,7 +2416,7 @@ test("ROOM-MEET-DOCK-04 shows a Meet tooltip above Dock keys and hands it off al
     exact: true,
   });
   const board = toolbar.getByRole("button", {
-    name: "Mở bảng trắng",
+    name: "Công cụ lớp học",
     exact: true,
   });
   const layoutKey = toolbar.getByRole("button", {
@@ -2457,7 +2471,7 @@ test("ROOM-MEET-DOCK-04 shows a Meet tooltip above Dock keys and hands it off al
 
   // Warm hand-off: sliding to the next keys moves the tooltip at once.
   await board.hover();
-  await expect(tooltip).toHaveText("Mở bảng trắng");
+  await expect(tooltip).toHaveText("Công cụ lớp học");
   await expect(tooltip).toHaveAttribute("data-instant", "true");
   await expectTooltipBeside(page, board, "above");
   await layoutKey.hover();
@@ -2652,9 +2666,7 @@ test("ROOM-MEET-DOCK-04 compacts the whiteboard keys and never covers the paper 
   await loadRoomStudioStyles(page);
   // The reference scene: one person, speaker view, whiteboard on stage.
   await chooseLayout(page, "Người đang nói");
-  await page
-    .getByRole("button", { name: "Mở bảng trắng", exact: true })
-    .click();
+  await openWhiteboardStage(page);
   await expect(
     page.getByRole("region", { name: "Bề mặt bảng trắng tương tác" }),
   ).toBeVisible();
@@ -2782,9 +2794,7 @@ test("ROOM-COMPACT-05 frees the board under one full-bleed Top Bar and merges En
     },
   });
   await loadRoomStudioStyles(page);
-  await page
-    .getByRole("button", { name: "Mở bảng trắng", exact: true })
-    .click();
+  await openWhiteboardStage(page);
   await expect(
     page.getByRole("region", { name: "Bề mặt bảng trắng tương tác" }),
   ).toBeVisible();
@@ -3104,9 +3114,7 @@ test("ROOM-COMPACT-05 reflows the Top Bar and the end-call popover at 320 CSS pi
   await expect(layoutKey).toBeFocused();
 
   // Whiteboard open: Close joins the Top Bar and nothing overflows.
-  await page
-    .getByRole("button", { name: "Mở bảng trắng", exact: true })
-    .click();
+  await openWhiteboardStage(page);
   await expect(
     header.getByRole("button", { name: "Đóng", exact: true }),
   ).toBeVisible();
@@ -3192,9 +3200,7 @@ test("ROOM-CHAT-01 docks a 360px chat beside the whiteboard and camera column wi
     },
   });
   await loadRoomStudioStyles(page);
-  await page
-    .getByRole("button", { name: "Mở bảng trắng", exact: true })
-    .click();
+  await openWhiteboardStage(page);
   await expect(page.locator(".whiteboard-engine-canvas")).toBeVisible();
   const probe = await page.evaluate(() => {
     const tiles = Array.from(
@@ -4695,9 +4701,7 @@ test("ROOM-STAGE-POLISH-04 keeps a round palette key in the Top Bar and compact 
     },
   });
   await loadRoomStudioStyles(page);
-  await page
-    .getByRole("button", { name: "Mở bảng trắng", exact: true })
-    .click();
+  await openWhiteboardStage(page);
   await expect(
     page.getByRole("region", { name: "Bề mặt bảng trắng tương tác" }),
   ).toBeVisible();

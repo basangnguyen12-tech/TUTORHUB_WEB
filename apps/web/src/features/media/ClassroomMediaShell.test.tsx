@@ -22,6 +22,7 @@ import {
   type RoomVisualEffectsRuntime,
 } from "./ClassroomMediaShell";
 import type { ClassroomModerationControlsModel } from "./ClassroomModerationControls";
+import { ClassroomToolActionsContext } from "../classroom-tools/toolActions";
 
 const PARTICIPANT_A = "018f4c7b-9b0a-7a34-8a4c-96d26cb87221";
 const PARTICIPANT_B = "018f4c7b-9b0a-7a34-8a4c-96d26cb87222";
@@ -653,22 +654,26 @@ describe("ClassroomMediaShell", () => {
           content: <TestWhiteboardTool />,
           icon: <span aria-hidden="true">W</span>,
           id: "whiteboard",
-          label: "Open whiteboard",
+          label: "Whiteboard",
           title: "Classroom whiteboard",
         },
       ],
     });
     const mediaTile = view.container.querySelector(".media-p405-grid > li");
-    const opener = screen.getByRole("button", { name: "Open whiteboard" });
+    const opener = toolsTrigger();
 
     expect(toolLifecycle.mounts).toBe(0);
     expect(
       screen.queryByText("Lazy whiteboard content"),
     ).not.toBeInTheDocument();
     opener.focus();
-    fireEvent.click(opener);
+    chooseTool("Whiteboard");
 
-    expect(opener).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.queryByRole("dialog", { name: "Classroom tools" }),
+    ).toBeNull();
+    expect(opener).toHaveClass("th-button--primary");
+    expect(opener).toHaveAccessibleDescription("On stage: Whiteboard");
     expect(
       await screen.findByRole("heading", { name: "Classroom whiteboard" }),
     ).toBeInTheDocument();
@@ -699,7 +704,7 @@ describe("ClassroomMediaShell", () => {
           content: <TestWhiteboardTool />,
           icon: <span aria-hidden="true">W</span>,
           id: "whiteboard",
-          label: "Open whiteboard",
+          label: "Whiteboard",
           title: "Classroom whiteboard",
         },
       ],
@@ -707,14 +712,15 @@ describe("ClassroomMediaShell", () => {
     const classroom = view.container.querySelector(".media-p405-classroom");
     const mediaStage = view.container.querySelector(".media-p405-stage");
     const mediaTile = view.container.querySelector(".media-p405-grid > li");
-    const opener = screen.getByRole("button", { name: "Open whiteboard" });
+    const opener = toolsTrigger();
 
-    fireEvent.click(opener);
+    chooseTool("Whiteboard");
 
     const stage = screen.getByRole("region", { name: "Classroom whiteboard" });
+    expect(stage).toHaveAttribute("id", "media-p506-stage-whiteboard");
     expect(classroom).toHaveClass("media-p405-classroom--tool-stage");
-    expect(opener).toHaveAttribute("aria-expanded", "true");
-    expect(opener).toHaveAttribute("aria-controls", stage.id);
+    expect(opener).toHaveClass("th-button--primary");
+    expect(opener).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
@@ -743,9 +749,13 @@ describe("ClassroomMediaShell", () => {
     expect(screen.getByRole("button", { name: "Leave room" })).toBeEnabled();
     expect(screen.getByText("Lazy whiteboard content")).toBeInTheDocument();
 
-    fireEvent.click(opener);
-    expect(opener).toHaveAttribute("aria-expanded", "false");
-    expect(opener).not.toHaveAttribute("aria-controls");
+    // Choosing the open tool again closes its stage.
+    const popover = openToolsPopover();
+    const tile = within(popover).getByRole("button", { name: "Whiteboard" });
+    expect(tile).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(tile);
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(opener).toHaveClass("th-button--secondary");
     expect(classroom).not.toHaveClass("media-p405-classroom--tool-stage");
     expect(
       screen.queryByRole("region", { name: "Classroom whiteboard" }),
@@ -763,12 +773,12 @@ describe("ClassroomMediaShell", () => {
       content: <TestWhiteboardTool />,
       icon: <span aria-hidden="true">W</span>,
       id: "whiteboard" as const,
-      label: "Open whiteboard",
+      label: "Whiteboard",
       title: "Classroom whiteboard",
     });
     const view = renderShell({ tools: [whiteboardTool(null)] });
     const mediaTile = view.container.querySelector(".media-p405-grid > li");
-    const opener = screen.getByRole("button", { name: "Open whiteboard" });
+    const opener = toolsTrigger();
     const microphone = screen.getByRole("button", {
       name: "Turn microphone on",
     });
@@ -782,7 +792,7 @@ describe("ClassroomMediaShell", () => {
     expect(
       screen.getByRole("region", { name: "Classroom whiteboard" }),
     ).toBeInTheDocument();
-    expect(opener).toHaveAttribute("aria-expanded", "true");
+    expect(opener).toHaveClass("th-button--primary");
     expect(
       screen.getByText(
         "Classroom whiteboard is now being presented on the stage.",
@@ -812,7 +822,7 @@ describe("ClassroomMediaShell", () => {
     expect(
       screen.queryByRole("region", { name: "Classroom whiteboard" }),
     ).not.toBeInTheDocument();
-    expect(opener).toHaveAttribute("aria-expanded", "false");
+    expect(opener).toHaveClass("th-button--secondary");
 
     // A new presenter generation brings the stage back, still without focus.
     microphone.focus();
@@ -833,13 +843,12 @@ describe("ClassroomMediaShell", () => {
       content: <TestWhiteboardTool />,
       icon: <span aria-hidden="true">W</span>,
       id: "whiteboard" as const,
-      label: "Open whiteboard",
+      label: "Whiteboard",
       title: "Classroom whiteboard",
     });
     const view = renderShell({ tools: [whiteboardTool(null)] });
-    const opener = screen.getByRole("button", { name: "Open whiteboard" });
 
-    fireEvent.click(opener);
+    chooseTool("Whiteboard");
     const heading = await screen.findByRole("heading", {
       name: "Classroom whiteboard",
     });
@@ -856,7 +865,7 @@ describe("ClassroomMediaShell", () => {
     ).not.toBeInTheDocument();
 
     // Closing from the Dock is respected for that same key.
-    fireEvent.click(opener);
+    chooseTool("Whiteboard");
     view.rerender(shellElement({ tools: [whiteboardTool("board-1:1")] }));
     expect(
       screen.queryByRole("region", { name: "Classroom whiteboard" }),
@@ -1716,7 +1725,7 @@ describe("ClassroomMediaShell", () => {
             content: <TestWhiteboardTool />,
             icon: <span aria-hidden="true">W</span>,
             id: "whiteboard",
-            label: "Open whiteboard",
+            label: "Whiteboard",
             title: "Classroom whiteboard",
           },
         ],
@@ -1873,14 +1882,15 @@ describe("ClassroomMediaShell", () => {
       expect(roomTooltip()).not.toBeVisible();
     });
 
-    it("keeps the whiteboard key's name while its stage is open beside it", () => {
+    it("keeps the Classroom tools key's name while a tool is on the stage", () => {
       studioShell();
-      const board = screen.getByRole("button", { name: "Open whiteboard" });
-      fireEvent.click(board);
-      expect(board).toHaveAttribute("aria-expanded", "true");
-      hover(board);
+      const tools = toolsTrigger();
+      chooseTool("Whiteboard");
+      expect(tools).toHaveClass("th-button--primary");
+      expect(tools).toHaveAttribute("aria-expanded", "false");
+      hover(tools);
       advance(140);
-      expect(roomTooltip()).toHaveTextContent("Open whiteboard");
+      expect(roomTooltip()).toHaveTextContent("Classroom tools");
     });
 
     it("keeps Effects and End room off the Top Bar whose keys' tooltips hang below", () => {
@@ -1906,7 +1916,7 @@ describe("ClassroomMediaShell", () => {
         "Lock room",
       );
 
-      fireEvent.click(screen.getByRole("button", { name: "Open whiteboard" }));
+      chooseTool("Whiteboard");
       const close = within(header).getByRole("button", { name: "Close" });
       expect(close).toHaveAttribute("data-tooltip", "Close");
       expect(close).toHaveClass("media-p405-header-close");
@@ -1963,7 +1973,7 @@ describe("ClassroomMediaShell", () => {
             content: <SlotTool />,
             icon: <span aria-hidden="true">W</span>,
             id: "whiteboard",
-            label: "Open whiteboard",
+            label: "Whiteboard",
             title: "Classroom whiteboard",
           },
         ],
@@ -1976,8 +1986,7 @@ describe("ClassroomMediaShell", () => {
       ).toBeNull();
       expect(screen.queryByRole("button", { name: "Paper picker" })).toBeNull();
 
-      const opener = screen.getByRole("button", { name: "Open whiteboard" });
-      fireEvent.click(opener);
+      chooseTool("Whiteboard");
       const paper = within(header).getByRole("button", {
         name: "Paper picker",
       });
@@ -1996,7 +2005,7 @@ describe("ClassroomMediaShell", () => {
 
       fireEvent.click(within(header).getByRole("button", { name: "Close" }));
       expect(screen.queryByRole("button", { name: "Paper picker" })).toBeNull();
-      await waitFor(() => expect(opener).toHaveFocus());
+      await waitFor(() => expect(toolsTrigger()).toHaveFocus());
     });
 
     it("turns the layout groove into one key whose menu marks the current mode", async () => {
@@ -2619,6 +2628,233 @@ describe("ClassroomMediaShell", () => {
     });
   });
 
+  describe("ROOM-TOOLS-CODE-01 Classroom tools popover", () => {
+    const codeLifecycle = { mounts: 0, unmounts: 0 };
+    function TestCodeTool() {
+      useEffect(() => {
+        codeLifecycle.mounts += 1;
+        return () => {
+          codeLifecycle.unmounts += 1;
+        };
+      }, []);
+      return <p>Lazy code workspace</p>;
+    }
+    const tools = () => [
+      {
+        content: <TestWhiteboardTool />,
+        icon: <span aria-hidden="true">W</span>,
+        id: "whiteboard" as const,
+        label: "Whiteboard",
+        title: "Classroom whiteboard",
+      },
+      {
+        content: <TestCodeTool />,
+        icon: <span aria-hidden="true">C</span>,
+        id: "code" as const,
+        label: "Code",
+        title: "Code tool",
+      },
+    ];
+
+    beforeEach(() => {
+      codeLifecycle.mounts = 0;
+      codeLifecycle.unmounts = 0;
+    });
+
+    it("opens a non-modal grid dialog with 2D roving focus and Escape back to the key", async () => {
+      renderShell({ tools: tools() });
+      const trigger = toolsTrigger();
+      expect(trigger).toHaveAttribute("id", "media-p506-control-tools");
+      expect(trigger).toHaveAttribute("data-media-control", "tools");
+      expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      expect(trigger).toHaveClass("th-button--secondary");
+      expect(
+        screen.queryByRole("button", { name: "Whiteboard" }),
+      ).not.toBeInTheDocument();
+
+      trigger.focus();
+      fireEvent.click(trigger);
+      const popover = screen.getByRole("dialog", { name: "Classroom tools" });
+      expect(popover).not.toHaveAttribute("aria-modal");
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(trigger).toHaveAttribute("aria-controls", popover.id);
+      expect(
+        within(popover).getByRole("group", { name: "Present & collaborate" }),
+      ).toBeInTheDocument();
+      const board = within(popover).getByRole("button", { name: "Whiteboard" });
+      const code = within(popover).getByRole("button", { name: "Code" });
+      expect(board).toHaveAttribute("id", "media-p506-tool-option-whiteboard");
+      expect(code).toHaveAttribute("id", "media-p506-tool-option-code");
+      expect(board).toHaveAttribute("aria-pressed", "false");
+      expect(board).toHaveAccessibleDescription(
+        "Draw and teach on the shared board.",
+      );
+      await waitFor(() => expect(board).toHaveFocus());
+      expect(board).toHaveAttribute("tabindex", "0");
+      expect(code).toHaveAttribute("tabindex", "-1");
+
+      fireEvent.keyDown(board, { key: "ArrowRight" });
+      expect(code).toHaveFocus();
+      expect(code).toHaveAttribute("tabindex", "0");
+      fireEvent.keyDown(code, { key: "ArrowRight" });
+      expect(board).toHaveFocus();
+      fireEvent.keyDown(board, { key: "ArrowLeft" });
+      expect(code).toHaveFocus();
+      fireEvent.keyDown(code, { key: "Home" });
+      expect(board).toHaveFocus();
+      fireEvent.keyDown(board, { key: "End" });
+      expect(code).toHaveFocus();
+      // One row: Up / Down keep the current tile.
+      fireEvent.keyDown(code, { key: "ArrowDown" });
+      expect(code).toHaveFocus();
+      fireEvent.keyDown(code, { key: "ArrowUp" });
+      expect(code).toHaveFocus();
+
+      fireEvent.keyDown(code, { key: "Escape" });
+      expect(
+        screen.queryByRole("dialog", { name: "Classroom tools" }),
+      ).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("swaps Whiteboard and Code on one stage without remounting media", async () => {
+      const view = renderShell({ tools: tools() });
+      const mediaTile = view.container.querySelector(".media-p405-grid > li");
+      const trigger = toolsTrigger();
+
+      chooseTool("Whiteboard");
+      await waitFor(() =>
+        expect(
+          screen.getByRole("heading", { name: "Classroom whiteboard" }),
+        ).toHaveFocus(),
+      );
+      expect(trigger).toHaveAccessibleDescription("On stage: Whiteboard");
+
+      chooseTool("Code");
+      const stage = screen.getByRole("region", { name: "Code tool" });
+      expect(stage).toHaveAttribute("id", "media-p506-stage-code");
+      expect(
+        screen.queryByRole("region", { name: "Classroom whiteboard" }),
+      ).not.toBeInTheDocument();
+      await waitFor(() =>
+        expect(
+          screen.getByRole("heading", { name: "Code tool" }),
+        ).toHaveFocus(),
+      );
+      expect(toolLifecycle.unmounts).toBe(1);
+      expect(codeLifecycle.mounts).toBe(1);
+      expect(trigger).toHaveAccessibleDescription("On stage: Code");
+      expect(view.container.querySelector(".media-p405-grid > li")).toBe(
+        mediaTile,
+      );
+      const popover = openToolsPopover();
+      expect(
+        within(popover).getByRole("button", { name: "Code" }),
+      ).toHaveAttribute("aria-pressed", "true");
+      await waitFor(() =>
+        expect(
+          within(popover).getByRole("button", { name: "Code" }),
+        ).toHaveFocus(),
+      );
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+
+      const header = document.querySelector<HTMLElement>(
+        "header.media-p405-header",
+      )!;
+      const close = within(header).getByRole("button", { name: "Close" });
+      expect(close).toHaveAttribute("id", "media-p506-close-code");
+      fireEvent.click(close);
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(codeLifecycle.unmounts).toBe(1);
+      expect(view.container.querySelector(".media-p405-grid > li")).toBe(
+        mediaTile,
+      );
+    });
+
+    it("lets hosted content open a tool or the chat through the room actions", async () => {
+      function ChatProbe() {
+        const actions = useContext(ClassroomToolActionsContext);
+        return (
+          <>
+            <p>Chat with code card</p>
+            <button onClick={() => actions?.openTool("code")} type="button">
+              Open card in Code
+            </button>
+          </>
+        );
+      }
+      function CodeProbe() {
+        const actions = useContext(ClassroomToolActionsContext);
+        return (
+          <button onClick={() => actions?.openChat()} type="button">
+            Send code to chat
+          </button>
+        );
+      }
+      renderShell({
+        chat: <ChatProbe />,
+        tools: [
+          ...tools().slice(0, 1),
+          {
+            content: <CodeProbe />,
+            icon: <span aria-hidden="true">C</span>,
+            id: "code" as const,
+            label: "Code",
+            title: "Code tool",
+          },
+        ],
+      });
+
+      chooseTool("Code");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Send code to chat" }),
+      );
+      const drawer = await screen.findByRole("dialog", {
+        name: "In-room chat",
+      });
+      expect(within(drawer).getByText("Chat with code card")).toBeVisible();
+
+      // "Open in Code" only ever brings the tool onto the stage (no toggle).
+      fireEvent.click(
+        within(drawer).getByRole("button", { name: "Open card in Code" }),
+      );
+      expect(screen.getByRole("region", { name: "Code tool" })).toBeVisible();
+      await waitFor(() =>
+        expect(
+          screen.getByRole("heading", { name: "Code tool" }),
+        ).toHaveFocus(),
+      );
+      fireEvent.click(
+        within(drawer).getByRole("button", { name: "Open card in Code" }),
+      );
+      expect(screen.getByRole("region", { name: "Code tool" })).toBeVisible();
+
+      // Escape inside the tools popover never dismisses the open chat.
+      const popover = openToolsPopover();
+      await waitFor(() =>
+        expect(
+          within(popover).getByRole("button", { name: "Code" }),
+        ).toHaveFocus(),
+      );
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      expect(
+        screen.queryByRole("dialog", { name: "Classroom tools" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("dialog", { name: "In-room chat" }),
+      ).toBeInTheDocument();
+    });
+
+    it("hides the tools key when the room registers no tools", () => {
+      renderShell();
+      expect(
+        screen.queryByRole("button", { name: "Classroom tools" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe("ROOM-STUDIO-02 studio surface", () => {
     it.each([
       { participants: 1, tiles: 1 },
@@ -2730,7 +2966,7 @@ describe("ClassroomMediaShell", () => {
             content: <TestWhiteboardTool />,
             icon: <span aria-hidden="true">W</span>,
             id: "whiteboard",
-            label: "Open whiteboard",
+            label: "Whiteboard",
             title: "Classroom whiteboard",
           },
         ],
@@ -2752,7 +2988,7 @@ describe("ClassroomMediaShell", () => {
         "hand",
         "reaction",
         "chat",
-        "tool-whiteboard",
+        "tools",
         "layout",
         "roster",
       ]);
@@ -2768,7 +3004,7 @@ describe("ClassroomMediaShell", () => {
         "Raise hand",
         "Send a reaction",
         "Open in-room chat",
-        "Open whiteboard",
+        "Classroom tools",
         "Change layout",
         "Open classroom roster",
       ]) {
@@ -3181,6 +3417,21 @@ function openLayoutMenu() {
 function chooseLayout(name: "Grid" | "Active speaker" | "Presentation") {
   const menu = openLayoutMenu();
   fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+}
+
+/** ROOM-TOOLS-CODE-01: the Dock's one Classroom tools key opens a popover. */
+function toolsTrigger() {
+  return screen.getByRole("button", { name: "Classroom tools" });
+}
+
+function openToolsPopover() {
+  fireEvent.click(toolsTrigger());
+  return screen.getByRole("dialog", { name: "Classroom tools" });
+}
+
+function chooseTool(name: string) {
+  const popover = openToolsPopover();
+  fireEvent.click(within(popover).getByRole("button", { name }));
 }
 
 function layoutMode(container: HTMLElement) {

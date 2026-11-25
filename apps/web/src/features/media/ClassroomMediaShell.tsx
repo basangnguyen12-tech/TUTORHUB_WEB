@@ -40,6 +40,7 @@ import {
   ChevronRight,
   Grid2X2,
   Hand,
+  LayoutGrid,
   LogOut,
   Mic,
   MicOff,
@@ -101,6 +102,12 @@ import {
 } from "../../app/visualEffects";
 import { VisualEffectsPicker } from "../../components/VisualEffectsPicker";
 import { MediaLobbyWaitingCountContext } from "../../components/MediaLobbyPanel";
+import { ClassroomToolsPopover } from "../classroom-tools/ClassroomToolsPopover";
+import type { ClassroomToolID } from "../classroom-tools/registry";
+import {
+  ClassroomToolActionsContext,
+  type ClassroomToolActions,
+} from "../classroom-tools/toolActions";
 import {
   ClassroomDegradationController,
   projectClassroomDegradation,
@@ -423,8 +430,13 @@ class LocalCameraEffectsController {
   }
 }
 
-export type ClassroomToolID = "whiteboard";
+export type { ClassroomToolID };
 
+/**
+ * ROOM-TOOLS-CODE-01 / ADR-0043 §1: a tool registered for this room. The
+ * Dock shows one Classroom tools key; each registered tool is a tile in its
+ * popover and, once chosen, the only tool on the main stage.
+ */
 export interface ClassroomToolDefinition {
   /**
    * PREJOIN-UX-01: a server-derived token (e.g. `documentID:generation`) that
@@ -436,8 +448,25 @@ export interface ClassroomToolDefinition {
   readonly content: ReactNode;
   readonly icon: ReactNode;
   readonly id: ClassroomToolID;
+  /** Short name on the Classroom tools tile (e.g. "Bảng trắng", "Code"). */
   readonly label: string;
+  /** Stage heading and region name. */
   readonly title: string;
+}
+
+/** ROOM-TOOLS-CODE-01: the Dock key that opens the Classroom tools popover. */
+const TOOLS_CONTROL_ID = "media-p506-control-tools";
+
+/**
+ * Escape pressed inside the tools popover or the Code tool belongs to them
+ * (closing the popover, CodeMirror's Escape-then-Tab exit), never to the
+ * non-modal right-hand inspector that Radix would otherwise dismiss.
+ */
+function escapeBelongsToToolSurface(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(".media-p506-tools-popover, .media-p506-tool-code") !== null
+  );
 }
 
 /**
@@ -515,7 +544,7 @@ type ToolbarControlKey =
   | "reaction"
   | "chat"
   | "roster"
-  | `tool-${ClassroomToolID}`
+  | "tools"
   | "layout";
 
 const initialLayoutState: ClassroomLayoutState = {
@@ -613,6 +642,11 @@ export function ClassroomMediaShell({
   const chatReturnFocus = useRef<HTMLButtonElement>(null);
   const rosterReturnFocus = useRef<HTMLButtonElement>(null);
   const [openToolID, setOpenToolID] = useState<ClassroomToolID | null>(null);
+  // ROOM-TOOLS-CODE-01: one Dock key opens the Classroom tools popover.
+  const [toolsPopoverOpen, setToolsPopoverOpen] = useState(false);
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
+  const toolsPopoverID = useId();
+  const toolsDescriptionID = useId();
   const [headerSlotElement, setHeaderSlotElement] =
     useState<HTMLDivElement | null>(null);
   const headerSlot = useMemo<ClassroomHeaderSlot>(
@@ -947,7 +981,7 @@ export function ClassroomMediaShell({
         ? (["reaction"] as const)
         : []),
       ...(chat ? (["chat"] as const) : []),
-      ...tools.map(({ id }) => `tool-${id}` as const),
+      ...(tools.length > 0 ? (["tools"] as const) : []),
       "layout",
       ...(signals || lobby ? (["roster"] as const) : []),
     ],
@@ -1380,13 +1414,22 @@ export function ClassroomMediaShell({
 
   const activeTool = tools.find((tool) => tool.id === openToolID) ?? null;
 
-  // The tool stage is a non-modal region: the classroom Dock stays reachable
-  // while drawing, so opening moves focus to the stage heading and closing
-  // returns it to the exact toolbar control that owns the tool.
-  const toggleTool = (toolID: ClassroomToolID) => {
+  // ROOM-TOOLS-CODE-01: the tool stage is a non-modal region and the Dock
+  // stays reachable. Choosing a tile closes the popover, puts that tool on
+  // the stage (replacing another one; LiveKit media never remounts) and
+  // focuses its stage heading; choosing the open tool again, or the Top Bar
+  // Close key, closes the stage and returns focus to the Classroom tools key.
+  const closeToolsPopover = useCallback((restoreFocus: boolean) => {
+    setToolsPopoverOpen(false);
+    if (restoreFocus) toolsTriggerRef.current?.focus();
+  }, []);
+
+  const selectTool = (toolID: ClassroomToolID) => {
+    setToolsPopoverOpen(false);
     setAutoOpenedToolID(null);
     if (openToolID === toolID) {
       setOpenToolID(null);
+      scheduleElementFocus(TOOLS_CONTROL_ID);
       return;
     }
     setOpenToolID(toolID);
@@ -1397,8 +1440,39 @@ export function ClassroomMediaShell({
     if (!activeTool) return;
     setAutoOpenedToolID(null);
     setOpenToolID(null);
-    scheduleElementFocus(`media-p506-control-${activeTool.id}`);
+    scheduleElementFocus(TOOLS_CONTROL_ID);
   };
+
+  // Room actions for hosted content: the Code tool's "Send to chat" and the
+  // chat's "Open in Code". Refs keep the value stable across renders.
+  const registeredToolsRef = useRef(tools);
+  const chatPresentRef = useRef(Boolean(chat));
+  useLayoutEffect(() => {
+    registeredToolsRef.current = tools;
+    chatPresentRef.current = Boolean(chat);
+  }, [chat, tools]);
+  const toolActions = useMemo<ClassroomToolActions>(
+    () => ({
+      hasTool: (id) =>
+        registeredToolsRef.current.some((tool) => tool.id === id),
+      openChat: () => {
+        if (!chatPresentRef.current) return false;
+        setChatOpen(true);
+        return true;
+      },
+      openTool: (id) => {
+        if (!registeredToolsRef.current.some((tool) => tool.id === id)) {
+          return false;
+        }
+        setToolsPopoverOpen(false);
+        setAutoOpenedToolID(null);
+        setOpenToolID(id);
+        scheduleElementFocus(`media-p506-stage-title-${id}`);
+        return true;
+      },
+    }),
+    [scheduleElementFocus, setChatOpen],
+  );
 
   const changeLayout = (mode: ClassroomLayoutMode) => {
     setLayoutState((current) => ({
@@ -1515,922 +1589,985 @@ export function ClassroomMediaShell({
     : t("media.p408.openChat");
 
   return (
-    <div
-      aria-busy={connectionStatus === "connecting" || undefined}
-      className={`media-p405-shell${
-        inspector !== null && (inspector !== "effects" || effectsAvailable)
-          ? " media-p405-shell--inspector-open"
-          : ""
-      }${
-        effectsOpen && effectsAvailable ? " media-p405-shell--effects-open" : ""
-      }`}
-      data-inspector={inspector ?? undefined}
-      ref={shellRef}
-    >
-      {/*
+    <ClassroomToolActionsContext.Provider value={toolActions}>
+      <div
+        aria-busy={connectionStatus === "connecting" || undefined}
+        className={`media-p405-shell${
+          inspector !== null && (inspector !== "effects" || effectsAvailable)
+            ? " media-p405-shell--inspector-open"
+            : ""
+        }${
+          effectsOpen && effectsAvailable
+            ? " media-p405-shell--effects-open"
+            : ""
+        }`}
+        data-inspector={inspector ?? undefined}
+        ref={shellRef}
+      >
+        {/*
         ROOM-COMPACT-05: one slim Top Bar across the room. Left: the live
         clock capsule, the polite presence status, the host Lock key and the
         lesson name. Right: the open tool's compact controls (portalled into
         the slot) and its Close key. Effects and End room live in the Dock.
       */}
-      <header className="media-p405-header">
-        <div className="media-p405-header-title">
-          <span className="media-p405-live-pill">
-            <span
-              aria-hidden="true"
-              className="media-p405-connection-dot"
-              data-connection={connectionStatus}
-            />
-            <SessionClock
-              live={
-                connectionStatus === "connected" ||
-                connectionStatus === "reconnecting"
-              }
-            />
-          </span>
-          <p aria-live="polite" className="media-p405-presence" role="status">
-            <Users aria-hidden="true" className="media-p405-presence-icon" />
-            <span className="media-p405-presence-full">
-              {`${t(roomStatusKey(connectionStatus))} / ${t(
-                "media.room.participantCount",
-                { count: participantCount },
-              )}`}
+        <header className="media-p405-header">
+          <div className="media-p405-header-title">
+            <span className="media-p405-live-pill">
+              <span
+                aria-hidden="true"
+                className="media-p405-connection-dot"
+                data-connection={connectionStatus}
+              />
+              <SessionClock
+                live={
+                  connectionStatus === "connected" ||
+                  connectionStatus === "reconnecting"
+                }
+              />
             </span>
-            <span aria-hidden="true" className="media-p405-presence-short">
-              {t("media.room.participantCountShort", {
-                count: participantCount,
-              })}
-            </span>
-          </p>
-          {moderation && (
-            <ClassroomModerationControls
-              controls={moderation}
-              disabled={controlsTerminated || connectionStatus !== "connected"}
+            <p aria-live="polite" className="media-p405-presence" role="status">
+              <Users aria-hidden="true" className="media-p405-presence-icon" />
+              <span className="media-p405-presence-full">
+                {`${t(roomStatusKey(connectionStatus))} / ${t(
+                  "media.room.participantCount",
+                  { count: participantCount },
+                )}`}
+              </span>
+              <span aria-hidden="true" className="media-p405-presence-short">
+                {t("media.room.participantCountShort", {
+                  count: participantCount,
+                })}
+              </span>
+            </p>
+            {moderation && (
+              <ClassroomModerationControls
+                controls={moderation}
+                disabled={
+                  controlsTerminated || connectionStatus !== "connected"
+                }
+              />
+            )}
+            {roomTitle ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="media-p405-header-divider"
+                />
+                <h1 className="media-p405-room-title" title={roomTitle}>
+                  {roomTitle}
+                </h1>
+              </>
+            ) : (
+              <h1 className="media-p405-sr-only">{t("media.room.title")}</h1>
+            )}
+          </div>
+          <div className="media-p405-header-actions">
+            {!canPublishCameraMicrophone && (
+              <div className="media-p405-header-badges">
+                <span>{t("media.room.listenOnly")}</span>
+              </div>
+            )}
+            <div
+              className="media-p405-header-tool-slot"
+              ref={setHeaderSlotElement}
             />
-          )}
-          {roomTitle ? (
-            <>
-              <span aria-hidden="true" className="media-p405-header-divider" />
-              <h1 className="media-p405-room-title" title={roomTitle}>
-                {roomTitle}
-              </h1>
-            </>
-          ) : (
-            <h1 className="media-p405-sr-only">{t("media.room.title")}</h1>
-          )}
-        </div>
-        <div className="media-p405-header-actions">
-          {!canPublishCameraMicrophone && (
-            <div className="media-p405-header-badges">
-              <span>{t("media.room.listenOnly")}</span>
-            </div>
-          )}
-          <div
-            className="media-p405-header-tool-slot"
-            ref={setHeaderSlotElement}
-          />
-          {activeTool && (
-            <IconButton
-              className="media-p405-header-close"
-              data-tooltip={t("media.p405.close")}
-              data-tooltip-side="bottom"
-              id={`media-p506-close-${activeTool.id}`}
-              label={t("media.p405.close")}
-              onClick={closeActiveTool}
-              size="sm"
-              variant="quiet"
-            >
-              <X />
-            </IconButton>
-          )}
-        </div>
-      </header>
+            {activeTool && (
+              <IconButton
+                className="media-p405-header-close"
+                data-tooltip={t("media.p405.close")}
+                data-tooltip-side="bottom"
+                id={`media-p506-close-${activeTool.id}`}
+                label={t("media.p405.close")}
+                onClick={closeActiveTool}
+                size="sm"
+                variant="quiet"
+              >
+                <X />
+              </IconButton>
+            )}
+          </div>
+        </header>
 
-      {lobby && (
-        // Stays mounted (visually collapsed while idle) so the polite live
-        // region announces new waiting requests without taking stage height.
-        <div
-          className={`media-p406-lobby-banner${
-            lobbyBannerActive ? "" : " media-p406-lobby-banner--idle"
-          }`}
-        >
+        {lobby && (
+          // Stays mounted (visually collapsed while idle) so the polite live
+          // region announces new waiting requests without taking stage height.
+          <div
+            className={`media-p406-lobby-banner${
+              lobbyBannerActive ? "" : " media-p406-lobby-banner--idle"
+            }`}
+          >
+            <p
+              aria-atomic="true"
+              aria-live="polite"
+              className="media-p406-lobby-banner__text"
+              role="status"
+            >
+              {lobbyBannerActive
+                ? t("media.p406.lobbyWaiting", { count: waitingCount })
+                : ""}
+            </p>
+            {lobbyBannerActive && (
+              <Button
+                disabled={controlsTerminated}
+                leadingIcon={<Users />}
+                onClick={() => setRosterOpen(true)}
+                size="sm"
+                variant="primary"
+              >
+                {t("media.p406.viewWaitingRoom")}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!canPublishCameraMicrophone && (
+          <p className="media-p405-notice">
+            {t("media.p405.listenOnlyDescription")}
+          </p>
+        )}
+        {!canSubscribe && (
+          <p className="media-p405-notice" role="status">
+            {t("media.p405.subscribeRestricted")}
+          </p>
+        )}
+        {degradationStage !== "normal" && (
           <p
             aria-atomic="true"
             aria-live="polite"
-            className="media-p406-lobby-banner__text"
+            className="media-p405-notice media-p405-degradation-status"
             role="status"
           >
-            {lobbyBannerActive
-              ? t("media.p406.lobbyWaiting", { count: waitingCount })
-              : ""}
+            {t(degradationStatusKey(degradationStage))}
           </p>
-          {lobbyBannerActive && (
+        )}
+        {signals?.loading && (
+          <p className="media-p405-notice" role="status">
+            {t("media.p406.loading")}
+          </p>
+        )}
+        {signals?.error && (
+          <div className="media-p405-error" role="alert">
+            <span>{t("media.p406.loadError")}</span>
             <Button
-              disabled={controlsTerminated}
-              leadingIcon={<Users />}
-              onClick={() => setRosterOpen(true)}
+              onClick={() => void signals.onResync()}
               size="sm"
-              variant="primary"
+              variant="quiet"
             >
-              {t("media.p406.viewWaitingRoom")}
+              {t("media.p406.retry")}
             </Button>
-          )}
-        </div>
-      )}
-
-      {!canPublishCameraMicrophone && (
-        <p className="media-p405-notice">
-          {t("media.p405.listenOnlyDescription")}
-        </p>
-      )}
-      {!canSubscribe && (
-        <p className="media-p405-notice" role="status">
-          {t("media.p405.subscribeRestricted")}
-        </p>
-      )}
-      {degradationStage !== "normal" && (
+          </div>
+        )}
         <p
           aria-atomic="true"
           aria-live="polite"
-          className="media-p405-notice media-p405-degradation-status"
+          className="media-p406-status"
           role="status"
         >
-          {t(degradationStatusKey(degradationStage))}
+          {signalFeedback ? t(signalFeedback) : ""}
+          {selfHand
+            ? ` ${t("media.p406.ownHandPosition", {
+                position: selfHand.queue_position,
+              })}`
+            : ""}
         </p>
-      )}
-      {signals?.loading && (
-        <p className="media-p405-notice" role="status">
-          {t("media.p406.loading")}
+        <p
+          aria-atomic="true"
+          aria-live="polite"
+          className="media-p406-sr-reactions"
+          role="status"
+        >
+          {reactionTotal > 0 ? reactionAnnouncement : ""}
         </p>
-      )}
-      {signals?.error && (
-        <div className="media-p405-error" role="alert">
-          <span>{t("media.p406.loadError")}</span>
-          <Button
-            onClick={() => void signals.onResync()}
-            size="sm"
-            variant="quiet"
-          >
-            {t("media.p406.retry")}
-          </Button>
-        </div>
-      )}
-      <p
-        aria-atomic="true"
-        aria-live="polite"
-        className="media-p406-status"
-        role="status"
-      >
-        {signalFeedback ? t(signalFeedback) : ""}
-        {selfHand
-          ? ` ${t("media.p406.ownHandPosition", {
-              position: selfHand.queue_position,
-            })}`
-          : ""}
-      </p>
-      <p
-        aria-atomic="true"
-        aria-live="polite"
-        className="media-p406-sr-reactions"
-        role="status"
-      >
-        {reactionTotal > 0 ? reactionAnnouncement : ""}
-      </p>
-      <p
-        aria-atomic="true"
-        aria-live="polite"
-        className="visually-hidden"
-        role="status"
-      >
-        {activeTool && autoOpenedToolID === activeTool.id
-          ? t("media.p506.toolAutoOpened", { title: activeTool.title })
-          : ""}
-      </p>
-      {mediaError && (
-        <div className="media-p405-error" role="alert">
-          <span>{t("media.p405.deviceUpdateError")}</span>
-          <Button
-            onClick={() => setMediaError(false)}
-            size="sm"
-            variant="quiet"
-          >
-            {t("media.room.dismiss")}
-          </Button>
-        </div>
-      )}
+        <p
+          aria-atomic="true"
+          aria-live="polite"
+          className="visually-hidden"
+          role="status"
+        >
+          {activeTool && autoOpenedToolID === activeTool.id
+            ? t("media.p506.toolAutoOpened", { title: activeTool.title })
+            : ""}
+        </p>
+        {mediaError && (
+          <div className="media-p405-error" role="alert">
+            <span>{t("media.p405.deviceUpdateError")}</span>
+            <Button
+              onClick={() => setMediaError(false)}
+              size="sm"
+              variant="quiet"
+            >
+              {t("media.room.dismiss")}
+            </Button>
+          </div>
+        )}
 
-      <div
-        className={`media-p405-classroom media-p405-classroom--${projection.mode}${
-          activeTool ? " media-p405-classroom--tool-stage" : ""
-        }`}
-      >
-        {/*
+        <div
+          className={`media-p405-classroom media-p405-classroom--${projection.mode}${
+            activeTool ? " media-p405-classroom--tool-stage" : ""
+          }`}
+        >
+          {/*
           The tool stage occupies its own conditional slot ahead of the media
           stage, so opening/closing it never remounts the camera grid; CSS
           turns the media stage into the side camera strip.
         */}
-        {activeTool && (
-          <section
-            aria-labelledby={`media-p506-stage-title-${activeTool.id}`}
-            className={`media-p506-tool-stage media-p506-tool-${activeTool.id}`}
-            id={`media-p506-stage-${activeTool.id}`}
-          >
-            {/*
+          {activeTool && (
+            <section
+              aria-labelledby={`media-p506-stage-title-${activeTool.id}`}
+              className={`media-p506-tool-stage media-p506-tool-${activeTool.id}`}
+              id={`media-p506-stage-${activeTool.id}`}
+            >
+              {/*
               ROOM-COMPACT-05: no titlebar — the paper fills the card edge to
               edge. The heading stays for aria-labelledby and receives focus
               when the stage opens; Close sits in the Top Bar.
             */}
-            <h2
-              className="media-p405-sr-only"
-              id={`media-p506-stage-title-${activeTool.id}`}
-              tabIndex={-1}
-            >
-              {activeTool.title}
-            </h2>
-            <div className="media-p506-tool-stage__body">
-              <ClassroomHeaderSlotContext.Provider value={headerSlot}>
-                {activeTool.content}
-              </ClassroomHeaderSlotContext.Provider>
-            </div>
-          </section>
-        )}
-        {/*
+              <h2
+                className="media-p405-sr-only"
+                id={`media-p506-stage-title-${activeTool.id}`}
+                tabIndex={-1}
+              >
+                {activeTool.title}
+              </h2>
+              <div className="media-p506-tool-stage__body">
+                <ClassroomHeaderSlotContext.Provider value={headerSlot}>
+                  {activeTool.content}
+                </ClassroomHeaderSlotContext.Provider>
+              </div>
+            </section>
+          )}
+          {/*
           ROOM-STAGE-POLISH-04: Meet / Zoom style floating reactions. At most
           three server clusters (ADR-0031 §9) each fly up one lane above the
           Dock; a newer event in the same cluster remounts it (key) so it
           flies again. Reduced motion / forced colours keep static pills.
         */}
-        {signals?.projection && (
-          <div aria-hidden="true" className="media-p406-reactions">
-            {signals.projection.reactions.clusters.map((cluster, lane) => (
-              <FloatingReaction
-                cluster={cluster}
-                key={`${cluster.cluster_id}:${cluster.last_signal_sequence}`}
-                lane={lane}
+          {signals?.projection && (
+            <div aria-hidden="true" className="media-p406-reactions">
+              {signals.projection.reactions.clusters.map((cluster, lane) => (
+                <FloatingReaction
+                  cluster={cluster}
+                  key={`${cluster.cluster_id}:${cluster.last_signal_sequence}`}
+                  lane={lane}
+                />
+              ))}
+            </div>
+          )}
+          <section
+            aria-label={
+              projection.mode === "grid"
+                ? t("media.p405.gridLabel")
+                : t("media.p405.stageLabel")
+            }
+            className="media-p405-stage"
+          >
+            {projection.mode === "grid" ? (
+              projection.items.length > 0 ? (
+                <ul
+                  className={`media-p405-grid media-p405-grid--capacity-${projection.capacity}`}
+                  data-tile-count={projection.items.length}
+                >
+                  {projection.items.map((item) => (
+                    <li key={item.id}>
+                      <MediaTile
+                        attachVideo={attachedCameraVideoItemIDs.has(item.id)}
+                        item={item}
+                        onTogglePin={handleTogglePin}
+                        pinned={layoutState.pinnedParticipantId === item.id}
+                        signal={tileSignals.get(item.id)}
+                        tone={mediaTileTone(item.sequence, toneSalt)}
+                        variant="grid"
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="media-p405-empty">
+                  {t("media.p405.noParticipants")}
+                </p>
+              )
+            ) : stageItem && stageTrackRef ? (
+              <MediaTile
+                attachVideo={
+                  projection.stage?.kind === "presentation"
+                    ? attachPresentationVideo
+                    : attachedCameraVideoItemIDs.has(stageItem.id)
+                }
+                item={stageItem}
+                onTogglePin={handleTogglePin}
+                pinned={layoutState.pinnedParticipantId === stageItem.id}
+                signal={tileSignals.get(stageItem.id)}
+                tone={mediaTileTone(stageItem.sequence, toneSalt)}
+                trackRef={stageTrackRef}
+                variant="stage"
               />
-            ))}
-          </div>
-        )}
-        <section
-          aria-label={
-            projection.mode === "grid"
-              ? t("media.p405.gridLabel")
-              : t("media.p405.stageLabel")
-          }
-          className="media-p405-stage"
-        >
-          {projection.mode === "grid" ? (
-            projection.items.length > 0 ? (
-              <ul
-                className={`media-p405-grid media-p405-grid--capacity-${projection.capacity}`}
-                data-tile-count={projection.items.length}
-              >
-                {projection.items.map((item) => (
-                  <li key={item.id}>
-                    <MediaTile
-                      attachVideo={attachedCameraVideoItemIDs.has(item.id)}
-                      item={item}
-                      onTogglePin={handleTogglePin}
-                      pinned={layoutState.pinnedParticipantId === item.id}
-                      signal={tileSignals.get(item.id)}
-                      tone={mediaTileTone(item.sequence, toneSalt)}
-                      variant="grid"
-                    />
-                  </li>
-                ))}
-              </ul>
             ) : (
               <p className="media-p405-empty">
                 {t("media.p405.noParticipants")}
               </p>
-            )
-          ) : stageItem && stageTrackRef ? (
-            <MediaTile
-              attachVideo={
-                projection.stage?.kind === "presentation"
-                  ? attachPresentationVideo
-                  : attachedCameraVideoItemIDs.has(stageItem.id)
-              }
-              item={stageItem}
-              onTogglePin={handleTogglePin}
-              pinned={layoutState.pinnedParticipantId === stageItem.id}
-              signal={tileSignals.get(stageItem.id)}
-              tone={mediaTileTone(stageItem.sequence, toneSalt)}
-              trackRef={stageTrackRef}
-              variant="stage"
-            />
-          ) : (
-            <p className="media-p405-empty">{t("media.p405.noParticipants")}</p>
+            )}
+          </section>
+
+          {!isResponsiveDrawer && projection.mode !== "grid" && (
+            <aside
+              aria-label={t("media.p405.railLabel")}
+              className="media-p405-rail"
+            >
+              {rail}
+            </aside>
           )}
-        </section>
+        </div>
 
-        {!isResponsiveDrawer && projection.mode !== "grid" && (
-          <aside
-            aria-label={t("media.p405.railLabel")}
-            className="media-p405-rail"
-          >
-            {rail}
-          </aside>
-        )}
-      </div>
-
-      <div
-        aria-label={t("media.p405.pagination")}
-        className={`media-p405-pagination${
-          projection.pageCount <= 1 ? " media-p405-pagination--single" : ""
-        }`}
-        id="media-p405-pagination"
-        role="group"
-        tabIndex={-1}
-      >
-        <IconButton
-          disabled={projection.page <= 0}
-          label={t("media.p405.previousPage")}
-          onClick={() =>
-            setLayoutState((current) => ({
-              ...current,
-              requestedPage: Math.max(0, projection.page - 1),
-            }))
-          }
-          size="sm"
-        >
-          <ChevronLeft />
-        </IconButton>
-        <span aria-live="polite">
-          {t("media.p405.page", {
-            page: projection.page + 1,
-            pages: projection.pageCount,
-          })}
-        </span>
-        <IconButton
-          disabled={projection.page >= projection.pageCount - 1}
-          label={t("media.p405.nextPage")}
-          onClick={() =>
-            setLayoutState((current) => ({
-              ...current,
-              requestedPage: Math.min(
-                projection.pageCount - 1,
-                projection.page + 1,
-              ),
-            }))
-          }
-          size="sm"
-        >
-          <ChevronRight />
-        </IconButton>
-      </div>
-
-      {isResponsiveDrawer && projection.mode !== "grid" && (
-        <Drawer onOpenChange={setRailOpen} open={railOpen}>
-          <DrawerTrigger asChild>
-            <Button leadingIcon={<Users />} variant="secondary">
-              {t("media.p405.openParticipants")}
-            </Button>
-          </DrawerTrigger>
-          <DrawerContent
-            className="media-p405-drawer"
-            closeLabel={t("media.p405.close")}
-            data-theme="dark"
-          >
-            <DrawerTitle>{t("media.p405.railLabel")}</DrawerTitle>
-            {rail}
-            <DrawerClose asChild>
-              <Button variant="secondary">{t("media.p405.close")}</Button>
-            </DrawerClose>
-          </DrawerContent>
-        </Drawer>
-      )}
-
-      <footer className="media-p405-footer">
         <div
-          aria-label={t("media.p405.toolbar")}
-          className="media-p405-toolbar"
-          onKeyDown={handleToolbarKeyDown}
-          ref={toolbarRef}
-          role="toolbar"
+          aria-label={t("media.p405.pagination")}
+          className={`media-p405-pagination${
+            projection.pageCount <= 1 ? " media-p405-pagination--single" : ""
+          }`}
+          id="media-p405-pagination"
+          role="group"
+          tabIndex={-1}
         >
-          {canPublishCameraMicrophone && (
-            <>
-              <IconButton
-                className="media-p405-dock-button media-p405-dock-button--av"
-                data-media-control="microphone"
-                data-tooltip={microphoneLabel}
-                disabled={pendingControl !== null || controlsTerminated}
-                id="media-p405-control-microphone"
-                label={microphoneLabel}
-                loading={pendingControl === "microphone"}
-                onClick={() =>
-                  void runControl("microphone", () =>
-                    localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled),
-                  )
-                }
-                onFocus={() => setToolbarFocusKey("microphone")}
-                tabIndex={toolbarTabIndex("microphone")}
-                variant={isMicrophoneEnabled ? "secondary" : "danger"}
-              >
-                <DockIcon icon={isMicrophoneEnabled ? <Mic /> : <MicOff />} />
-              </IconButton>
-              <IconButton
-                className="media-p405-dock-button media-p405-dock-button--av"
-                data-media-control="camera"
-                data-tooltip={cameraLabel}
-                disabled={
-                  pendingControl !== null ||
-                  controlsTerminated ||
-                  degradationStage === "audio-only"
-                }
-                id="media-p405-control-camera"
-                label={cameraLabel}
-                loading={pendingControl === "camera"}
-                onClick={() =>
-                  void runControl("camera", () =>
-                    localParticipant.setCameraEnabled(!isCameraEnabled),
-                  )
-                }
-                onFocus={() => setToolbarFocusKey("camera")}
-                tabIndex={toolbarTabIndex("camera")}
-                variant={isCameraEnabled ? "secondary" : "danger"}
-              >
-                <DockIcon icon={isCameraEnabled ? <Camera /> : <CameraOff />} />
-              </IconButton>
-            </>
-          )}
-          {canShareScreen && (
-            <IconButton
-              className="media-p405-dock-button"
-              data-media-control="screen-share"
-              data-tooltip={screenShareLabel}
-              disabled={pendingControl !== null || controlsTerminated}
-              id="media-p405-control-screen-share"
-              label={screenShareLabel}
-              loading={pendingControl === "screen-share"}
-              onClick={() =>
-                void runControl("screen-share", () =>
-                  localParticipant.setScreenShareEnabled(!isScreenShareEnabled),
-                )
-              }
-              onFocus={() => setToolbarFocusKey("screen-share")}
-              tabIndex={toolbarTabIndex("screen-share")}
-              variant={isScreenShareEnabled ? "danger" : "secondary"}
-            >
-              <DockIcon
-                icon={
-                  isScreenShareEnabled ? <ScreenShareOff /> : <ScreenShare />
-                }
-              />
-            </IconButton>
-          )}
           <IconButton
-            aria-expanded={devicePanelOpen}
-            className="media-p405-dock-button"
-            data-media-control="devices"
-            data-tooltip={t("media.p405.devices")}
-            disabled={controlsTerminated}
-            id="media-p405-control-devices"
-            label={t("media.p405.devices")}
-            onClick={() => setDevicePanelOpen((open) => !open)}
-            onFocus={() => setToolbarFocusKey("devices")}
-            tabIndex={toolbarTabIndex("devices")}
-            variant="secondary"
+            disabled={projection.page <= 0}
+            label={t("media.p405.previousPage")}
+            onClick={() =>
+              setLayoutState((current) => ({
+                ...current,
+                requestedPage: Math.max(0, projection.page - 1),
+              }))
+            }
+            size="sm"
           >
-            <DockIcon icon={<Settings2 />} />
+            <ChevronLeft />
           </IconButton>
+          <span aria-live="polite">
+            {t("media.p405.page", {
+              page: projection.page + 1,
+              pages: projection.pageCount,
+            })}
+          </span>
+          <IconButton
+            disabled={projection.page >= projection.pageCount - 1}
+            label={t("media.p405.nextPage")}
+            onClick={() =>
+              setLayoutState((current) => ({
+                ...current,
+                requestedPage: Math.min(
+                  projection.pageCount - 1,
+                  projection.page + 1,
+                ),
+              }))
+            }
+            size="sm"
+          >
+            <ChevronRight />
+          </IconButton>
+        </div>
 
-          {canPublishCameraMicrophone && (
-            <IconButton
-              aria-describedby={
-                effectsActive ? effectsDescriptionID : undefined
-              }
-              aria-expanded={effectsOpen && effectsAvailable}
-              aria-haspopup="dialog"
-              className="media-p405-dock-button"
-              data-media-control="effects"
-              data-tooltip={t("media.fx.openEffects")}
-              disabled={controlsTerminated}
-              id="media-p405-control-effects"
-              label={t("media.fx.openEffects")}
-              onClick={(event) => toggleEffectsDrawer(event.currentTarget)}
-              onFocus={() => setToolbarFocusKey("effects")}
-              tabIndex={toolbarTabIndex("effects")}
-              variant={effectsActive ? "primary" : "secondary"}
+        {isResponsiveDrawer && projection.mode !== "grid" && (
+          <Drawer onOpenChange={setRailOpen} open={railOpen}>
+            <DrawerTrigger asChild>
+              <Button leadingIcon={<Users />} variant="secondary">
+                {t("media.p405.openParticipants")}
+              </Button>
+            </DrawerTrigger>
+            <DrawerContent
+              className="media-p405-drawer"
+              closeLabel={t("media.p405.close")}
+              data-theme="dark"
             >
-              <DockIcon icon={<Sparkles />} />
-            </IconButton>
-          )}
-          {canPublishCameraMicrophone && effectsActive && (
-            <span className="visually-hidden" id={effectsDescriptionID}>
-              {t("media.fx.activeDescription", { name: effectsName })}
-            </span>
-          )}
+              <DrawerTitle>{t("media.p405.railLabel")}</DrawerTitle>
+              {rail}
+              <DrawerClose asChild>
+                <Button variant="secondary">{t("media.p405.close")}</Button>
+              </DrawerClose>
+            </DrawerContent>
+          </Drawer>
+        )}
 
-          {signals?.projection?.viewer_operations.can_raise_hand && (
-            <IconButton
-              aria-pressed={Boolean(selfHand)}
-              className="media-p405-dock-button"
-              data-media-control="hand"
-              data-tooltip={handLabel}
-              disabled={
-                signals.mutating || signals.loading || controlsTerminated
-              }
-              id="media-p406-control-hand"
-              label={handLabel}
-              loading={signals.mutating}
-              onClick={() =>
-                void runSignalAction(
-                  signals.onToggleHand,
-                  selfHand
-                    ? "media.p406.loweredOwnHand"
-                    : "media.p406.raisedHand",
-                )
-              }
-              onFocus={() => setToolbarFocusKey("hand")}
-              tabIndex={toolbarTabIndex("hand")}
-              variant={selfHand ? "primary" : "secondary"}
-            >
-              <DockIcon icon={<Hand />} />
-            </IconButton>
-          )}
-
-          {signals?.projection?.viewer_operations.can_send_reaction && (
-            <Menu modal={false}>
-              <MenuTrigger asChild>
+        <footer className="media-p405-footer">
+          <div
+            aria-label={t("media.p405.toolbar")}
+            className="media-p405-toolbar"
+            onKeyDown={handleToolbarKeyDown}
+            ref={toolbarRef}
+            role="toolbar"
+          >
+            {canPublishCameraMicrophone && (
+              <>
                 <IconButton
-                  className="media-p405-dock-button"
-                  data-media-control="reaction"
-                  data-tooltip={t("media.p406.reactions")}
-                  disabled={signals.mutating || controlsTerminated}
-                  id="media-p406-control-reaction"
-                  label={t("media.p406.reactions")}
-                  onFocus={() => setToolbarFocusKey("reaction")}
-                  tabIndex={toolbarTabIndex("reaction")}
-                  variant="secondary"
+                  className="media-p405-dock-button media-p405-dock-button--av"
+                  data-media-control="microphone"
+                  data-tooltip={microphoneLabel}
+                  disabled={pendingControl !== null || controlsTerminated}
+                  id="media-p405-control-microphone"
+                  label={microphoneLabel}
+                  loading={pendingControl === "microphone"}
+                  onClick={() =>
+                    void runControl("microphone", () =>
+                      localParticipant.setMicrophoneEnabled(
+                        !isMicrophoneEnabled,
+                      ),
+                    )
+                  }
+                  onFocus={() => setToolbarFocusKey("microphone")}
+                  tabIndex={toolbarTabIndex("microphone")}
+                  variant={isMicrophoneEnabled ? "secondary" : "danger"}
                 >
-                  <DockIcon icon={<Smile />} />
+                  <DockIcon icon={isMicrophoneEnabled ? <Mic /> : <MicOff />} />
                 </IconButton>
-              </MenuTrigger>
-              <MenuContent
-                aria-label={t("media.p406.reactionMenu")}
-                className="media-p406-reaction-menu"
-                data-theme="dark"
-              >
-                {CLASSROOM_REACTION_TYPES.map((reaction) => (
-                  <MenuItem
-                    key={reaction}
-                    onSelect={() =>
-                      void runSignalAction(
-                        () => signals.onSendReaction(reaction),
-                        "media.p406.reactionSent",
-                      )
-                    }
-                  >
-                    <span aria-hidden="true">{reactionGlyph(reaction)}</span>
-                    {t(reactionLabelKey(reaction))}
-                  </MenuItem>
-                ))}
-              </MenuContent>
-            </Menu>
-          )}
-
-          {chat && (
-            <Drawer modal={false} onOpenChange={setChatOpen} open={chatOpen}>
-              <DrawerTrigger asChild>
                 <IconButton
-                  aria-expanded={chatOpen}
-                  className="media-p405-dock-button media-p408-chat-control"
-                  data-media-control="chat"
-                  data-tooltip={chatLabel}
-                  id="media-p408-control-chat"
-                  label={chatLabel}
-                  onFocus={() => setToolbarFocusKey("chat")}
-                  ref={chatReturnFocus}
-                  tabIndex={toolbarTabIndex("chat")}
-                  variant={chatOpen ? "primary" : "secondary"}
+                  className="media-p405-dock-button media-p405-dock-button--av"
+                  data-media-control="camera"
+                  data-tooltip={cameraLabel}
+                  disabled={
+                    pendingControl !== null ||
+                    controlsTerminated ||
+                    degradationStage === "audio-only"
+                  }
+                  id="media-p405-control-camera"
+                  label={cameraLabel}
+                  loading={pendingControl === "camera"}
+                  onClick={() =>
+                    void runControl("camera", () =>
+                      localParticipant.setCameraEnabled(!isCameraEnabled),
+                    )
+                  }
+                  onFocus={() => setToolbarFocusKey("camera")}
+                  tabIndex={toolbarTabIndex("camera")}
+                  variant={isCameraEnabled ? "secondary" : "danger"}
                 >
-                  <DockIcon icon={<MessageCircle />} />
-                  {chatBadge && (
+                  <DockIcon
+                    icon={isCameraEnabled ? <Camera /> : <CameraOff />}
+                  />
+                </IconButton>
+              </>
+            )}
+            {canShareScreen && (
+              <IconButton
+                className="media-p405-dock-button"
+                data-media-control="screen-share"
+                data-tooltip={screenShareLabel}
+                disabled={pendingControl !== null || controlsTerminated}
+                id="media-p405-control-screen-share"
+                label={screenShareLabel}
+                loading={pendingControl === "screen-share"}
+                onClick={() =>
+                  void runControl("screen-share", () =>
+                    localParticipant.setScreenShareEnabled(
+                      !isScreenShareEnabled,
+                    ),
+                  )
+                }
+                onFocus={() => setToolbarFocusKey("screen-share")}
+                tabIndex={toolbarTabIndex("screen-share")}
+                variant={isScreenShareEnabled ? "danger" : "secondary"}
+              >
+                <DockIcon
+                  icon={
+                    isScreenShareEnabled ? <ScreenShareOff /> : <ScreenShare />
+                  }
+                />
+              </IconButton>
+            )}
+            <IconButton
+              aria-expanded={devicePanelOpen}
+              className="media-p405-dock-button"
+              data-media-control="devices"
+              data-tooltip={t("media.p405.devices")}
+              disabled={controlsTerminated}
+              id="media-p405-control-devices"
+              label={t("media.p405.devices")}
+              onClick={() => setDevicePanelOpen((open) => !open)}
+              onFocus={() => setToolbarFocusKey("devices")}
+              tabIndex={toolbarTabIndex("devices")}
+              variant="secondary"
+            >
+              <DockIcon icon={<Settings2 />} />
+            </IconButton>
+
+            {canPublishCameraMicrophone && (
+              <IconButton
+                aria-describedby={
+                  effectsActive ? effectsDescriptionID : undefined
+                }
+                aria-expanded={effectsOpen && effectsAvailable}
+                aria-haspopup="dialog"
+                className="media-p405-dock-button"
+                data-media-control="effects"
+                data-tooltip={t("media.fx.openEffects")}
+                disabled={controlsTerminated}
+                id="media-p405-control-effects"
+                label={t("media.fx.openEffects")}
+                onClick={(event) => toggleEffectsDrawer(event.currentTarget)}
+                onFocus={() => setToolbarFocusKey("effects")}
+                tabIndex={toolbarTabIndex("effects")}
+                variant={effectsActive ? "primary" : "secondary"}
+              >
+                <DockIcon icon={<Sparkles />} />
+              </IconButton>
+            )}
+            {canPublishCameraMicrophone && effectsActive && (
+              <span className="visually-hidden" id={effectsDescriptionID}>
+                {t("media.fx.activeDescription", { name: effectsName })}
+              </span>
+            )}
+
+            {signals?.projection?.viewer_operations.can_raise_hand && (
+              <IconButton
+                aria-pressed={Boolean(selfHand)}
+                className="media-p405-dock-button"
+                data-media-control="hand"
+                data-tooltip={handLabel}
+                disabled={
+                  signals.mutating || signals.loading || controlsTerminated
+                }
+                id="media-p406-control-hand"
+                label={handLabel}
+                loading={signals.mutating}
+                onClick={() =>
+                  void runSignalAction(
+                    signals.onToggleHand,
+                    selfHand
+                      ? "media.p406.loweredOwnHand"
+                      : "media.p406.raisedHand",
+                  )
+                }
+                onFocus={() => setToolbarFocusKey("hand")}
+                tabIndex={toolbarTabIndex("hand")}
+                variant={selfHand ? "primary" : "secondary"}
+              >
+                <DockIcon icon={<Hand />} />
+              </IconButton>
+            )}
+
+            {signals?.projection?.viewer_operations.can_send_reaction && (
+              <Menu modal={false}>
+                <MenuTrigger asChild>
+                  <IconButton
+                    className="media-p405-dock-button"
+                    data-media-control="reaction"
+                    data-tooltip={t("media.p406.reactions")}
+                    disabled={signals.mutating || controlsTerminated}
+                    id="media-p406-control-reaction"
+                    label={t("media.p406.reactions")}
+                    onFocus={() => setToolbarFocusKey("reaction")}
+                    tabIndex={toolbarTabIndex("reaction")}
+                    variant="secondary"
+                  >
+                    <DockIcon icon={<Smile />} />
+                  </IconButton>
+                </MenuTrigger>
+                <MenuContent
+                  aria-label={t("media.p406.reactionMenu")}
+                  className="media-p406-reaction-menu"
+                  data-theme="dark"
+                >
+                  {CLASSROOM_REACTION_TYPES.map((reaction) => (
+                    <MenuItem
+                      key={reaction}
+                      onSelect={() =>
+                        void runSignalAction(
+                          () => signals.onSendReaction(reaction),
+                          "media.p406.reactionSent",
+                        )
+                      }
+                    >
+                      <span aria-hidden="true">{reactionGlyph(reaction)}</span>
+                      {t(reactionLabelKey(reaction))}
+                    </MenuItem>
+                  ))}
+                </MenuContent>
+              </Menu>
+            )}
+
+            {chat && (
+              <Drawer modal={false} onOpenChange={setChatOpen} open={chatOpen}>
+                <DrawerTrigger asChild>
+                  <IconButton
+                    aria-expanded={chatOpen}
+                    className="media-p405-dock-button media-p408-chat-control"
+                    data-media-control="chat"
+                    data-tooltip={chatLabel}
+                    id="media-p408-control-chat"
+                    label={chatLabel}
+                    onFocus={() => setToolbarFocusKey("chat")}
+                    ref={chatReturnFocus}
+                    tabIndex={toolbarTabIndex("chat")}
+                    variant={chatOpen ? "primary" : "secondary"}
+                  >
+                    <DockIcon icon={<MessageCircle />} />
+                    {chatBadge && (
+                      <span
+                        aria-hidden="true"
+                        className="media-p408-chat-badge"
+                        data-testid="media-p408-chat-badge"
+                      >
+                        {chatBadge}
+                      </span>
+                    )}
+                  </IconButton>
+                </DrawerTrigger>
+                <DrawerContent
+                  aria-describedby={`${chatDescriptionID}`}
+                  className="media-p408-chat-drawer"
+                  closeLabel={t("media.p405.close")}
+                  data-theme="dark"
+                  onCloseAutoFocus={(event) =>
+                    restoreInspectorFocus(event, "chat")
+                  }
+                  onEscapeKeyDown={(event) => {
+                    // The emoji popover and inline edit own their Escape, and
+                    // so do the tools popover and the Code tool.
+                    const target = event.target;
+                    if (
+                      escapeBelongsToToolSurface(target) ||
+                      (target instanceof Element &&
+                        target.closest(
+                          ".classroom-chat-emoji__popover, .classroom-chat__edit",
+                        )) ||
+                      document.querySelector(
+                        ".media-p408-chat-drawer .classroom-chat-emoji__popover",
+                      )
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onInteractOutside={(event) => event.preventDefault()}
+                >
+                  <header className="media-p408-chat-drawer__header">
+                    <DrawerTitle className="media-p408-chat-drawer__title">
+                      {t("media.p408.title")}
+                    </DrawerTitle>
+                    <DrawerDescription
+                      className="media-p408-chat-drawer__subtitle"
+                      id={chatDescriptionID}
+                    >
+                      {t("media.chat.subtitle")}
+                    </DrawerDescription>
+                  </header>
+                  {chat}
+                </DrawerContent>
+              </Drawer>
+            )}
+
+            {/*
+            ROOM-TOOLS-CODE-01 / ADR-0043 §1: one Classroom tools key instead
+            of a key per tool. It shows the open stage tool's icon (sapphire)
+            or the tools grid, and opens a non-modal popover grid right after
+            itself in the Tab order; tiles never carry `data-media-control`,
+            so the Dock's own arrow-key roving skips them.
+          */}
+            {tools.length > 0 && (
+              <>
+                <IconButton
+                  aria-controls={toolsPopoverOpen ? toolsPopoverID : undefined}
+                  aria-describedby={activeTool ? toolsDescriptionID : undefined}
+                  aria-expanded={toolsPopoverOpen}
+                  aria-haspopup="dialog"
+                  className="media-p405-dock-button media-p506-tools-trigger"
+                  data-active-tool={activeTool?.id}
+                  data-media-control="tools"
+                  data-tooltip={t("classroomTools.trigger")}
+                  id={TOOLS_CONTROL_ID}
+                  label={t("classroomTools.trigger")}
+                  onClick={() => setToolsPopoverOpen((open) => !open)}
+                  onFocus={() => setToolbarFocusKey("tools")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && toolsPopoverOpen) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setToolsPopoverOpen(false);
+                    }
+                  }}
+                  ref={toolsTriggerRef}
+                  tabIndex={toolbarTabIndex("tools")}
+                  variant={activeTool ? "primary" : "secondary"}
+                >
+                  <DockIcon
+                    icon={activeTool ? activeTool.icon : <LayoutGrid />}
+                  />
+                  {activeTool && (
                     <span
                       aria-hidden="true"
-                      className="media-p408-chat-badge"
-                      data-testid="media-p408-chat-badge"
-                    >
-                      {chatBadge}
-                    </span>
+                      className="media-p506-tools-trigger__dot"
+                    />
                   )}
                 </IconButton>
-              </DrawerTrigger>
-              <DrawerContent
-                aria-describedby={`${chatDescriptionID}`}
-                className="media-p408-chat-drawer"
-                closeLabel={t("media.p405.close")}
-                data-theme="dark"
-                onCloseAutoFocus={(event) =>
-                  restoreInspectorFocus(event, "chat")
-                }
-                onEscapeKeyDown={(event) => {
-                  // The emoji popover and inline edit own their Escape.
-                  const target = event.target;
-                  if (
-                    (target instanceof Element &&
-                      target.closest(
-                        ".classroom-chat-emoji__popover, .classroom-chat__edit",
-                      )) ||
-                    document.querySelector(
-                      ".media-p408-chat-drawer .classroom-chat-emoji__popover",
-                    )
-                  ) {
-                    event.preventDefault();
-                  }
-                }}
-                onInteractOutside={(event) => event.preventDefault()}
-              >
-                <header className="media-p408-chat-drawer__header">
-                  <DrawerTitle className="media-p408-chat-drawer__title">
-                    {t("media.p408.title")}
-                  </DrawerTitle>
-                  <DrawerDescription
-                    className="media-p408-chat-drawer__subtitle"
-                    id={chatDescriptionID}
-                  >
-                    {t("media.chat.subtitle")}
-                  </DrawerDescription>
-                </header>
-                {chat}
-              </DrawerContent>
-            </Drawer>
-          )}
+                {activeTool && (
+                  <span className="visually-hidden" id={toolsDescriptionID}>
+                    {t("classroomTools.triggerActive", {
+                      tool: activeTool.label,
+                    })}
+                  </span>
+                )}
+                {toolsPopoverOpen && (
+                  <ClassroomToolsPopover
+                    anchorRef={toolsTriggerRef}
+                    id={toolsPopoverID}
+                    onClose={closeToolsPopover}
+                    onSelect={selectTool}
+                    openToolID={activeTool?.id ?? null}
+                    tools={tools}
+                  />
+                )}
+              </>
+            )}
 
-          {tools.map((tool) => {
-            const open = openToolID === tool.id;
-            return (
-              <IconButton
-                aria-controls={open ? `media-p506-stage-${tool.id}` : undefined}
-                aria-expanded={open}
-                className="media-p405-dock-button"
-                data-media-control={`tool-${tool.id}`}
-                data-tooltip={tool.label}
-                // The tool opens on the stage, never over this key, so its
-                // name stays available while the tool is expanded.
-                data-tooltip-expanded="show"
-                id={`media-p506-control-${tool.id}`}
-                key={tool.id}
-                label={tool.label}
-                onClick={() => toggleTool(tool.id)}
-                onFocus={() => setToolbarFocusKey(`tool-${tool.id}`)}
-                tabIndex={toolbarTabIndex(`tool-${tool.id}`)}
-                variant={open ? "primary" : "secondary"}
-              >
-                <DockIcon icon={tool.icon} />
-              </IconButton>
-            );
-          })}
-
-          {/*
+            {/*
             ROOM-COMPACT-05: one round layout key opens a small menu (Grid,
             Active speaker, Presentation) instead of a three-key groove.
           */}
-          <Menu modal={false}>
-            <MenuTrigger asChild>
-              <IconButton
-                className="media-p405-dock-button media-p405-layout-trigger"
-                data-media-control="layout"
-                data-tooltip={t("media.p405.layoutMenu")}
-                id={LAYOUT_CONTROL_ID}
-                label={t("media.p405.layoutMenu")}
-                onFocus={() => setToolbarFocusKey("layout")}
-                tabIndex={toolbarTabIndex("layout")}
-                variant="secondary"
-              >
-                <DockIcon icon={<Grid2X2 />} />
-              </IconButton>
-            </MenuTrigger>
-            <MenuContent
-              aria-label={t("media.p405.layoutGroup")}
-              className="media-p405-layout-menu"
-              data-theme="dark"
-              side="top"
-              sideOffset={10}
-            >
-              <MenuRadioGroup
-                onValueChange={(value) => {
-                  if (isClassroomLayoutMode(value)) changeLayout(value);
-                }}
-                value={projection.mode}
-              >
-                {layoutModes.map((mode) => (
-                  <MenuRadioItem
-                    className="media-p405-layout-option"
-                    disabled={mode === "presentation" && !presenterID}
-                    id={`media-p405-layout-${mode}`}
-                    key={mode}
-                    value={mode}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="media-p405-layout-option__icon"
-                    >
-                      {mode === "grid" ? (
-                        <Grid2X2 />
-                      ) : mode === "active-speaker" ? (
-                        <UserRound />
-                      ) : (
-                        <Presentation />
-                      )}
-                    </span>
-                    <span className="media-p405-layout-option__label">
-                      {t(layoutModeKey(mode))}
-                    </span>
-                    <Check
-                      aria-hidden="true"
-                      className="media-p405-layout-option__check"
-                    />
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
-            </MenuContent>
-          </Menu>
-
-          {(signals || lobby) && (
-            <Drawer
-              modal={false}
-              onOpenChange={setRosterOpen}
-              open={rosterOpen}
-            >
-              <DrawerTrigger asChild>
+            <Menu modal={false}>
+              <MenuTrigger asChild>
                 <IconButton
-                  aria-expanded={rosterOpen}
-                  className="media-p405-dock-button media-p406-roster-control"
-                  data-media-control="roster"
-                  data-tooltip={rosterLabel}
-                  disabled={controlsTerminated}
-                  id="media-p406-control-roster"
-                  label={rosterLabel}
-                  onFocus={() => setToolbarFocusKey("roster")}
-                  ref={rosterReturnFocus}
-                  tabIndex={toolbarTabIndex("roster")}
-                  variant={waitingCount > 0 ? "primary" : "secondary"}
+                  className="media-p405-dock-button media-p405-layout-trigger"
+                  data-media-control="layout"
+                  data-tooltip={t("media.p405.layoutMenu")}
+                  id={LAYOUT_CONTROL_ID}
+                  label={t("media.p405.layoutMenu")}
+                  onFocus={() => setToolbarFocusKey("layout")}
+                  tabIndex={toolbarTabIndex("layout")}
+                  variant="secondary"
                 >
-                  <DockIcon icon={<Users />} />
-                  {waitingCount > 0 && (
-                    <span className="media-p406-roster-badge">
-                      {waitingCount > 99 ? "99+" : waitingCount}
-                    </span>
-                  )}
+                  <DockIcon icon={<Grid2X2 />} />
                 </IconButton>
-              </DrawerTrigger>
-              {/*
+              </MenuTrigger>
+              <MenuContent
+                aria-label={t("media.p405.layoutGroup")}
+                className="media-p405-layout-menu"
+                data-theme="dark"
+                side="top"
+                sideOffset={10}
+              >
+                <MenuRadioGroup
+                  onValueChange={(value) => {
+                    if (isClassroomLayoutMode(value)) changeLayout(value);
+                  }}
+                  value={projection.mode}
+                >
+                  {layoutModes.map((mode) => (
+                    <MenuRadioItem
+                      className="media-p405-layout-option"
+                      disabled={mode === "presentation" && !presenterID}
+                      id={`media-p405-layout-${mode}`}
+                      key={mode}
+                      value={mode}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="media-p405-layout-option__icon"
+                      >
+                        {mode === "grid" ? (
+                          <Grid2X2 />
+                        ) : mode === "active-speaker" ? (
+                          <UserRound />
+                        ) : (
+                          <Presentation />
+                        )}
+                      </span>
+                      <span className="media-p405-layout-option__label">
+                        {t(layoutModeKey(mode))}
+                      </span>
+                      <Check
+                        aria-hidden="true"
+                        className="media-p405-layout-option__check"
+                      />
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuContent>
+            </Menu>
+
+            {(signals || lobby) && (
+              <Drawer
+                modal={false}
+                onOpenChange={setRosterOpen}
+                open={rosterOpen}
+              >
+                <DrawerTrigger asChild>
+                  <IconButton
+                    aria-expanded={rosterOpen}
+                    className="media-p405-dock-button media-p406-roster-control"
+                    data-media-control="roster"
+                    data-tooltip={rosterLabel}
+                    disabled={controlsTerminated}
+                    id="media-p406-control-roster"
+                    label={rosterLabel}
+                    onFocus={() => setToolbarFocusKey("roster")}
+                    ref={rosterReturnFocus}
+                    tabIndex={toolbarTabIndex("roster")}
+                    variant={waitingCount > 0 ? "primary" : "secondary"}
+                  >
+                    <DockIcon icon={<Users />} />
+                    {waitingCount > 0 && (
+                      <span className="media-p406-roster-badge">
+                        {waitingCount > 99 ? "99+" : waitingCount}
+                      </span>
+                    )}
+                  </IconButton>
+                </DrawerTrigger>
+                {/*
                 ROOM-PEOPLE-03: slim "People (N)" header + ✕ (no footer Close
                 key), then the People panel: search, waiting group, in-class
                 groups and the pinned host footer.
               */}
-              <DrawerContent
-                aria-describedby={undefined}
-                className="media-p406-roster-drawer"
-                closeLabel={t("media.p405.close")}
-                data-theme="dark"
-                onCloseAutoFocus={(event) =>
-                  restoreInspectorFocus(event, "roster")
-                }
-                onEscapeKeyDown={(event) => {
-                  // Escape in a filled search box clears it, not the drawer.
-                  const target = event.target;
-                  if (
-                    target instanceof HTMLInputElement &&
-                    target.type === "search" &&
-                    target.value !== ""
-                  ) {
-                    event.preventDefault();
+                <DrawerContent
+                  aria-describedby={undefined}
+                  className="media-p406-roster-drawer"
+                  closeLabel={t("media.p405.close")}
+                  data-theme="dark"
+                  onCloseAutoFocus={(event) =>
+                    restoreInspectorFocus(event, "roster")
                   }
-                }}
-                onInteractOutside={(event) => event.preventDefault()}
-              >
-                <header className="media-p406-roster-drawer__header">
-                  <DrawerTitle className="media-p406-roster-drawer__title">
-                    {signals?.projection
-                      ? t("media.people.title", {
-                          count: signals.projection.roster.length,
-                        })
-                      : t("media.people.titlePlain")}
-                  </DrawerTitle>
-                </header>
-                <ClassroomPeoplePanel
-                  lobby={lobby}
-                  mediaStates={peopleMediaStates}
-                  moderation={moderation}
-                  moderationDisabled={
-                    controlsTerminated || connectionStatus !== "connected"
-                  }
-                  onLowerAll={() => {
-                    if (!signals) return;
-                    void runSignalAction(
-                      signals.onLowerAllHands,
-                      "media.p406.loweredAllHands",
-                    );
+                  onEscapeKeyDown={(event) => {
+                    // Escape in a filled search box clears it, not the drawer.
+                    const target = event.target;
+                    if (
+                      escapeBelongsToToolSurface(target) ||
+                      (target instanceof HTMLInputElement &&
+                        target.type === "search" &&
+                        target.value !== "")
+                    ) {
+                      event.preventDefault();
+                    }
                   }}
-                  onLowerHand={(participantKey) => {
-                    if (!signals) return;
-                    void runSignalAction(
-                      () => signals.onLowerHand(participantKey),
-                      "media.p406.loweredHand",
-                    );
-                  }}
-                  signals={signals}
-                />
-              </DrawerContent>
-            </Drawer>
-          )}
-        </div>
+                  onInteractOutside={(event) => event.preventDefault()}
+                >
+                  <header className="media-p406-roster-drawer__header">
+                    <DrawerTitle className="media-p406-roster-drawer__title">
+                      {signals?.projection
+                        ? t("media.people.title", {
+                            count: signals.projection.roster.length,
+                          })
+                        : t("media.people.titlePlain")}
+                    </DrawerTitle>
+                  </header>
+                  <ClassroomPeoplePanel
+                    lobby={lobby}
+                    mediaStates={peopleMediaStates}
+                    moderation={moderation}
+                    moderationDisabled={
+                      controlsTerminated || connectionStatus !== "connected"
+                    }
+                    onLowerAll={() => {
+                      if (!signals) return;
+                      void runSignalAction(
+                        signals.onLowerAllHands,
+                        "media.p406.loweredAllHands",
+                      );
+                    }}
+                    onLowerHand={(participantKey) => {
+                      if (!signals) return;
+                      void runSignalAction(
+                        () => signals.onLowerHand(participantKey),
+                        "media.p406.loweredHand",
+                      );
+                    }}
+                    signals={signals}
+                  />
+                </DrawerContent>
+              </Drawer>
+            )}
+          </div>
 
-        <DockDivider />
-        <LeaveRoomControl
-          moderation={controlsTerminated ? undefined : moderation}
-          moderationDisabled={
-            controlsTerminated || connectionStatus !== "connected"
-          }
-          onLeave={handleLeave}
-        />
+          <DockDivider />
+          <LeaveRoomControl
+            moderation={controlsTerminated ? undefined : moderation}
+            moderationDisabled={
+              controlsTerminated || connectionStatus !== "connected"
+            }
+            onLeave={handleLeave}
+          />
 
-        {/*
+          {/*
           Anchored to the Dock (not the shell) so the device popover stays
           centred above it whatever its height or a side drawer's width.
           Rendered after Leave, so the Tab order is unchanged.
         */}
-        {devicePanelOpen && !controlsTerminated && (
-          <DevicePanel
-            canPublish={canPublishCameraMicrophone}
-            onChange={(name, action) =>
-              void runControl(name, () => Promise.resolve(action()))
-            }
-            onDeviceError={handleDeviceError}
-          />
-        )}
-      </footer>
-
-      {canPublishCameraMicrophone && (
-        // Non-modal side panel (Teams-style): no overlay, the whiteboard and
-        // camera grid stay interactive, and wide rooms reserve its width so
-        // it never covers the stage. Closing returns focus to its opener.
-        <Drawer
-          modal={false}
-          onOpenChange={setEffectsOpen}
-          open={effectsOpen && effectsAvailable}
-        >
-          <DrawerContent
-            aria-describedby={`${effectsDescriptionID}-drawer`}
-            className="media-p405-effects-drawer"
-            closeLabel={t("media.p405.close")}
-            data-theme="dark"
-            onCloseAutoFocus={(event) =>
-              restoreInspectorFocus(event, "effects")
-            }
-            onInteractOutside={(event) => event.preventDefault()}
-          >
-            <DrawerTitle className="media-p405-effects-drawer__title">
-              {t("media.fx.title")}
-            </DrawerTitle>
-            <DrawerDescription
-              className="media-p405-effects-drawer__description"
-              id={`${effectsDescriptionID}-drawer`}
-            >
-              {t("media.fx.drawerDescription")}
-            </DrawerDescription>
-            <div className="media-p405-effects-drawer__preview">
-              {isCameraEnabled &&
-              localCameraTrackRef &&
-              isTrackReference(localCameraTrackRef) ? (
-                <VideoTrack
-                  aria-label={t("media.fx.selfPreview")}
-                  className="media-p405-video--mirror"
-                  manageSubscription={false}
-                  trackRef={localCameraTrackRef}
-                />
-              ) : (
-                <p>{t("media.fx.drawerCameraOff")}</p>
-              )}
-              {isCameraEnabled && effectsStatus === "loading" && (
-                <span className="media-p405-effects-drawer__badge">
-                  {t("media.fx.status.loading")}
-                </span>
-              )}
-            </div>
-            <p
-              aria-live="polite"
-              className="media-p405-effects-drawer__status"
-              role="status"
-            >
-              {effectsProblem ? t(`media.fx.status.${effectsProblem}`) : ""}
-            </p>
-            <VisualEffectsPicker
-              disabled={controlsTerminated}
-              library={backgroundLibrary}
-              onChange={chooseEffects}
-              surface="drawer"
-              value={visualEffects}
+          {devicePanelOpen && !controlsTerminated && (
+            <DevicePanel
+              canPublish={canPublishCameraMicrophone}
+              onChange={(name, action) =>
+                void runControl(name, () => Promise.resolve(action()))
+              }
+              onDeviceError={handleDeviceError}
             />
-          </DrawerContent>
-        </Drawer>
-      )}
-      <RoomTooltipLayer containerRef={shellRef} />
-    </div>
+          )}
+        </footer>
+
+        {canPublishCameraMicrophone && (
+          // Non-modal side panel (Teams-style): no overlay, the whiteboard and
+          // camera grid stay interactive, and wide rooms reserve its width so
+          // it never covers the stage. Closing returns focus to its opener.
+          <Drawer
+            modal={false}
+            onOpenChange={setEffectsOpen}
+            open={effectsOpen && effectsAvailable}
+          >
+            <DrawerContent
+              aria-describedby={`${effectsDescriptionID}-drawer`}
+              className="media-p405-effects-drawer"
+              closeLabel={t("media.p405.close")}
+              data-theme="dark"
+              onCloseAutoFocus={(event) =>
+                restoreInspectorFocus(event, "effects")
+              }
+              onEscapeKeyDown={(event) => {
+                if (escapeBelongsToToolSurface(event.target)) {
+                  event.preventDefault();
+                }
+              }}
+              onInteractOutside={(event) => event.preventDefault()}
+            >
+              <DrawerTitle className="media-p405-effects-drawer__title">
+                {t("media.fx.title")}
+              </DrawerTitle>
+              <DrawerDescription
+                className="media-p405-effects-drawer__description"
+                id={`${effectsDescriptionID}-drawer`}
+              >
+                {t("media.fx.drawerDescription")}
+              </DrawerDescription>
+              <div className="media-p405-effects-drawer__preview">
+                {isCameraEnabled &&
+                localCameraTrackRef &&
+                isTrackReference(localCameraTrackRef) ? (
+                  <VideoTrack
+                    aria-label={t("media.fx.selfPreview")}
+                    className="media-p405-video--mirror"
+                    manageSubscription={false}
+                    trackRef={localCameraTrackRef}
+                  />
+                ) : (
+                  <p>{t("media.fx.drawerCameraOff")}</p>
+                )}
+                {isCameraEnabled && effectsStatus === "loading" && (
+                  <span className="media-p405-effects-drawer__badge">
+                    {t("media.fx.status.loading")}
+                  </span>
+                )}
+              </div>
+              <p
+                aria-live="polite"
+                className="media-p405-effects-drawer__status"
+                role="status"
+              >
+                {effectsProblem ? t(`media.fx.status.${effectsProblem}`) : ""}
+              </p>
+              <VisualEffectsPicker
+                disabled={controlsTerminated}
+                library={backgroundLibrary}
+                onChange={chooseEffects}
+                surface="drawer"
+                value={visualEffects}
+              />
+            </DrawerContent>
+          </Drawer>
+        )}
+        <RoomTooltipLayer containerRef={shellRef} />
+      </div>
+    </ClassroomToolActionsContext.Provider>
   );
 }
 
