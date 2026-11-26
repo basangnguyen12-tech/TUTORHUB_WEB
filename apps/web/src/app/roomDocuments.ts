@@ -442,6 +442,17 @@ export async function requestRoomDocumentView(
   );
 }
 
+/** Check the current server-side download policy even when the viewer has cached bytes. */
+export async function authorizeRoomStudyExport(
+  tenantID: string,
+  fileID: string,
+  signal: AbortSignal,
+) {
+  const options = { baseUrl: getApiBaseUrl(), signal };
+  const csrf = await rotateCSRFToken(options);
+  await issueFileDownloadCapability(tenantID, fileID, csrf.csrf_token, options);
+}
+
 export class RoomDocumentBytesError extends Error {
   constructor(
     readonly code: "integrity" | "network" | "tooLarge" | "unavailable",
@@ -472,13 +483,17 @@ export async function fetchRoomDocumentBytes(
     "content_length_bytes" | "sha256" | "url"
   >,
   options: {
+    readonly forStudyExport?: boolean;
     readonly fetch?: typeof fetch;
     readonly onProgress?: (percent: number) => void;
     readonly signal?: AbortSignal;
   } = {},
 ): Promise<Uint8Array> {
   const expected = capability.content_length_bytes;
-  if (expected > ROOM_DOCUMENT_VIEWER_MAX_FETCH_BYTES) {
+  const limit = options.forStudyExport
+    ? ROOM_DOCUMENT_PDF_MAX_BYTES
+    : ROOM_DOCUMENT_VIEWER_MAX_FETCH_BYTES;
+  if (!Number.isSafeInteger(expected) || expected < 1 || expected > limit) {
     throw new RoomDocumentBytesError("tooLarge");
   }
   let response: Response;

@@ -3,6 +3,7 @@ import { Button, IconButton } from "@tutorhub/ui";
 import { AlertTriangle, MonitorPlay, Square, X } from "lucide-react";
 import {
   useCallback,
+  useContext,
   useEffect,
   useId,
   useMemo,
@@ -31,7 +32,10 @@ import type {
 import type { CodePresenceRoster } from "./codePresence";
 import { DocumentLibrary, type DocumentLibraryQuery } from "./DocumentLibrary";
 import { DocumentLoader } from "./DocumentLoader";
+import { FilesChatContext } from "./filesChatContext";
+import { roomDocumentView } from "../../app/roomChatDocuments";
 import type {
+  ClassroomFilesChatOpen,
   ClassroomFilesSession,
   ClassroomFilesViewState,
 } from "./filesSession";
@@ -71,9 +75,23 @@ export interface LazyDocumentViewerProps {
 }
 
 export default function LazyDocumentViewer(props: LazyDocumentViewerProps) {
+  const [request, setRequest] = useState<ClassroomFilesChatOpen | null>(null);
+  const { session } = props;
+  useEffect(() => {
+    const receive = () => {
+      const next = session.takeChatOpen();
+      if (next) {
+        session.saveView(next.view);
+        setRequest(next);
+      }
+    };
+    const unsubscribe = session.subscribeChatOpen(receive);
+    receive();
+    return unsubscribe;
+  }, [session]);
   if (props.collaborationEnabled !== true)
-    return <PrivateDocuments {...props} />;
-  return <CollaborativeDocuments {...props} />;
+    return <PrivateDocuments {...props} key={request?.sequence ?? 0} />;
+  return <CollaborativeDocuments {...props} chatRequest={request} />;
 }
 
 type WhiteboardTarget = {
@@ -104,13 +122,34 @@ function useWhiteboardTarget({
     : null;
 }
 
-function useLibraryQuery(tenantID: string, mediaSpaceID: string) {
+function useLibraryQuery(
+  tenantID: string,
+  mediaSpaceID: string,
+  openFileID: string | null,
+) {
   const documents = useRoomDocuments(tenantID, mediaSpaceID, true);
   const allDocuments = useMemo(
     () => documents.data?.pages.flatMap((page) => page.items) ?? [],
     [documents.data],
   );
   const viewerAccess = documents.data?.pages[0]?.viewer_access ?? null;
+  const currentDocument =
+    allDocuments.find((item) => item.id === openFileID) ?? null;
+  const { data, fetchNextPage, isError, isFetching } = documents;
+  useEffect(() => {
+    // A presentation or a restored reading position can name a file beyond the first library page.
+    if (
+      !openFileID ||
+      openFileID.startsWith("chat:") ||
+      currentDocument ||
+      isError ||
+      isFetching
+    )
+      return;
+    const cursor = data?.pages.at(-1)?.next_cursor;
+    if (cursor && !data?.pageParams.includes(cursor))
+      void fetchNextPage({ cancelRefetch: false });
+  }, [currentDocument, data, fetchNextPage, isError, isFetching, openFileID]);
   const query: DocumentLibraryQuery = {
     documents: allDocuments,
     error: documents.error,
@@ -122,7 +161,7 @@ function useLibraryQuery(tenantID: string, mediaSpaceID: string) {
     refetch: () => void documents.refetch(),
     viewerAccess,
   };
-  return { allDocuments, query };
+  return { currentDocument, query };
 }
 
 /** "Tải bản gốc" with the active-content warning and its error toast. */
@@ -164,21 +203,34 @@ function useOriginalDownload(tenantID: string) {
   return { request, ui };
 }
 
-function privateView(document: RoomDocument): ClassroomFilesViewState {
-  return {
-    document: {
-      activeContent: document.active_content,
-      displayName: document.display_name,
-      fileID: document.id,
-      firstPageAspect: document.first_page_aspect ?? 0.7071,
-      mediaType: document.declared_media_type,
-      pageCount: Math.max(1, document.page_count ?? 1),
-      versionID: null,
-    },
-    fitMode: "width",
-    page: 1,
-    zoom: 1,
-  };
+function ChatPreviewBanner({ id }: { id: string }) {
+  const { saveAttachment } = useContext(FilesChatContext);
+  const { t } = useI18n();
+  const [state, setState] = useState<"idle" | "saving" | "error">("idle");
+  return (
+    <div className="classroom-files-chat-preview">
+      <span>{t("classroomTools.files.chat.temporary")}</span>
+      {saveAttachment && (
+        <Button
+          disabled={state === "saving"}
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setState("saving");
+            void saveAttachment(id).then(
+              () => setState("idle"),
+              () => setState("error"),
+            );
+          }}
+        >
+          {t("classroomTools.files.chat.save")}
+        </Button>
+      )}
+      {state === "error" && (
+        <span role="alert">{t("classroomTools.files.chat.saveFailed")}</span>
+      )}
+    </div>
+  );
 }
 
 interface PresentControls {
@@ -189,6 +241,8 @@ interface PresentControls {
 
 /** Slice 1 behaviour (and "Xem riêng" when collaboration is on). */
 function PrivateDocuments({
+  actorID,
+  activePresentation,
   headerSlot,
   mediaSpaceID,
   present = null,
@@ -198,13 +252,21 @@ function PrivateDocuments({
   toolActions,
   whiteboardCanEdit,
   whiteboardEnabled,
-}: LazyDocumentViewerProps & { readonly present?: PresentControls | null }) {
+}: LazyDocumentViewerProps & {
+  readonly present?: PresentControls | null;
+  readonly activePresentation?: PdfPresentation | null;
+}) {
   const { t } = useI18n();
   const [view, setView] = useState<ClassroomFilesViewState | null>(() =>
     session.readView(),
   );
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const { allDocuments, query } = useLibraryQuery(tenantID, mediaSpaceID);
+  const openFileID = view?.document.fileID ?? null;
+  const { currentDocument, query } = useLibraryQuery(
+    tenantID,
+    mediaSpaceID,
+    openFileID,
+  );
   const download = useOriginalDownload(tenantID);
   const whiteboard = useWhiteboardTarget({
     snippetBridge,
@@ -223,16 +285,10 @@ function PrivateDocuments({
     [session],
   );
 
-  const openFileID = view?.document.fileID ?? null;
-  const currentDocument =
-    openFileID === null
-      ? null
-      : (allDocuments.find((document) => document.id === openFileID) ?? null);
-
   const openDocument = (document: RoomDocument) => {
     setLibraryOpen(false);
     if (document.id === openFileID) return;
-    const next = privateView(document);
+    const next = roomDocumentView(document);
     session.saveView(next);
     setView(next);
   };
@@ -299,10 +355,18 @@ function PrivateDocuments({
 
   return (
     <div className="classroom-files">
+      {openFileID?.startsWith("chat:") && (
+        <ChatPreviewBanner
+          id={openFileID.slice(5)}
+          key={`preview-${openFileID}`}
+        />
+      )}
       {view === null ? (
         library("stage")
       ) : (
         <DocumentLoader
+          actorID={actorID}
+          activePresentation={activePresentation}
           canDownloadOriginal={
             currentDocument?.viewer_access.can_download_original === true
           }
@@ -333,7 +397,11 @@ function PrivateDocuments({
 
 type DocumentsMode = "class" | "mine";
 
-function CollaborativeDocuments(props: LazyDocumentViewerProps) {
+function CollaborativeDocuments(
+  props: LazyDocumentViewerProps & {
+    readonly chatRequest: ClassroomFilesChatOpen | null;
+  },
+) {
   const {
     actorID,
     displayName = "",
@@ -347,7 +415,11 @@ function CollaborativeDocuments(props: LazyDocumentViewerProps) {
   const tool = usePdfPresentationTool(tenantID, mediaSpaceID, true);
   const projection = tool.isSuccess ? tool.data : undefined;
   const presentation = projection?.presentation ?? null;
-  const { allDocuments, query } = useLibraryQuery(tenantID, mediaSpaceID);
+  const { currentDocument: presentedDocument, query } = useLibraryQuery(
+    tenantID,
+    mediaSpaceID,
+    presentation?.file_id ?? null,
+  );
   const canPresent =
     projection?.can_present === true ||
     query.viewerAccess?.can_present === true;
@@ -364,10 +436,29 @@ function CollaborativeDocuments(props: LazyDocumentViewerProps) {
   const [error, setError] = useState<TranslationKey | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [innerSlot, setInnerSlot] = useState<HTMLSpanElement | null>(null);
+  const [handledChat, setHandledChat] = useState(0);
+  const [classJump, setClassJump] = useState<ClassroomFilesChatOpen | null>(
+    null,
+  );
 
   // Adjust state while rendering: the first mode, then one automatic
   // switch to "Trình chiếu lớp" per presented `id:generation:revoke`.
-  if (mode === null && resolved) {
+  if (
+    resolved &&
+    props.chatRequest &&
+    props.chatRequest.sequence !== handledChat
+  ) {
+    const request = props.chatRequest;
+    const samePresentation =
+      request.kind === "reference" &&
+      presentation?.status === "open" &&
+      presentation.file_id === request.view.document.fileID;
+    setHandledChat(request.sequence);
+    setHandledOpenKey(openKey);
+    setLibraryOpen(false);
+    setMode(samePresentation ? "class" : "mine");
+    setClassJump(samePresentation ? request : null);
+  } else if (mode === null && resolved) {
     setMode(openKey ? "class" : "mine");
     setHandledOpenKey(openKey);
   } else if (mode !== null && openKey !== null && openKey !== handledOpenKey) {
@@ -422,15 +513,8 @@ function CollaborativeDocuments(props: LazyDocumentViewerProps) {
 
   const download = useOriginalDownload(tenantID);
   const whiteboard = useWhiteboardTarget(props);
-  const presentedDocument =
-    presentation === null
-      ? null
-      : (allDocuments.find(
-          (document) => document.id === presentation.file_id,
-        ) ?? null);
-
   const openPrivately = (document: RoomDocument) => {
-    session.saveView(privateView(document));
+    session.saveView(roomDocumentView(document));
     setLibraryOpen(false);
     setMode("mine");
   };
@@ -489,8 +573,9 @@ function CollaborativeDocuments(props: LazyDocumentViewerProps) {
     content = (
       <PrivateDocuments
         {...props}
+        activePresentation={presentation}
         headerSlot={headerSlot === undefined ? undefined : innerSlot}
-        key="mine"
+        key={`mine-${handledChat}`}
         present={present}
       />
     );
@@ -559,6 +644,15 @@ function CollaborativeDocuments(props: LazyDocumentViewerProps) {
   } else {
     content = (
       <PdfPresentationStage
+        chatPageRequest={
+          classJump && classJump.view.document.fileID === presentation.file_id
+            ? {
+                page: classJump.view.page,
+                sequence: classJump.sequence,
+                onHandled: () => setClassJump(null),
+              }
+            : null
+        }
         actorID={actorID}
         canDownloadOriginal={
           presentedDocument?.viewer_access.can_download_original === true

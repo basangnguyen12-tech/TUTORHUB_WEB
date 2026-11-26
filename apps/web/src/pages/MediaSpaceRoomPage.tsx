@@ -45,6 +45,7 @@ import {
 import type { CodePresenceRoster } from "../features/classroom-tools/codePresence";
 import { createClassroomCodeSession } from "../features/classroom-tools/codeSession";
 import { createClassroomFilesSession } from "../features/classroom-tools/filesSession";
+import { useRoomChatDocuments } from "../app/roomChatDocuments";
 import {
   ClassroomPdfAnnotatorGrantsContext,
   type ClassroomPdfAnnotatorGrantError,
@@ -278,6 +279,18 @@ function MediaSpaceRoomSession({
   );
   const chatCanPost =
     roomChat.conversation?.viewer_access.can_post_messages === true;
+  const chatDocuments = useRoomChatDocuments(
+    tenantId,
+    spaceId ?? "",
+    userId,
+    roomChat.conversation?.id,
+    {
+      chatOpen,
+      enabled: filesToolEnabled === true && signalScopeReady && roomLive,
+      roomOpen: mediaSpace.data?.status === "open",
+      session: filesSession,
+    },
+  );
   const whiteboardDocument =
     whiteboardEnabled && whiteboardTool.isSuccess
       ? (whiteboardTool.data?.document ?? null)
@@ -798,7 +811,15 @@ function MediaSpaceRoomSession({
 
   const roomProps: ClassroomLiveKitRoomProps = {
     choices: handoff.choices,
-    chat: <MediaSpaceChatPanel chat={roomChat} codeSession={codeSession} />,
+    chat: (
+      <MediaSpaceChatPanel
+        insideRoomDrawer
+        chat={roomChat}
+        codeSession={codeSession}
+        filesSession={filesSession}
+        documentActions={chatDocuments}
+      />
+    ),
     chatUnreadCapped: roomChat.unreadCapped,
     chatUnreadCount: roomChat.unreadCount,
     onChatOpenChange: setChatOpen,
@@ -859,6 +880,10 @@ function MediaSpaceRoomSession({
         autoOpenKey: pdfAutoOpenKey,
         content: (
           <ClassroomFilesTool
+            chatActions={{
+              share: chatCanPost ? sendCodeToChat : undefined,
+              saveAttachment: chatDocuments.saveAttachment,
+            }}
             actorID={userId}
             collaborationEnabled={pdfCollaborationEnabled}
             displayName={displayName}

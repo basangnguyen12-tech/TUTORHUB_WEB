@@ -1,0 +1,39 @@
+.classroom-chat__document {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin: 0;
+}
+
+.classroom-chat__document figcaption {
+  display: grid;
+  overflow-wrap: anywhere;
+}
+
+.classroom-chat__document-actions,
+.classroom-files-chat-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.classroom-chat__document-actions {
+  grid-column: 1 / -1;
+}
+
+.classroom-chat__document-actions .classroom-chat__code-action {
+  white-space: normal;
+  min-height: 28px;
+}
+
+.classroom-chat-lightbox__footer:has(.classroom-chat__document-actions) {
+  flex-wrap: wrap;
+}
+
+.classroom-files-chat-preview {
+  padding: 0.35rem 0.65rem;
+  border-bottom: 1px solid currentColor;
+}

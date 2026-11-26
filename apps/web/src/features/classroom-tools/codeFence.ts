@@ -3,6 +3,10 @@ import {
   languageForFence,
   type CodeFileLanguage,
 } from "./codeLanguages";
+import {
+  parseDocumentReference,
+  type ChatDocumentReference,
+} from "./documentReference";
 
 /**
  * ROOM-TOOLS-CODE-01 / ADR-0043 §2: fenced Markdown code blocks travel through
@@ -11,6 +15,8 @@ import {
  */
 export type ChatContentPiece =
   | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "literal"; readonly text: string }
+  | { readonly kind: "document"; readonly reference: ChatDocumentReference }
   | {
       readonly kind: "code";
       readonly code: string;
@@ -24,6 +30,13 @@ export type ChatContentPiece =
 const fencePattern =
   /(^|\n)(`{3,})([A-Za-z0-9_+#.-]{0,32})[ \t]*\r?\n([\s\S]*?)\r?\n\2[ \t]*(?=\r?\n|$)/g;
 
+function chatTextPiece(text: string): ChatContentPiece {
+  return {
+    kind: /^`{3,}tutorhub-doc\b/m.test(text) ? "literal" : "text",
+    text,
+  };
+}
+
 /** Splits message content into text and fenced code pieces. */
 export function splitChatCodeBlocks(content: string): ChatContentPiece[] {
   const pieces: ChatContentPiece[] = [];
@@ -36,23 +49,31 @@ export function splitChatCodeBlocks(content: string): ChatContentPiece[] {
       /\r?\n$/,
       "",
     );
-    if (text.trim() !== "") pieces.push({ kind: "text", text });
+    if (text.trim() !== "") pieces.push(chatTextPiece(text));
   };
   for (const match of content.matchAll(fencePattern)) {
     const index = match.index ?? 0;
     const start = index + (match[1] ?? "").length;
     const tag = match[3] ?? "";
     pushText(content.slice(cursor, start));
-    pieces.push({
-      code: match[4] ?? "",
-      kind: "code",
-      language: languageForFence(tag),
-      tag,
-    });
+    if (tag === "tutorhub-doc") {
+      const reference = parseDocumentReference(match[4] ?? "");
+      pieces.push(
+        reference
+          ? { kind: "document", reference }
+          : { kind: "literal", text: match[0].slice((match[1] ?? "").length) },
+      );
+    } else
+      pieces.push({
+        code: match[4] ?? "",
+        kind: "code",
+        language: languageForFence(tag),
+        tag,
+      });
     cursor = index + match[0].length;
     afterFence = true;
   }
-  if (!afterFence) return [{ kind: "text", text: content }];
+  if (!afterFence) return [chatTextPiece(content)];
   pushText(content.slice(cursor));
   return pieces;
 }

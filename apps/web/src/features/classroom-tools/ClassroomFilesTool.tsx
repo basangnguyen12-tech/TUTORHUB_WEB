@@ -13,6 +13,7 @@ import type { WhiteboardSnippetBridge } from "../collaboration/whiteboardSnippet
 import { ClassroomHeaderSlotContext } from "../media/ClassroomMediaShell";
 import type { CodePresenceRoster } from "./codePresence";
 import type { ClassroomFilesSession } from "./filesSession";
+import { FilesChatContext, type FilesChatActions } from "./filesChatContext";
 import { ClassroomToolActionsContext } from "./toolActions";
 
 /**
@@ -22,6 +23,7 @@ import { ClassroomToolActionsContext } from "./toolActions";
  * `React.lazy` (`LazyDocumentViewer-*`), adding 0 bytes to the entry chunk.
  */
 export interface ClassroomFilesToolProps {
+  readonly chatActions?: FilesChatActions;
   readonly actorID: string;
   /**
    * ROOM-TOOLS-FILES-02B: `classroom_pdf_collaboration` is on as well
@@ -78,6 +80,7 @@ class FilesToolErrorBoundary extends Component<
 }
 
 export function ClassroomFilesTool({
+  chatActions,
   enabled,
   ...props
 }: ClassroomFilesToolProps) {
@@ -151,11 +154,13 @@ export function ClassroomFilesTool({
           </div>
         }
       >
-        <Viewer
-          {...props}
-          headerSlot={headerSlot === null ? undefined : headerSlot.element}
-          toolActions={toolActions}
-        />
+        <FilesChatContext.Provider value={chatActions ?? {}}>
+          <Viewer
+            {...props}
+            headerSlot={headerSlot === null ? undefined : headerSlot.element}
+            toolActions={toolActions}
+          />
+        </FilesChatContext.Provider>
       </Suspense>
     </FilesToolErrorBoundary>
   );

@@ -305,6 +305,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export interface PdfPresentationStageProps {
+  readonly chatPageRequest?: DocumentViewerPresentation["chatPageRequest"];
   readonly actorID: string;
   readonly canDownloadOriginal: boolean;
   readonly displayName: string;
@@ -327,6 +328,7 @@ export interface PdfPresentationStageProps {
 }
 
 export function PdfPresentationStage({
+  chatPageRequest,
   actorID,
   canDownloadOriginal,
   displayName,
@@ -663,6 +665,8 @@ export function PdfPresentationStage({
   );
 
   const adapter: DocumentViewerPresentation = {
+    chatPageRequest: session && (!presenter || synced) ? chatPageRequest : null,
+    inkForExport: live.connection === "connected" ? session?.ink : undefined,
     drawSnippetAnnotations: session ? drawSnippetAnnotations : undefined,
     hasAnnotations,
     hiddenPages: meta.hiddenPages,
@@ -805,6 +809,8 @@ export function PdfPresentationStage({
       <div className="classroom-files-presentation__viewer">
         {view ? (
           <DocumentLoader
+            actorID={actorID}
+            activePresentation={presentation}
             canDownloadOriginal={canDownloadOriginal}
             expectedVersionID={presentation.version_id}
             headerSlot={headerSlot}

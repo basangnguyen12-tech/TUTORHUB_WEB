@@ -152,6 +152,62 @@ function composer() {
 }
 
 describe("ClassroomChatPanel", () => {
+  it("opens a URL-free reference and leaves an invalid fence as inert text", async () => {
+    const onOpenDocument = vi.fn(async () => undefined);
+    const ref = {
+      fileId: actorID,
+      name: "Đề ôn.pdf",
+      page: 3,
+      mediaType: "application/pdf",
+    };
+    const bad = [
+      "```tutorhub-doc",
+      JSON.stringify({ ...ref, name: "https://private.example" }),
+      "```",
+    ].join("\n");
+    renderPanel({
+      messages: [
+        message(
+          ["```tutorhub-doc", JSON.stringify(ref), "```", "Làm bài", bad].join(
+            "\n",
+          ),
+        ),
+      ],
+      onOpenDocument,
+    });
+    expect(screen.getByText("Đề ôn.pdf")).toBeInTheDocument();
+    expect(screen.getByText("Trang 3")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mở trong Tài liệu" }));
+    await waitFor(() => expect(onOpenDocument).toHaveBeenCalledWith(ref));
+  });
+  it("offers only supported attachment actions and gates save by staff permission", async () => {
+    const pdf = attachment({
+      display_name: "Đề ôn.pdf",
+      media_type: "application/pdf",
+      kind: "file",
+    });
+    const unsupported = attachment({
+      display_name: "ghi.docx",
+      media_type: "application/msword",
+      kind: "file",
+    });
+    const onOpenAttachment = vi.fn(async () => undefined);
+    const onSaveAttachment = vi.fn(async () => undefined);
+    const messages = [message("", { attachments: [pdf, unsupported] })];
+    const { view } = renderPanel({ messages, onOpenAttachment });
+    expect(
+      screen.queryByRole("button", { name: "Lưu vào Kho tài liệu" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mở trong Tài liệu" }));
+    await waitFor(() => expect(onOpenAttachment).toHaveBeenCalledWith(pdf));
+    view.unmount();
+    renderPanel({ messages, onOpenAttachment, onSaveAttachment });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Lưu vào Kho tài liệu" }),
+    );
+    await waitFor(() => expect(onSaveAttachment).toHaveBeenCalledWith(pdf));
+  });
   beforeEach(() => {
     let counter = 0;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

@@ -29,6 +29,12 @@ export interface ClassroomFilesViewState {
   readonly zoom: number;
 }
 
+export interface ClassroomFilesChatOpen {
+  readonly kind: "reference" | "private";
+  readonly view: ClassroomFilesViewState;
+  readonly sequence: number;
+}
+
 /**
  * ROOM-TOOLS-FILES-02B: RAM-only LRU of HTTP Range chunks for one 30–50 MiB
  * PDF version (≤ 32 MiB), so switching tools does not refetch every range.
@@ -94,6 +100,14 @@ export interface ClassroomFilesPresentationView {
 }
 
 export interface ClassroomFilesSession {
+  /** A newer click, room exit or stage close invalidates an outstanding Chat fetch. */
+  beginChatOpen(): () => boolean;
+  openFromChat(
+    view: ClassroomFilesViewState,
+    kind: ClassroomFilesChatOpen["kind"],
+  ): void;
+  takeChatOpen(): ClassroomFilesChatOpen | null;
+  subscribeChatOpen(listener: () => void): () => void;
   clear(): void;
   readBytes(fileID: string, versionID: string): Uint8Array | null;
   /** The Range chunk cache of one document version (others are dropped). */
@@ -118,6 +132,9 @@ export function createClassroomFilesSession(): ClassroomFilesSession {
   // Insertion order is recency order (LRU): a read moves the entry last.
   const bytes = new Map<string, Uint8Array>();
   const listeners = new Set<() => void>();
+  const chatListeners = new Set<() => void>();
+  let chatSequence = 0;
+  let pendingChat: ClassroomFilesChatOpen | null = null;
   let view: ClassroomFilesViewState | null = null;
   let range: { cache: ByteRangeCache; key: string } | null = null;
   let presentationView: ClassroomFilesPresentationView | null = null;
@@ -126,7 +143,28 @@ export function createClassroomFilesSession(): ClassroomFilesSession {
   const total = () =>
     [...bytes.values()].reduce((sum, entry) => sum + entry.byteLength, 0);
   return {
+    beginChatOpen() {
+      const sequence = ++chatSequence;
+      return () => sequence === chatSequence;
+    },
+    openFromChat(next, kind) {
+      pendingChat = { kind, view: next, sequence: ++chatSequence };
+      for (const listener of chatListeners) listener();
+    },
+    takeChatOpen() {
+      const next = pendingChat;
+      pendingChat = null;
+      return next;
+    },
+    subscribeChatOpen(listener) {
+      chatListeners.add(listener);
+      return () => {
+        chatListeners.delete(listener);
+      };
+    },
     clear() {
+      chatSequence++;
+      pendingChat = null;
       bytes.clear();
       range?.cache.clear();
       range = null;
@@ -158,6 +196,9 @@ export function createClassroomFilesSession(): ClassroomFilesSession {
         : null;
     },
     releaseBytes() {
+      chatSequence++;
+      pendingChat = null;
+      if (view?.document.fileID.startsWith("chat:")) view = null;
       bytes.clear();
       range?.cache.clear();
       range = null;

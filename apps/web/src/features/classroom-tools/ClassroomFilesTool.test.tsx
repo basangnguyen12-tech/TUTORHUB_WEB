@@ -392,3 +392,104 @@ describe("ROOM-TOOLS-FILES-01B Documents tool", () => {
     }
   });
 });
+
+describe("study export permissions in a paginated room library", () => {
+  it.each(["presentation", "restored private view"] as const)(
+    "resolves the exact ready document on page two for a %s",
+    async (mode) => {
+      const target = roomDocument({
+        allow_student_download: true,
+        viewer_access: {
+          can_download_original: true,
+          can_manage: false,
+          can_retry_upload: false,
+          can_view: true,
+        },
+      });
+      const other = roomDocument({
+        id: "55555555-5555-4555-8555-555555555555",
+      });
+      api.list
+        .mockClear()
+        .mockImplementation(async (_tenant, _space, { cursor }) => ({
+          items: cursor ? [target] : [other],
+          next_cursor: cursor ? "unneeded-page" : "next-page",
+          viewer_access: studentAccess,
+        }));
+      const session = createClassroomFilesSession();
+      const { roomDocumentView } = await import("../../app/roomChatDocuments");
+      session.saveView(roomDocumentView(target));
+      const timestamp = "2030-08-08T01:00:00Z";
+      const resolve = vi
+        .spyOn(await import("@tutorhub/api-client"), "resolvePdfPresentation")
+        .mockResolvedValue({
+          active_annotator_grants: [],
+          can_present: false,
+          presentation: {
+            id: "77777777-7777-4777-8777-777777777777",
+            file_id: target.id,
+            version_id: "v1",
+            page_count: 12,
+            media_space_id: spaceID,
+            current_generation: 1,
+            revoke_generation: 1,
+            version: 1,
+            status: "open",
+            created_at: timestamp,
+            updated_at: timestamp,
+            document: {
+              file_id: target.id,
+              version_id: "v1",
+              page_count: 12,
+              first_page_aspect: 0.7071,
+              media_type: "application/pdf",
+              active_content: false,
+              allow_student_download: true,
+              display_name: target.display_name,
+            },
+            viewer_capabilities: {
+              can_close: false,
+              can_exchange_grant: true,
+              can_manage: false,
+              can_manage_annotator_grants: false,
+              can_resume: false,
+              can_suspend: false,
+              capability: "view",
+            },
+          },
+        });
+      // Observe the capability handed to the stage without opening a PDF worker or a collaboration socket.
+      const stage = ({
+        canDownloadOriginal,
+      }: {
+        canDownloadOriginal: boolean;
+      }) => <button disabled={!canDownloadOriginal}>Export for study</button>;
+      const presentation = vi
+        .spyOn(await import("./PdfPresentationStage"), "PdfPresentationStage")
+        .mockImplementation(stage);
+      const privateView = vi
+        .spyOn(await import("./DocumentLoader"), "DocumentLoader")
+        .mockImplementation(stage);
+      try {
+        renderTool({ session, collaborationEnabled: mode === "presentation" });
+        await waitFor(() =>
+          expect(
+            screen.getByRole("button", { name: "Export for study" }),
+          ).toBeEnabled(),
+        );
+        expect(api.list.mock.calls.map(([, , input]) => input.cursor)).toEqual([
+          undefined,
+          "next-page",
+        ]);
+        expect(
+          mode === "presentation" ? presentation : privateView,
+        ).toHaveBeenCalled();
+      } finally {
+        cleanup();
+        presentation.mockRestore();
+        privateView.mockRestore();
+        resolve.mockRestore();
+      }
+    },
+  );
+});

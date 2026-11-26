@@ -511,6 +511,79 @@
   flex: none;
 }
 
+.classroom-study-notes-button {
+  display: inline-flex;
+  position: relative;
+  min-width: 28px;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.classroom-study-notes-button[aria-expanded="true"],
+.classroom-study-notes-button:hover {
+  border-color: currentColor;
+}
+.classroom-study-notes-button svg {
+  width: 16px;
+  height: 16px;
+}
+.classroom-study-notes-button span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.th-dialog-overlay:has(+ .classroom-study-export) {
+  z-index: calc(var(--z-modal, 800) + 1);
+}
+.th-dialog-content.classroom-study-export {
+  z-index: calc(var(--z-modal, 800) + 2);
+  box-sizing: border-box;
+  border-color: #64748b;
+  background: #192130;
+  color: #f1f5f9;
+}
+.classroom-study-export .th-dialog-description {
+  margin-bottom: 12px;
+  color: #d1d9e5;
+}
+.classroom-study-export .th-button--secondary {
+  border-color: #8794a7;
+  background: #263449;
+  color: #f1f5f9;
+}
+.classroom-study-export label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+}
+.classroom-study-export p {
+  overflow-wrap: anywhere;
+}
+
+@media (forced-colors: active) {
+  .th-dialog-content.classroom-study-export {
+    color-scheme: light dark;
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+  .classroom-study-export :is(.th-dialog-title, .th-dialog-description, label) {
+    color: CanvasText;
+  }
+  .classroom-study-export .th-button {
+    border-color: ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+}
+
 .classroom-files-topbar__file-name {
   min-width: 0;
   overflow: hidden;

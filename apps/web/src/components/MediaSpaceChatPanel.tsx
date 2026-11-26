@@ -8,6 +8,7 @@ import {
 } from "@tutorhub/api-client";
 import {
   Button,
+  DrawerClose,
   EmptyState,
   ErrorState,
   ForbiddenState,
@@ -38,6 +39,11 @@ import {
 import { useI18n } from "../app/i18n";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
 import type { ClassroomCodeSession } from "../features/classroom-tools/codeSession";
+import {
+  supportsChatDocument,
+  type ChatDocumentReference,
+} from "../features/classroom-tools/documentReference";
+import type { ClassroomFilesSession } from "../features/classroom-tools/filesSession";
 import { ClassroomToolActionsContext } from "../features/classroom-tools/toolActions";
 import {
   ClassroomChatPanel,
@@ -359,13 +365,29 @@ export function useMediaSpaceRoomChat({
 export function MediaSpaceChatPanel({
   chat,
   codeSession,
+  filesSession,
+  documentActions,
+  insideRoomDrawer = false,
 }: {
   chat: MediaSpaceRoomChat;
   /** ROOM-TOOLS-CODE-01: where "Open in Code" queues a chat code block. */
   codeSession?: ClassroomCodeSession;
+  filesSession?: ClassroomFilesSession;
+  insideRoomDrawer?: boolean;
+  documentActions?: {
+    openReference?: (reference: ChatDocumentReference) => Promise<boolean>;
+    saveAttachment?: (attachmentID: string) => Promise<boolean>;
+  };
 }) {
   const { t } = useI18n();
   const toolActions = useContext(ClassroomToolActionsContext);
+  const closeDrawer = useRef<HTMLButtonElement>(null);
+  const openFiles = () => {
+    // The narrow room uses a full-width inspector over the stage.
+    if (window.matchMedia?.("(max-width: 1023px)").matches)
+      closeDrawer.current?.click();
+    toolActions?.openTool("files");
+  };
   const openInCode = useMemo(() => {
     if (!codeSession || !toolActions?.hasTool("code")) return undefined;
     return (block: ClassroomChatCodeBlock) => {
@@ -374,6 +396,52 @@ export function MediaSpaceChatPanel({
       toolActions.openTool("code");
     };
   }, [codeSession, toolActions]);
+
+  const filesEnabled = Boolean(
+    filesSession &&
+    documentActions?.openReference &&
+    toolActions?.hasTool("files"),
+  );
+  const openAttachment = async (attachment: MessageAttachment) => {
+    const limit = 10 * 1024 * 1024;
+    if (
+      !filesSession ||
+      !filesEnabled ||
+      !supportsChatDocument(attachment.media_type) ||
+      attachment.size_bytes <= 0 ||
+      attachment.size_bytes > limit
+    )
+      throw new Error("unsupported_chat_document");
+    const current = filesSession.beginChatOpen();
+    const blob = await chat.loadAttachment(attachment);
+    if (blob.size !== attachment.size_bytes || blob.size > limit)
+      throw new Error("invalid_chat_document");
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (!current()) return;
+    const fileID = `chat:${attachment.id}`;
+    filesSession.saveBytes(fileID, attachment.id, bytes);
+    filesSession.openFromChat(
+      {
+        document: {
+          fileID,
+          displayName: attachment.display_name,
+          mediaType: attachment.media_type,
+          activeContent: false,
+          firstPageAspect:
+            attachment.width_px && attachment.height_px
+              ? attachment.width_px / attachment.height_px
+              : 0.7071,
+          pageCount: 1,
+          versionID: attachment.id,
+        },
+        fitMode: "width",
+        zoom: 1,
+        page: 1,
+      },
+      "private",
+    );
+    openFiles();
+  };
 
   if (chat.status === "disabled") {
     return (
@@ -438,24 +506,46 @@ export function MediaSpaceChatPanel({
   }
 
   return (
-    <ClassroomChatPanel
-      actorID={chat.actorID}
-      attachmentCache={chat.attachmentCache}
-      composerStore={chat.composerStore}
-      conversation={chat.conversation}
-      hasOlder={chat.hasOlder}
-      loadAttachment={chat.loadAttachment}
-      loadingOlder={chat.loadingOlder}
-      messages={chat.messages}
-      onDelete={chat.onDelete}
-      onEdit={chat.onEdit}
-      onLoadOlder={chat.loadOlder}
-      onOpenInCode={openInCode}
-      onSend={chat.onSend}
-      onToggleParticipantChat={chat.onToggleParticipantChat}
-      onUpload={chat.onUpload}
-      open={chat.open}
-      tenantID={chat.tenantID}
-    />
+    <>
+      {insideRoomDrawer && filesEnabled && (
+        <DrawerClose hidden ref={closeDrawer} tabIndex={-1} />
+      )}
+      <ClassroomChatPanel
+        actorID={chat.actorID}
+        attachmentCache={chat.attachmentCache}
+        composerStore={chat.composerStore}
+        conversation={chat.conversation}
+        hasOlder={chat.hasOlder}
+        loadAttachment={chat.loadAttachment}
+        loadingOlder={chat.loadingOlder}
+        messages={chat.messages}
+        onDelete={chat.onDelete}
+        onEdit={chat.onEdit}
+        onLoadOlder={chat.loadOlder}
+        onOpenInCode={openInCode}
+        onOpenDocument={
+          filesEnabled
+            ? async (reference) => {
+                if (await documentActions?.openReference?.(reference))
+                  openFiles();
+              }
+            : undefined
+        }
+        onOpenAttachment={filesEnabled ? openAttachment : undefined}
+        onSaveAttachment={
+          filesEnabled && documentActions?.saveAttachment
+            ? async (attachment) => {
+                if (await documentActions.saveAttachment?.(attachment.id))
+                  openFiles();
+              }
+            : undefined
+        }
+        onSend={chat.onSend}
+        onToggleParticipantChat={chat.onToggleParticipantChat}
+        onUpload={chat.onUpload}
+        open={chat.open}
+        tenantID={chat.tenantID}
+      />
+    </>
   );
 }

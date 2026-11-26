@@ -46,6 +46,11 @@ import { useI18n, type TranslationKey } from "../../app/i18n";
 import type { ChatCodeToken } from "../classroom-tools/chatCodeHighlight";
 import { splitChatCodeBlocks } from "../classroom-tools/codeFence";
 import {
+  supportsChatDocument,
+  type ChatDocumentReference,
+} from "../classroom-tools/documentReference";
+import "../classroom-tools/ChatDocumentActions.css";
+import {
   CODE_LANGUAGES,
   type CodeFileLanguage,
 } from "../classroom-tools/codeLanguages";
@@ -111,6 +116,9 @@ export interface ClassroomChatUploadInput {
 }
 
 export interface ClassroomChatPanelProps {
+  onOpenDocument?: (reference: ChatDocumentReference) => Promise<void>;
+  onOpenAttachment?: (attachment: MessageAttachment) => Promise<void>;
+  onSaveAttachment?: (attachment: MessageAttachment) => Promise<void>;
   actorID: string;
   attachmentCache?: AttachmentObjectURLCache;
   composerStore?: ClassroomChatComposerStore;
@@ -210,6 +218,9 @@ export function ClassroomChatPanel({
   onToggleParticipantChat,
   onUpload,
   onOpenInCode,
+  onOpenDocument,
+  onOpenAttachment,
+  onSaveAttachment,
   prepareImage = prepareChatImage,
 }: ClassroomChatPanelProps) {
   const { language, t } = useI18n();
@@ -1029,6 +1040,7 @@ export function ClassroomChatPanel({
                               jumbo={jumbo}
                               onCopyCode={(code) => void copyCode(code)}
                               onOpenInCode={openInCode}
+                              onOpenDocument={onOpenDocument}
                               text={active.content}
                             />
                           )
@@ -1051,6 +1063,17 @@ export function ClassroomChatPanel({
                                     attachment={attachment}
                                     language={language}
                                     onDownload={() => void download(attachment)}
+                                    actions={
+                                      <ChatAttachmentActions
+                                        attachment={attachment}
+                                        onOpen={onOpenAttachment}
+                                        onSave={
+                                          roomEnded
+                                            ? undefined
+                                            : onSaveAttachment
+                                        }
+                                      />
+                                    }
                                   />
                                 )}
                               </li>
@@ -1347,6 +1370,14 @@ export function ClassroomChatPanel({
               attachment={lightbox}
               language={language}
               load={objectURLFor}
+              actions={
+                <ChatAttachmentActions
+                  attachment={lightbox}
+                  onOpen={onOpenAttachment}
+                  onSave={roomEnded ? undefined : onSaveAttachment}
+                  onDone={() => setLightbox(null)}
+                />
+              }
             />
           </DialogContent>
         )}
@@ -1363,15 +1394,17 @@ function ChatBubble({
   jumbo,
   onCopyCode,
   onOpenInCode,
+  onOpenDocument,
   text,
 }: {
   jumbo: boolean;
   onCopyCode: (code: string) => void;
   onOpenInCode: ((block: ClassroomChatCodeBlock) => void) | undefined;
+  onOpenDocument?: ClassroomChatPanelProps["onOpenDocument"];
   text: string;
 }) {
   const pieces = useMemo(() => splitChatCodeBlocks(text), [text]);
-  const hasCode = pieces.some((piece) => piece.kind === "code");
+  const hasCode = pieces.some((piece) => piece.kind !== "text");
   return (
     <div
       className="classroom-chat__bubble"
@@ -1380,7 +1413,17 @@ function ChatBubble({
     >
       {hasCode ? (
         pieces.map((piece, index) =>
-          piece.kind === "code" ? (
+          piece.kind === "document" ? (
+            <ChatDocumentCard
+              key={index}
+              reference={piece.reference}
+              onOpen={onOpenDocument}
+            />
+          ) : piece.kind === "literal" ? (
+            <p className="classroom-chat__text-piece" key={index}>
+              {piece.text}
+            </p>
+          ) : piece.kind === "code" ? (
             <ChatCodeCard
               code={piece.code}
               key={`code-${index}`}
@@ -1398,6 +1441,107 @@ function ChatBubble({
       ) : (
         <ChatText text={text} />
       )}
+    </div>
+  );
+}
+
+function ChatDocumentCard({
+  reference,
+  onOpen,
+}: {
+  reference: ChatDocumentReference;
+  onOpen?: ClassroomChatPanelProps["onOpenDocument"];
+}) {
+  const { t } = useI18n();
+  return (
+    <figure className="classroom-chat__document">
+      <FileText aria-hidden="true" />
+      <figcaption>
+        <strong>{reference.name}</strong>
+        <span>
+          {t("classroomTools.files.viewer.page", { page: reference.page })}
+        </span>
+      </figcaption>
+      {onOpen && <DocumentActionButtons open={() => onOpen(reference)} />}
+    </figure>
+  );
+}
+
+function ChatAttachmentActions({
+  attachment,
+  onOpen,
+  onSave,
+  onDone,
+}: {
+  attachment: MessageAttachment;
+  onOpen?: ClassroomChatPanelProps["onOpenAttachment"];
+  onSave?: ClassroomChatPanelProps["onSaveAttachment"];
+  onDone?: () => void;
+}) {
+  if (
+    !supportsChatDocument(attachment.media_type) ||
+    attachment.size_bytes <= 0 ||
+    attachment.size_bytes > 10 * 1024 * 1024 ||
+    !onOpen
+  )
+    return null;
+  return (
+    <DocumentActionButtons
+      open={() => onOpen(attachment)}
+      save={onSave && (() => onSave(attachment))}
+      onDone={onDone}
+    />
+  );
+}
+
+function DocumentActionButtons({
+  open,
+  save,
+  onDone,
+}: {
+  open: () => Promise<void>;
+  save?: () => Promise<void>;
+  onDone?: () => void;
+}) {
+  const { t } = useI18n();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<TranslationKey | null>(null);
+  const run = async (action: () => Promise<void>, errorKey: TranslationKey) => {
+    setPending(true);
+    setError(null);
+    try {
+      await action();
+      onDone?.();
+    } catch {
+      setError(errorKey);
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <div
+      className="classroom-chat__document-actions"
+      aria-busy={pending || undefined}
+    >
+      <button
+        className="classroom-chat__code-action"
+        type="button"
+        disabled={pending}
+        onClick={() => void run(open, "classroomTools.files.chat.openFailed")}
+      >
+        {t("classroomTools.files.chat.open")}
+      </button>
+      {save && (
+        <button
+          className="classroom-chat__code-action"
+          type="button"
+          disabled={pending}
+          onClick={() => void run(save, "classroomTools.files.chat.saveFailed")}
+        >
+          {t("classroomTools.files.chat.save")}
+        </button>
+      )}
+      {error && <span role="alert">{t(error)}</span>}
     </div>
   );
 }
@@ -1663,10 +1807,12 @@ function ChatImage({
 }
 
 function ChatFileCard({
+  actions,
   attachment,
   language,
   onDownload,
 }: {
+  actions?: React.ReactNode;
   attachment: MessageAttachment;
   language: "vi" | "en";
   onDownload: () => void;
@@ -1696,15 +1842,18 @@ function ChatFileCard({
       >
         <Download aria-hidden="true" />
       </button>
+      {actions}
     </div>
   );
 }
 
 function ChatLightboxImage({
+  actions,
   attachment,
   language,
   load,
 }: {
+  actions?: React.ReactNode;
   attachment: MessageAttachment;
   language: "vi" | "en";
   load: (attachment: MessageAttachment) => Promise<string>;
@@ -1743,6 +1892,7 @@ function ChatLightboxImage({
             {t("media.chat.downloadOriginal")}
           </a>
         )}
+        {actions}
       </div>
     </div>
   );

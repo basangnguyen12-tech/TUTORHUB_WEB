@@ -1,4 +1,6 @@
 import { Button } from "@tutorhub/ui";
+import { useQueryClient } from "@tanstack/react-query";
+import type { PdfPresentation } from "@tutorhub/api-client";
 import { Download, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "../../app/i18n";
@@ -7,6 +9,7 @@ import {
   fetchRoomDocumentBytes,
   requestRoomDocumentView,
   RoomDocumentBytesError,
+  roomDocumentQueryKeys,
 } from "../../app/roomDocuments";
 import type { PendingWhiteboardSnippet } from "../collaboration/whiteboardSnippetBridge";
 import {
@@ -47,6 +50,8 @@ type LoadState =
     };
 
 export interface DocumentLoaderProps {
+  readonly actorID: string;
+  readonly activePresentation?: PdfPresentation | null;
   readonly canDownloadOriginal: boolean;
   /** "Trình chiếu lớp": the exact presented object version. */
   readonly expectedVersionID?: string;
@@ -69,6 +74,8 @@ export interface DocumentLoaderProps {
 }
 
 export function DocumentLoader({
+  actorID,
+  activePresentation,
   canDownloadOriginal,
   expectedVersionID,
   headerSlot,
@@ -86,12 +93,15 @@ export function DocumentLoader({
   whiteboard,
 }: DocumentLoaderProps) {
   const { t } = useI18n();
+  const queryClient = useQueryClient();
   const fileID = view.document.fileID;
   const knownVersion = expectedVersionID ?? view.document.versionID;
   // Cached bytes from earlier in this room session open without a request.
   const [initial] = useState<LoadState>(() => {
     const cached =
       knownVersion === null ? null : session.readBytes(fileID, knownVersion);
+    if (!cached && fileID.startsWith("chat:"))
+      return { kind: "error", reason: "error" };
     return cached
       ? { kind: "ready", source: { bytes: cached, kind: "bytes" } }
       : { kind: "capability" };
@@ -104,6 +114,7 @@ export function DocumentLoader({
   });
 
   useEffect(() => {
+    if (fileID.startsWith("chat:")) return undefined;
     if (attempt === 0 && initial.kind === "ready") return undefined;
     const controller = new AbortController();
     let reader: RoomDocumentRangeLoader | null = null;
@@ -137,7 +148,15 @@ export function DocumentLoader({
             renew: (signal) =>
               requestRoomDocumentView(tenantID, mediaSpaceID, fileID, signal),
           });
-          setState({ kind: "ready", source: { kind: "range", reader } });
+          setState({
+            kind: "ready",
+            source: {
+              kind: "range",
+              reader,
+              versionID: initialVersionID,
+              sha256: capability.sha256,
+            },
+          });
           onLoadedRef.current(initialVersionID);
           return;
         }
@@ -205,6 +224,12 @@ export function DocumentLoader({
   if (state.kind === "ready") {
     return (
       <DocumentViewer
+        study={{ actorID, tenantID, mediaSpaceID, activePresentation, session }}
+        onRefreshAccess={() =>
+          void queryClient.invalidateQueries({
+            queryKey: roomDocumentQueryKeys.list(tenantID, mediaSpaceID),
+          })
+        }
         canDownloadOriginal={canDownloadOriginal}
         headerSlot={headerSlot}
         libraryOpen={libraryOpen}
@@ -235,7 +260,8 @@ export function DocumentLoader({
         <p className="classroom-files-state__title">{message}</p>
         <div className="classroom-files-state__actions">
           {state.reason === "forbidden" ||
-          state.reason === "featureOff" ? null : (
+          state.reason === "featureOff" ||
+          fileID.startsWith("chat:") ? null : (
             <Button
               leadingIcon={<RefreshCw />}
               onClick={() => {

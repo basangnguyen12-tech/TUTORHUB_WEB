@@ -19,6 +19,7 @@ import {
   Maximize2,
   Minus,
   MoreHorizontal,
+  NotebookPen,
   PanelLeft,
   Plus,
   RefreshCw,
@@ -42,6 +43,14 @@ import {
 import { createPortal } from "react-dom";
 import { useI18n } from "../../app/i18n";
 import { RoomDocumentBytesError } from "../../app/roomDocuments";
+import { useRoomStudyNotes } from "../../app/roomStudyNotes";
+import { StudyNotesPanel } from "./StudyNotesPanel";
+import { StudyExportDialog } from "./StudyExportDialog";
+import type { DocumentStudyScope } from "./studyExportSource";
+import { DocumentShareMenuItem } from "./DocumentShareMenuItem";
+import { useChatPageRequest, type ChatPageRequest } from "./useChatPageRequest";
+import { isRoomDocumentID } from "./documentReference";
+import type { PdfInkStore } from "./livePdfCollaboration";
 import type { PendingWhiteboardSnippet } from "../collaboration/whiteboardSnippetBridge";
 import {
   blobToDataURL,
@@ -107,7 +116,12 @@ export interface DocumentViewerWhiteboard {
  */
 export type DocumentSource =
   | { readonly bytes: Uint8Array; readonly kind: "bytes" }
-  | { readonly kind: "range"; readonly reader: PdfRangeReader };
+  | {
+      readonly kind: "range";
+      readonly reader: PdfRangeReader;
+      readonly versionID: string;
+      readonly sha256: string;
+    };
 
 /**
  * ROOM-TOOLS-FILES-02B: "Trình chiếu lớp". Pages keep their original numbers;
@@ -115,6 +129,8 @@ export type DocumentSource =
  * ("Theo dõi GV") and learns when the viewer navigated on their own.
  */
 export interface DocumentViewerPresentation {
+  readonly inkForExport?: PdfInkStore;
+  readonly chatPageRequest?: ChatPageRequest | null;
   /** Draw the page's ink onto a whiteboard snippet canvas (crop-relative). */
   readonly drawSnippetAnnotations?: (
     page: number,
@@ -145,6 +161,8 @@ export interface DocumentViewerPresentation {
 }
 
 export interface DocumentViewerProps {
+  readonly study?: DocumentStudyScope;
+  readonly onRefreshAccess?: () => void;
   readonly canDownloadOriginal: boolean;
   readonly headerSlot: HTMLElement | null | undefined;
   readonly libraryOpen: boolean;
@@ -265,12 +283,28 @@ export function DocumentViewer({
   onViewChange,
   presentation = null,
   source,
+  study,
+  onRefreshAccess,
   topBarExtra,
   view,
   whiteboard,
 }: DocumentViewerProps) {
   const { language, t } = useI18n();
   const doc = view.document;
+  const savedDocument = isRoomDocumentID(doc.fileID);
+  const notes = useRoomStudyNotes(
+    study?.tenantID ?? "",
+    study?.mediaSpaceID ?? "",
+    savedDocument && study ? doc.fileID : null,
+    study?.actorID ?? "",
+    study?.session,
+  );
+  const notesID = useId();
+  const notesButton = useRef<HTMLButtonElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  if (exportOpen && !canDownloadOriginal) setExportOpen(false);
   const isPDF = doc.mediaType === "application/pdf";
   const regionID = useId();
   const searchInputID = useId();
@@ -379,6 +413,10 @@ export function DocumentViewer({
       task.promise.then(
         (opened) => {
           if (cancelled) return;
+          if (opened.numPages < 1 || opened.numPages > 300) {
+            fail(new Error("room_document_page_limit"));
+            return;
+          }
           setSourceError(false);
           setPdf(opened);
           void opened.getPage(1).then(
@@ -414,6 +452,14 @@ export function DocumentViewer({
     element.decoding = "async";
     element.addEventListener("load", () => {
       if (cancelled) return;
+      if (
+        !element.naturalWidth ||
+        !element.naturalHeight ||
+        element.naturalWidth * element.naturalHeight > 50_000_000
+      ) {
+        setSourceError("parse");
+        return;
+      }
       setSourceError(false);
       setImage({
         element,
@@ -615,6 +661,14 @@ export function DocumentViewer({
     scrollToPage(requestPage, smooth);
     presentationRef.current?.onScrollRequestApplied?.(requestSeq);
   }, [box.width, requestPage, requestSeq, scrollToPage, shownKey, sourceReady]);
+
+  useChatPageRequest(
+    presentation?.chatPageRequest,
+    sourceReady && box.width > 0,
+    navigationLocked,
+    notifyManual,
+    scrollToPage,
+  );
 
   // A hidden page disappearing under the viewer moves it to a shown one.
   useLayoutEffect(() => {
@@ -1048,12 +1102,43 @@ export function DocumentViewer({
         </Menu>
       ) : null}
       {topBarExtra}
-      <Menu modal={false}>
+      {study && savedDocument && sourceReady ? (
+        <button
+          aria-controls={notesOpen ? notesID : undefined}
+          aria-expanded={notesOpen}
+          aria-label={t("classroomTools.files.notes.title")}
+          aria-description={
+            notes.entries.length > 0
+              ? t("classroomTools.files.notes.pagesCount", {
+                  count: notes.entries.length,
+                })
+              : undefined
+          }
+          className="classroom-study-notes-button"
+          data-tooltip={t("classroomTools.files.notes.title")}
+          data-tooltip-side="bottom"
+          onClick={() => setNotesOpen((value) => !value)}
+          ref={notesButton}
+          type="button"
+        >
+          <NotebookPen aria-hidden="true" />
+          {notes.entries.length > 0 ? (
+            <span>{notes.entries.length}</span>
+          ) : null}
+        </button>
+      ) : null}
+      <Menu
+        modal={false}
+        onOpenChange={(open) => {
+          if (open && savedDocument) onRefreshAccess?.();
+        }}
+      >
         <MenuTrigger asChild>
           <IconButton
             data-tooltip={t("classroomTools.files.viewer.more")}
             data-tooltip-side="bottom"
             label={t("classroomTools.files.viewer.more")}
+            ref={moreButton}
             size="sm"
             variant="quiet"
           >
@@ -1102,6 +1187,13 @@ export function DocumentViewer({
             <MenuItem onSelect={onDownloadOriginal}>
               <Download aria-hidden="true" />
               {t("classroomTools.files.library.download")}
+            </MenuItem>
+          ) : null}
+          <DocumentShareMenuItem document={doc} page={current} />
+          {study && savedDocument && sourceReady && canDownloadOriginal ? (
+            <MenuItem onSelect={() => setExportOpen(true)}>
+              <Download aria-hidden="true" />
+              {t("classroomTools.files.export.title")}
             </MenuItem>
           ) : null}
         </MenuContent>
@@ -1156,6 +1248,41 @@ export function DocumentViewer({
         <div className="classroom-files-viewer__toolbar">{topBar}</div>
       ) : headerSlot ? (
         createPortal(topBar, headerSlot)
+      ) : null}
+      {study && savedDocument && notesOpen ? (
+        <StudyNotesPanel
+          id={notesID}
+          notes={notes}
+          page={current}
+          onClose={() => {
+            setNotesOpen(false);
+            notesButton.current?.focus();
+          }}
+          canGoToPage={(page) => !navigationLocked && shownPages.includes(page)}
+          onPage={(page) => {
+            if (!navigationLocked && shownPages.includes(page)) {
+              notifyManual();
+              scrollToPage(page);
+            }
+          }}
+        />
+      ) : null}
+      {exportOpen && canDownloadOriginal && study && savedDocument ? (
+        <StudyExportDialog
+          key={`${doc.fileID}/${doc.versionID}/${study.activePresentation?.id ?? ""}/${study.activePresentation?.current_generation ?? ""}/${study.activePresentation?.revoke_generation ?? ""}`}
+          canDownloadOriginal={canDownloadOriginal}
+          doc={doc}
+          ink={presentation?.inkForExport}
+          notes={notes.entries}
+          notesLoading={notes.status === "loading"}
+          retryNotes={
+            !notes.ready && notes.status === "error" ? notes.retry : undefined
+          }
+          onClose={() => setExportOpen(false)}
+          onReturnFocus={() => moreButton.current?.focus()}
+          scope={study}
+          source={source}
+        />
       ) : null}
       {searchOpen ? (
         <div

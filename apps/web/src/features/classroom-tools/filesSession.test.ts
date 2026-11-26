@@ -16,6 +16,27 @@ const document = {
 };
 
 describe("ROOM-TOOLS-FILES-01B Documents room-session memory", () => {
+  it("drops a temporary Chat view, queued navigation and late fetches on close", () => {
+    const session = createClassroomFilesSession();
+    const view = {
+      document: { ...document, fileID: "chat:item" },
+      page: 1,
+      zoom: 1,
+      fitMode: "width" as const,
+    };
+    const listener = vi.fn();
+    session.subscribeChatOpen(listener);
+    session.saveBytes("chat:item", "v1", new Uint8Array([1]));
+    session.openFromChat(view, "private");
+    expect(listener).toHaveBeenCalledOnce();
+    session.saveView(view);
+    const current = session.beginChatOpen();
+    session.releaseBytes();
+    expect(session.takeChatOpen()).toBeNull();
+    expect(session.readView()).toBeNull();
+    expect(session.readBytes("chat:item", "v1")).toBeNull();
+    expect(current()).toBe(false);
+  });
   it("keeps bytes in RAM by (file, version) with a 2-document LRU", () => {
     const session = createClassroomFilesSession();
     const one = new Uint8Array([1]);

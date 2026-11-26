@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { APIRequestError } from "@tutorhub/api-client";
+import { createClassroomFilesSession } from "../features/classroom-tools/filesSession";
 import { createElement, type PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
+  importAttachment: vi.fn(),
+  list: vi.fn(),
   completeMultipart: vi.fn(),
   createIntent: vi.fn(),
   createMultipart: vi.fn(),
@@ -22,6 +25,8 @@ vi.mock("@tutorhub/api-client", async () => {
   );
   return {
     ...actual,
+    listRoomDocuments: api.list,
+    saveRoomChatAttachment: api.importAttachment,
     completeFileMultipartUpload: api.completeMultipart,
     createFileMultipartUpload: api.createMultipart,
     createRoomDocumentUploadIntent: api.createIntent,
@@ -47,6 +52,7 @@ import {
   useUpdateRoomDocument,
   validateRoomDocumentFile,
 } from "./roomDocuments";
+import { chatImportRequestID, useRoomChatDocuments } from "./roomChatDocuments";
 
 const tenantID = "b43d5964-b602-4dd5-befe-cbbfe6fc9f0b";
 const spaceID = "0e0f92c4-347c-4022-b4d1-c81208a972e3";
@@ -108,6 +114,97 @@ async function sha256(bytes: Uint8Array) {
 }
 
 describe("ROOM-TOOLS-FILES-01B room document checks", () => {
+  it("coalesces simultaneous chat and preview saves and ignores a late delivery after the room clears", async () => {
+    const session = createClassroomFilesSession();
+    const incoming = vi.fn();
+    session.subscribeChatOpen(incoming);
+    api.list.mockResolvedValue({
+      items: [],
+      next_cursor: null,
+      viewer_access: { can_manage: true },
+    });
+    api.rotateCSRF.mockResolvedValue({ csrf_token: "csrf" });
+    let finish: (row: unknown) => void = () => undefined;
+    api.importAttachment.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { result, unmount } = renderHook(
+      () =>
+        useRoomChatDocuments(tenantID, spaceID, "teacher", "conversation", {
+          session,
+          enabled: true,
+          roomOpen: true,
+          chatOpen: true,
+        }),
+      { wrapper },
+    );
+    await waitFor(() =>
+      expect(result.current.saveAttachment).toBeTypeOf("function"),
+    );
+    const save = result.current.saveAttachment!;
+    const first = save(fileID),
+      second = save(fileID);
+    await waitFor(() => expect(api.importAttachment).toHaveBeenCalledTimes(1));
+    const row = {
+      id: fileID,
+      status: "ready",
+      display_name: "worksheet.pdf",
+      declared_media_type: "application/pdf",
+      page_count: 8,
+      viewer_access: { can_view: true },
+    };
+    await act(async () => {
+      finish(row);
+      expect(await first).toBe(false);
+      expect(await second).toBe(true);
+    });
+    expect(incoming).toHaveBeenCalledOnce();
+    expect(session.takeChatOpen()?.view.document.fileID).toBe(fileID);
+    const late = save(fileID);
+    await waitFor(() => expect(api.importAttachment).toHaveBeenCalledTimes(2));
+    session.clear();
+    finish(row);
+    await expect(late).rejects.toMatchObject({ name: "AbortError" });
+    expect(incoming).toHaveBeenCalledOnce();
+    expect(session.takeChatOpen()).toBeNull();
+    unmount();
+  });
+  it("derives the same import ID after reload, scoped to the room, actor and destination", async () => {
+    const id = await chatImportRequestID(
+      tenantID,
+      spaceID,
+      "teacher",
+      fileID,
+      "media_space",
+    );
+    expect(
+      await chatImportRequestID(
+        tenantID,
+        spaceID,
+        "teacher",
+        fileID,
+        "media_space",
+      ),
+    ).toBe(id);
+    expect(
+      await chatImportRequestID(tenantID, spaceID, "teacher", fileID, "class"),
+    ).not.toBe(id);
+    expect(
+      await chatImportRequestID(
+        tenantID,
+        spaceID,
+        "other",
+        fileID,
+        "media_space",
+      ),
+    ).not.toBe(id);
+    expect(id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-8[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    );
+  });
   it("accepts only viewer media types with the right size ceilings", () => {
     expect(roomDocumentMediaType({ name: "a.PDF", type: "" })).toBe(
       "application/pdf",

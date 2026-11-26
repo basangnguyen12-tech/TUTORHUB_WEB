@@ -3676,6 +3676,47 @@ const messages = {
     "classroomTools.files.forbiddenDescription":
       "Bạn cần ở trong phòng học để xem tài liệu của phòng.",
     "classroomTools.files.cancel": "Hủy",
+    "classroomTools.files.chat.open": "Mở trong Tài liệu",
+    "classroomTools.files.chat.save": "Lưu vào Kho tài liệu",
+    "classroomTools.files.chat.share": "Chia sẻ vào Trò chuyện (Trang {page})",
+    "classroomTools.files.chat.temporary":
+      "Đang xem tệp đính kèm từ Trò chuyện",
+    "classroomTools.files.chat.openFailed":
+      "Chưa mở được tệp trong Tài liệu. Hãy thử lại.",
+    "classroomTools.files.chat.saveFailed":
+      "Chưa lưu được tệp vào kho. Hãy thử lại.",
+    "classroomTools.files.notes.title": "Ghi chú riêng",
+    "classroomTools.files.notes.pagesCount": "{count} trang có ghi chú",
+    "classroomTools.files.notes.privacy":
+      "Chỉ mình bạn thấy · Tự động lưu 30 ngày",
+    "classroomTools.files.notes.loading": "Đang tải ghi chú…",
+    "classroomTools.files.notes.saving": "Đang lưu…",
+    "classroomTools.files.notes.saved": "Đã lưu",
+    "classroomTools.files.notes.conflict":
+      "Ghi chú đã thay đổi ở phiên khác. Đã tải bản mới và giữ nội dung bạn vừa gõ. Bấm Thử lại để lưu.",
+    "classroomTools.files.notes.limit":
+      "Bạn đã đạt giới hạn tài liệu có ghi chú riêng. Hãy xóa hết ghi chú ở một tài liệu khác rồi thử lại.",
+    "classroomTools.files.notes.error":
+      "Chưa đồng bộ được ghi chú. Hãy thử lại.",
+    "classroomTools.files.notes.count": "{count}/2.000 ký tự",
+    "classroomTools.files.notes.list": "Các trang có ghi chú",
+    "classroomTools.files.notes.empty": "Chưa có ghi chú trong tài liệu này.",
+    "classroomTools.files.notes.close": "Đóng ghi chú riêng",
+    "classroomTools.files.notes.tooLarge":
+      "Nội dung quá dài để lưu. Hãy rút ngắn ghi chú.",
+    "classroomTools.files.export.title": "Xuất PDF học bài",
+    "classroomTools.files.export.notesError":
+      "Chưa tải được ghi chú riêng. Hãy thử lại hoặc tải PDF với nội dung đang có.",
+    "classroomTools.files.export.ink": "Kèm nét chữa bài trên lớp",
+    "classroomTools.files.export.notes": "Kèm ghi chú riêng của tôi",
+    "classroomTools.files.export.appendix": "Ghi chú học tập cá nhân",
+    "classroomTools.files.export.loading": "Đang kiểm tra nét vẽ và ghi chú…",
+    "classroomTools.files.export.working": "Đang tạo PDF…",
+    "classroomTools.files.export.download": "Tải PDF học bài",
+    "classroomTools.files.export.error":
+      "Chưa tạo được PDF học bài. Vui lòng thử lại.",
+    "classroomTools.files.export.inkError":
+      "Chưa tải được nét chữa bài. Hãy thử lại hoặc tải PDF không kèm nét.",
     "classroomTools.files.library.title": "Kho tài liệu",
     "classroomTools.files.library.subtitle":
       "Tài liệu của lớp và tệp riêng của phòng học này.",
@@ -7643,6 +7684,46 @@ const messages = {
     "classroomTools.files.forbiddenDescription":
       "You need to be in the room to see its documents.",
     "classroomTools.files.cancel": "Cancel",
+    "classroomTools.files.chat.open": "Open in Documents",
+    "classroomTools.files.chat.save": "Save to document library",
+    "classroomTools.files.chat.share": "Share to Chat (Page {page})",
+    "classroomTools.files.chat.temporary": "Viewing an attachment from Chat",
+    "classroomTools.files.chat.openFailed":
+      "Couldn’t open the file in Documents. Try again.",
+    "classroomTools.files.chat.saveFailed":
+      "Couldn’t save the file to the library. Try again.",
+    "classroomTools.files.notes.title": "Private notes",
+    "classroomTools.files.notes.pagesCount": "Pages with notes: {count}",
+    "classroomTools.files.notes.privacy":
+      "Only you can see these · Automatically saved for 30 days",
+    "classroomTools.files.notes.loading": "Loading notes…",
+    "classroomTools.files.notes.saving": "Saving…",
+    "classroomTools.files.notes.saved": "Saved",
+    "classroomTools.files.notes.conflict":
+      "These notes changed in another session. The latest version is loaded and your draft is preserved. Select Retry to save.",
+    "classroomTools.files.notes.limit":
+      "You’ve reached the limit for documents with private notes. Clear the notes in another document, then retry.",
+    "classroomTools.files.notes.error": "Couldn’t sync your notes. Try again.",
+    "classroomTools.files.notes.count": "{count}/2,000 characters",
+    "classroomTools.files.notes.list": "Pages with notes",
+    "classroomTools.files.notes.empty":
+      "There are no notes in this document yet.",
+    "classroomTools.files.notes.close": "Close private notes",
+    "classroomTools.files.notes.tooLarge":
+      "This note is too large to save. Shorten the text and retry.",
+    "classroomTools.files.export.title": "Export study PDF",
+    "classroomTools.files.export.notesError":
+      "Private notes couldn’t be loaded. Retry or download with the available content.",
+    "classroomTools.files.export.ink": "Include class annotations",
+    "classroomTools.files.export.notes": "Include my private notes",
+    "classroomTools.files.export.appendix": "Personal study notes",
+    "classroomTools.files.export.loading": "Checking annotations and notes…",
+    "classroomTools.files.export.working": "Creating PDF…",
+    "classroomTools.files.export.download": "Download study PDF",
+    "classroomTools.files.export.error":
+      "Couldn’t create the study PDF. Please try again.",
+    "classroomTools.files.export.inkError":
+      "Class annotations couldn’t be loaded. Retry or download the PDF without annotations.",
     "classroomTools.files.library.title": "Document library",
     "classroomTools.files.library.subtitle":
       "Class documents and files shared in this room.",
