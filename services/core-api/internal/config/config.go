@@ -290,6 +290,7 @@ type FeatureControlConfig struct {
 	EnableClassroomCodeCollaboration              bool
 	EnableCodeSnippetLibrary                      bool
 	EnableClassroomFilesTool                      bool
+	EnableClassroomPDFCollaboration               bool
 	MaxMembers                                    int
 	MaxActiveClasses                              int
 	MaxInviteCreationsPerHour                     int
@@ -708,6 +709,12 @@ func featureControlConfig(
 		EnableClassroomFilesTool: boolValue(
 			lookup,
 			"FEATURE_CONTROL_ENABLE_CLASSROOM_FILES_TOOL",
+			false,
+			validationErrors,
+		),
+		EnableClassroomPDFCollaboration: boolValue(
+			lookup,
+			"FEATURE_CONTROL_ENABLE_CLASSROOM_PDF_COLLABORATION",
 			false,
 			validationErrors,
 		),

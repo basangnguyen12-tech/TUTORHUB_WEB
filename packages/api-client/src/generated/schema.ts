@@ -3413,6 +3413,30 @@ export type paths = {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/v1/media/spaces/{space_id}/pdf-presentation": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Resolve the current classroom PDF presentation of one MediaSpace
+     * @description The server reauthorizes MediaSpace access on every call and returns the room's open presentation, or the most recently suspended one when none is open, with bounded document metadata (no URL), can_present for current presenters and the active temporary annotator grants addressed only by participant key. Attendees must be admitted to the active RoomInstance. Requires file_uploads, classroom_files_tool and classroom_pdf_collaboration; when any is disabled the response is 503 feature_disabled. Foreign, inaccessible and not-admitted callers receive a uniform 404.
+     */
+    readonly get: operations["resolvePdfPresentation"];
+    readonly put?: never;
+    /**
+     * Atomically open or switch the room presentation to one ready room document
+     * @description Only organization admins, hosts and co-hosts (original or promoted) may present. The file must belong to the room or its linked class, be one of the four viewer media types and be ready (verified storage version and page count). In one transaction any other open presentation of the room is suspended (its leases are revoked, its strokes kept) and the presentation of (space, file, storage version) is created (201) or reopened (200), reusing the same generation and checkpoint. The server generates an opaque pd_ provider document name and never returns it.
+     */
+    readonly post: operations["presentPdfDocument"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/v1/media/spaces/{space_id}/recover": {
     readonly parameters: {
       readonly query?: never;
@@ -3650,6 +3674,110 @@ export type paths = {
     readonly get: operations["getNotificationUnreadCount"];
     readonly put?: never;
     readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/pdf-presentations/{presentation_id}/actor-grants/{participant_key}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    /**
+     * Grant or extend temporary annotation access for one admitted attendee
+     * @description Managers may grant edit (annotate) access to an attendee admitted to the active RoomInstance, addressed only by the opaque participant key (ttl_seconds 60..1800, default 600). At most three attendees hold an unexpired grant at once (409 pdf_presentation_annotator_limit); grants of participants who left are withdrawn first.
+     */
+    readonly put: operations["putPdfPresentationActorGrant"];
+    readonly post?: never;
+    /**
+     * Revoke temporary annotation access and invalidate the participant leases immediately
+     * @description Idempotent. The participant's provider leases are invalidated at once so the runtime closes the edit connection and the client reconnects read-only.
+     */
+    readonly delete: operations["deletePdfPresentationActorGrant"];
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/pdf-presentations/{presentation_id}/close": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Close one PDF presentation and revoke every current lease
+     * @description A closed presentation is no longer projected; presenting the same file version again reopens the same row with its strokes.
+     */
+    readonly post: operations["closePdfPresentation"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/pdf-presentations/{presentation_id}/grant-exchanges": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Exchange current PDF presentation authority for a one-time provider credential
+     * @description The exact Origin must equal the configured TutorHub web origin. Requires an open presentation. The credential is one-time, expires within 60 seconds, is bound to document kind pdf.annotations.v1, and is never cached.
+     */
+    readonly post: operations["exchangePdfPresentationGrant"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/pdf-presentations/{presentation_id}/resume": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Resume one suspended PDF presentation
+     * @description Any other open presentation of the same room is suspended in the same transaction, preserving at most one open presentation per room.
+     */
+    readonly post: operations["resumePdfPresentation"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/pdf-presentations/{presentation_id}/suspend": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Suspend one open PDF presentation and revoke every current lease
+     * @description Strokes and the checkpoint are preserved; the writer fence advances so no previous lease can write again.
+     */
+    readonly post: operations["suspendPdfPresentation"];
     readonly delete?: never;
     readonly options?: never;
     readonly head?: never;
@@ -7122,6 +7250,73 @@ export type components = {
        */
       readonly status: "password_reset";
     };
+    /** @description One unexpired temporary annotation grant of a participant admitted to the active RoomInstance. Only the opaque RoomInstance-scoped participant key is projected; user and session identifiers never are. */
+    readonly PdfAnnotatorGrant: {
+      /** Format: date-time */
+      readonly expires_at: string;
+      /** Format: uuid */
+      readonly participant_key: string;
+    };
+    /** @description Authorization-filtered classroom PDF presentation (document kind pdf.annotations.v1). Provider names, checkpoints and strokes are intentionally absent. document is null when the presented version is no longer visible in the room library. */
+    readonly PdfPresentation: {
+      /** Format: date-time */
+      readonly created_at: string;
+      /** Format: int64 */
+      readonly current_generation: number;
+      readonly document:
+        components["schemas"]["PdfPresentationDocument"] | null;
+      /** Format: uuid */
+      readonly file_id: string;
+      /** Format: uuid */
+      readonly id: string;
+      /** Format: uuid */
+      readonly media_space_id: string;
+      readonly page_count: number;
+      /** Format: int64 */
+      readonly revoke_generation: number;
+      readonly status: components["schemas"]["WhiteboardStatus"];
+      /** Format: date-time */
+      readonly updated_at: string;
+      /** Format: int64 */
+      readonly version: number;
+      readonly version_id: string;
+      readonly viewer_capabilities: components["schemas"]["PdfPresentationViewerCapabilities"];
+    };
+    readonly PdfPresentationActorGrantRequest: {
+      /** Format: int64 */
+      readonly ttl_seconds?: number;
+    };
+    /** @description Bounded metadata of the presented room document bound to the exact storage version. Never contains a storage URL or object key; bytes are fetched separately through view-capabilities. */
+    readonly PdfPresentationDocument: {
+      readonly active_content: boolean;
+      readonly allow_student_download: boolean;
+      readonly display_name: string;
+      /** Format: uuid */
+      readonly file_id: string;
+      /** Format: double */
+      readonly first_page_aspect: number;
+      /** @enum {string} */
+      readonly media_type:
+        "application/pdf" | "image/png" | "image/jpeg" | "image/webp";
+      readonly page_count: number;
+      readonly version_id: string;
+    };
+    /** @description Server-authoritative classroom PDF presentation discovery for one MediaSpace. A null presentation is an explicit empty state; can_present is projected only after current MediaSpace authorization. */
+    readonly PdfPresentationProjection: {
+      readonly active_annotator_grants: readonly components["schemas"]["PdfAnnotatorGrant"][];
+      readonly can_present: boolean;
+      readonly presentation: components["schemas"]["PdfPresentation"] | null;
+    };
+    /** @description Server-derived capability for the classroom PDF presentation. Organization admins, hosts and co-hosts present; teaching assistants annotate; admitted attendees view and annotate only with an unexpired temporary grant while in the active RoomInstance. */
+    readonly PdfPresentationViewerCapabilities: {
+      readonly can_close: boolean;
+      readonly can_exchange_grant: boolean;
+      readonly can_manage: boolean;
+      readonly can_manage_annotator_grants: boolean;
+      readonly can_resume: boolean;
+      readonly can_suspend: boolean;
+      readonly capability: components["schemas"]["WhiteboardCapability"];
+    };
     readonly PendingRegistrationCompleteRequest: {
       /** Format: uuid */
       readonly challenge_id: string;
@@ -7198,6 +7393,11 @@ export type components = {
       readonly verified_at: string;
     };
     readonly PhoneVerifyRequest: components["schemas"]["EmailCodeLoginVerifyRequest"];
+    readonly PresentPdfDocumentRequest: {
+      /** Format: uuid */
+      readonly file_id: string;
+      readonly idempotency_key: string;
+    };
     readonly PrivateAlphaEnrollmentAllowedActions: {
       readonly manage_enrollment: boolean;
     };
@@ -7728,6 +7928,7 @@ export type components = {
       readonly classroom_code_tool: components["schemas"]["FeatureCapability"];
       readonly classroom_files_tool: components["schemas"]["FeatureCapability"];
       readonly classroom_media_rooms: components["schemas"]["FeatureCapability"];
+      readonly classroom_pdf_collaboration: components["schemas"]["FeatureCapability"];
       readonly classroom_whiteboards: components["schemas"]["FeatureCapability"];
       readonly code_snippet_library: components["schemas"]["FeatureCapability"];
       readonly conversations: components["schemas"]["FeatureCapability"];
@@ -7746,6 +7947,7 @@ export type components = {
       readonly classroom_code_tool: boolean;
       readonly classroom_files_tool: boolean;
       readonly classroom_media_rooms: boolean;
+      readonly classroom_pdf_collaboration: boolean;
       readonly classroom_whiteboards: boolean;
       readonly code_snippet_library: boolean;
       readonly conversations: boolean;
@@ -8338,6 +8540,16 @@ export type components = {
         readonly "application/problem+json": components["schemas"]["Problem"];
       };
     };
+    /** @description Authorization-filtered classroom PDF presentation control-plane projection */
+    readonly PdfPresentationResponse: {
+      headers: {
+        readonly "Cache-Control"?: "private, no-store";
+        readonly [name: string]: unknown;
+      };
+      content: {
+        readonly "application/json": components["schemas"]["PdfPresentation"];
+      };
+    };
     /** @description Request failed with a structured problem response */
     readonly ProblemResponse: {
       headers: {
@@ -8404,6 +8616,8 @@ export type components = {
     readonly MediaParticipantKeyPath: string;
     /** @description Opaque settings record ID. */
     readonly PasskeyID: string;
+    /** @description Opaque classroom PDF presentation identifier; never a provider document name. */
+    readonly PdfPresentationID: string;
     readonly PollID: string;
     readonly PreAuthFetchSite: "same-origin";
     /** @description Must exactly match the Web origin; browsers set this header automatically. */
@@ -15667,6 +15881,68 @@ export interface operations {
       readonly default: components["responses"]["ProblemResponse"];
     };
   };
+  readonly resolvePdfPresentation: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: string;
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Authorized classroom PDF presentation projection */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["PdfPresentationProjection"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly presentPdfDocument: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: string;
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["PresentPdfDocumentRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["PdfPresentationResponse"];
+      readonly 201: components["responses"]["PdfPresentationResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
   readonly recoverMediaSpace: {
     readonly parameters: {
       readonly query?: never;
@@ -16150,6 +16426,213 @@ export interface operations {
       readonly 400: components["responses"]["ProblemResponse"];
       readonly 401: components["responses"]["UnauthorizedResponse"];
       readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly putPdfPresentationActorGrant: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque RoomInstance-scoped participant key; never a user, session, or provider identity. */
+        readonly participant_key: components["parameters"]["MediaParticipantKeyPath"];
+        /** @description Opaque classroom PDF presentation identifier; never a provider document name. */
+        readonly presentation_id: components["parameters"]["PdfPresentationID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["PdfPresentationActorGrantRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Current temporary annotation grant */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["PdfAnnotatorGrant"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly deletePdfPresentationActorGrant: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque RoomInstance-scoped participant key; never a user, session, or provider identity. */
+        readonly participant_key: components["parameters"]["MediaParticipantKeyPath"];
+        /** @description Opaque classroom PDF presentation identifier; never a provider document name. */
+        readonly presentation_id: components["parameters"]["PdfPresentationID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Temporary annotation access is not held */
+      readonly 204: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content?: never;
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly closePdfPresentation: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque classroom PDF presentation identifier; never a provider document name. */
+        readonly presentation_id: components["parameters"]["PdfPresentationID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardTransitionRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["PdfPresentationResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly exchangePdfPresentationGrant: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        readonly Origin: string;
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque classroom PDF presentation identifier; never a provider document name. */
+        readonly presentation_id: components["parameters"]["PdfPresentationID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardGrantExchangeRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Minimal short-lived provider credential */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, no-store";
+          readonly "Referrer-Policy"?: "no-referrer";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["WhiteboardGrantCredential"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ProblemResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 429: components["responses"]["ProblemResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly resumePdfPresentation: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque classroom PDF presentation identifier; never a provider document name. */
+        readonly presentation_id: components["parameters"]["PdfPresentationID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardTransitionRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["PdfPresentationResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly suspendPdfPresentation: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        /** @description Opaque classroom PDF presentation identifier; never a provider document name. */
+        readonly presentation_id: components["parameters"]["PdfPresentationID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["WhiteboardTransitionRequest"];
+      };
+    };
+    readonly responses: {
+      readonly 200: components["responses"]["PdfPresentationResponse"];
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
       readonly 409: components["responses"]["ConflictResponse"];
       readonly 503: components["responses"]["ProblemResponse"];
       readonly default: components["responses"]["ProblemResponse"];

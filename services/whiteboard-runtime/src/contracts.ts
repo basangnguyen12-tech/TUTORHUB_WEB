@@ -9,7 +9,7 @@ export const MAX_DURABLE_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
 export type CollaborationCapability = "edit" | "present" | "view";
 export type CollaborationDocumentKind =
-  "code.workspace.v1" | "whiteboard.excalidraw.v1";
+  "code.workspace.v1" | "pdf.annotations.v1" | "whiteboard.excalidraw.v1";
 export type RuntimeMode = "enabled" | "off" | "read_only";
 
 export interface CollaborationScope {

@@ -415,6 +415,7 @@ func (repository *PostgresRepository) PrepareRoomView(
 		MediaType: strings.TrimSpace(row.StoredMediaType.String), ContentLengthBytes: row.ExpectedSizeBytes,
 		SHA256: append([]byte(nil), row.StoredChecksumSHA256...), PageCount: int(row.PageCount.Int32),
 		FirstPageAspect: row.FirstPageAspect.Float64, ActiveContent: row.ActiveContent,
+		DisplayName: row.DisplayName, AllowStudentDownload: row.AllowStudentDownload,
 	}, nil
 }
 

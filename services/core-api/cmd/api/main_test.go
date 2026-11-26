@@ -19,6 +19,7 @@ func TestFeatureControlGuardrailsOmitFeaturesThatAreNotForcedOff(t *testing.T) {
 		EnableClassroomCodeCollaboration:              true,
 		EnableCodeSnippetLibrary:                      true,
 		EnableClassroomFilesTool:                      true,
+		EnableClassroomPDFCollaboration:               true,
 		MaxMembers:                                    10_000,
 		MaxActiveClasses:                              1_000,
 		MaxInviteCreationsPerHour:                     10_000,
@@ -75,6 +76,7 @@ func TestFeatureControlGuardrailsForceOffClassSessionScheduling(t *testing.T) {
 		EnableClassroomCodeCollaboration:              true,
 		EnableCodeSnippetLibrary:                      true,
 		EnableClassroomFilesTool:                      true,
+		EnableClassroomPDFCollaboration:               true,
 		MaxMembers:                                    10_000,
 		MaxActiveClasses:                              1_000,
 		MaxInviteCreationsPerHour:                     10_000,
@@ -116,6 +118,7 @@ func TestFeatureControlGuardrailsForceOffConversations(t *testing.T) {
 		EnableClassroomCodeCollaboration:              true,
 		EnableCodeSnippetLibrary:                      true,
 		EnableClassroomFilesTool:                      true,
+		EnableClassroomPDFCollaboration:               true,
 		MaxMembers:                                    10_000,
 		MaxActiveClasses:                              1_000,
 		MaxInviteCreationsPerHour:                     10_000,
@@ -151,6 +154,7 @@ func TestFeatureControlGuardrailsForceOffMediaAndApplyCeilings(t *testing.T) {
 		EnableClassroomCodeCollaboration: true,
 		EnableCodeSnippetLibrary:         true,
 		EnableClassroomFilesTool:         true,
+		EnableClassroomPDFCollaboration:  true,
 		MaxActiveMediaSpaces:             80,
 		MaxMediaParticipantsPerSpace:     40,
 		MaxActiveMediaParticipants:       400,
@@ -182,6 +186,7 @@ func TestFeatureControlGuardrailsForceOffMediaAndApplyCeilings(t *testing.T) {
 		EnableClassroomCodeCollaboration: true,
 		EnableCodeSnippetLibrary:         true,
 		EnableClassroomFilesTool:         true,
+		EnableClassroomPDFCollaboration:  true,
 	})
 	if enabled.ForcedOffFeatures[featurecontrol.FeatureClassroomMediaRooms] ||
 		enabled.ForcedOffFeatures[featurecontrol.FeatureInstantStudyRooms] {
@@ -201,6 +206,7 @@ func TestFeatureControlGuardrailsForceOffClassroomWhiteboards(t *testing.T) {
 		EnableClassroomCodeCollaboration: true,
 		EnableCodeSnippetLibrary:         true,
 		EnableClassroomFilesTool:         true,
+		EnableClassroomPDFCollaboration:  true,
 	})
 	if len(guardrails.ForcedOffFeatures) != 1 ||
 		!guardrails.ForcedOffFeatures[featurecontrol.FeatureClassroomWhiteboards] {
@@ -224,6 +230,7 @@ func TestFeatureControlGuardrailsMapClassroomCodeKillSwitches(t *testing.T) {
 		EnableClassroomCodeCollaboration: true,
 		EnableCodeSnippetLibrary:         true,
 		EnableClassroomFilesTool:         true,
+		EnableClassroomPDFCollaboration:  true,
 	})
 	if !disabled.ForcedOffFeatures[featurecontrol.FeatureClassroomCodeTool] ||
 		disabled.ForcedOffFeatures[featurecontrol.FeatureClassroomCodeCollaboration] {
@@ -244,6 +251,7 @@ func TestFeatureControlGuardrailsMapWhiteboardCanaryTenantAllowlist(t *testing.T
 		EnableClassroomCodeCollaboration:   true,
 		EnableCodeSnippetLibrary:           true,
 		EnableClassroomFilesTool:           true,
+		EnableClassroomPDFCollaboration:    true,
 		ClassroomWhiteboardCanaryTenantIDs: []uuid.UUID{firstTenantID},
 	}
 	guardrails := featureControlGuardrails(configuration)
@@ -289,6 +297,7 @@ func TestFeatureControlGuardrailsMapP520ExactTwoRampQuotaCeilings(t *testing.T) 
 		EnableClassroomCodeCollaboration:   true,
 		EnableCodeSnippetLibrary:           true,
 		EnableClassroomFilesTool:           true,
+		EnableClassroomPDFCollaboration:    true,
 		EnableClassroomWhiteboardRamp:      true,
 		ClassroomWhiteboardCanaryTenantIDs: []uuid.UUID{firstTenantID, secondTenantID},
 	}
@@ -375,5 +384,18 @@ func TestFeatureControlGuardrailsForceOffClassroomFilesToolByDefault(t *testing.
 	enabled := featureControlGuardrails(config.FeatureControlConfig{EnableClassroomFilesTool: true})
 	if enabled.ForcedOffFeatures[featurecontrol.FeatureClassroomFilesTool] {
 		t.Fatalf("explicitly enabled classroom files tool was forced off: %+v", enabled.ForcedOffFeatures)
+	}
+}
+
+func TestFeatureControlGuardrailsForceOffClassroomPDFCollaborationByDefault(t *testing.T) {
+	t.Parallel()
+
+	defaults := featureControlGuardrails(config.FeatureControlConfig{})
+	if !defaults.ForcedOffFeatures[featurecontrol.FeatureClassroomPDFCollaboration] {
+		t.Fatalf("classroom PDF collaboration must be force-off by default: %+v", defaults.ForcedOffFeatures)
+	}
+	enabled := featureControlGuardrails(config.FeatureControlConfig{EnableClassroomPDFCollaboration: true})
+	if enabled.ForcedOffFeatures[featurecontrol.FeatureClassroomPDFCollaboration] {
+		t.Fatalf("explicitly enabled classroom PDF collaboration was forced off: %+v", enabled.ForcedOffFeatures)
 	}
 }

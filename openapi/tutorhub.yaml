@@ -8457,6 +8457,235 @@ paths:
         "404": { $ref: "#/components/responses/NotFoundResponse" }
         "503": { $ref: "#/components/responses/ProblemResponse" }
         default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/pdf-presentation:
+    get:
+      operationId: resolvePdfPresentation
+      summary: Resolve the current classroom PDF presentation of one MediaSpace
+      description: The server reauthorizes MediaSpace access on every call and returns the room's open presentation, or the most recently suspended one when none is open, with bounded document metadata (no URL), can_present for current presenters and the active temporary annotator grants addressed only by participant key. Attendees must be admitted to the active RoomInstance. Requires file_uploads, classroom_files_tool and classroom_pdf_collaboration; when any is disabled the response is 503 feature_disabled. Foreign, inaccessible and not-admitted callers receive a uniform 404.
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "200":
+          description: Authorized classroom PDF presentation projection
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PdfPresentationProjection"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    post:
+      operationId: presentPdfDocument
+      summary: Atomically open or switch the room presentation to one ready room document
+      description: Only organization admins, hosts and co-hosts (original or promoted) may present. The file must belong to the room or its linked class, be one of the four viewer media types and be ready (verified storage version and page count). In one transaction any other open presentation of the room is suspended (its leases are revoked, its strokes kept) and the presentation of (space, file, storage version) is created (201) or reopened (200), reusing the same generation and checkpoint. The server generates an opaque pd_ provider document name and never returns it.
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresentPdfDocumentRequest"
+      responses:
+        "200": { $ref: "#/components/responses/PdfPresentationResponse" }
+        "201": { $ref: "#/components/responses/PdfPresentationResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/pdf-presentations/{presentation_id}/suspend:
+    post:
+      operationId: suspendPdfPresentation
+      summary: Suspend one open PDF presentation and revoke every current lease
+      description: Strokes and the checkpoint are preserved; the writer fence advances so no previous lease can write again.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PdfPresentationID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhiteboardTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/PdfPresentationResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/pdf-presentations/{presentation_id}/resume:
+    post:
+      operationId: resumePdfPresentation
+      summary: Resume one suspended PDF presentation
+      description: Any other open presentation of the same room is suspended in the same transaction, preserving at most one open presentation per room.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PdfPresentationID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhiteboardTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/PdfPresentationResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/pdf-presentations/{presentation_id}/close:
+    post:
+      operationId: closePdfPresentation
+      summary: Close one PDF presentation and revoke every current lease
+      description: A closed presentation is no longer projected; presenting the same file version again reopens the same row with its strokes.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PdfPresentationID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WhiteboardTransitionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/PdfPresentationResponse" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/pdf-presentations/{presentation_id}/grant-exchanges:
+    post:
+      operationId: exchangePdfPresentationGrant
+      summary: Exchange current PDF presentation authority for a one-time provider credential
+      description: The exact Origin must equal the configured TutorHub web origin. Requires an open presentation. The credential is one-time, expires within 60 seconds, is bound to document kind pdf.annotations.v1, and is never cached.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PdfPresentationID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+        - name: Origin
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uri
+            maxLength: 512
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/WhiteboardGrantExchangeRequest" }
+      responses:
+        "200":
+          description: Minimal short-lived provider credential
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+            Referrer-Policy:
+              schema: { type: string, const: no-referrer }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WhiteboardGrantCredential" }
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ProblemResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "429": { $ref: "#/components/responses/ProblemResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/pdf-presentations/{presentation_id}/actor-grants/{participant_key}:
+    put:
+      operationId: putPdfPresentationActorGrant
+      summary: Grant or extend temporary annotation access for one admitted attendee
+      description: Managers may grant edit (annotate) access to an attendee admitted to the active RoomInstance, addressed only by the opaque participant key (ttl_seconds 60..1800, default 600). At most three attendees hold an unexpired grant at once (409 pdf_presentation_annotator_limit); grants of participants who left are withdrawn first.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PdfPresentationID"
+        - $ref: "#/components/parameters/MediaParticipantKeyPath"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PdfPresentationActorGrantRequest"
+      responses:
+        "200":
+          description: Current temporary annotation grant
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PdfAnnotatorGrant"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+    delete:
+      operationId: deletePdfPresentationActorGrant
+      summary: Revoke temporary annotation access and invalidate the participant leases immediately
+      description: Idempotent. The participant's provider leases are invalidated at once so the runtime closes the edit connection and the client reconnects read-only.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/PdfPresentationID"
+        - $ref: "#/components/parameters/MediaParticipantKeyPath"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "204":
+          description: Temporary annotation access is not held
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
   /api/v1/code-snippets:
     get:
       operationId: listCodeSnippets
@@ -10965,6 +11194,14 @@ components:
       schema:
         type: string
         format: uuid
+    PdfPresentationID:
+      name: presentation_id
+      in: path
+      required: true
+      description: Opaque classroom PDF presentation identifier; never a provider document name.
+      schema:
+        type: string
+        format: uuid
     CodeWorkspaceID:
       name: workspace_id
       in: path
@@ -11084,6 +11321,17 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/AvailabilityPoll"
+    PdfPresentationResponse:
+      description: Authorization-filtered classroom PDF presentation control-plane projection
+      headers:
+        Cache-Control:
+          schema:
+            type: string
+            const: private, no-store
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PdfPresentation"
     CodeWorkspaceResponse:
       description: Authorization-filtered shared code workspace control-plane projection
       headers:
@@ -12791,6 +13039,7 @@ components:
         - classroom_code_collaboration
         - code_snippet_library
         - classroom_files_tool
+        - classroom_pdf_collaboration
       properties:
         membership_invitations:
           $ref: "#/components/schemas/FeatureCapability"
@@ -12823,6 +13072,8 @@ components:
         code_snippet_library:
           $ref: "#/components/schemas/FeatureCapability"
         classroom_files_tool:
+          $ref: "#/components/schemas/FeatureCapability"
+        classroom_pdf_collaboration:
           $ref: "#/components/schemas/FeatureCapability"
     TenantQuotaCapabilities:
       type: object
@@ -13060,6 +13311,7 @@ components:
         - classroom_code_collaboration
         - code_snippet_library
         - classroom_files_tool
+        - classroom_pdf_collaboration
       properties:
         membership_invitations:
           type: boolean
@@ -13092,6 +13344,8 @@ components:
         code_snippet_library:
           type: boolean
         classroom_files_tool:
+          type: boolean
+        classroom_pdf_collaboration:
           type: boolean
     ContentFileStatus:
       type: string
@@ -19216,6 +19470,185 @@ components:
         expires_at:
           type: string
           format: date-time
+    PdfPresentationViewerCapabilities:
+      type: object
+      additionalProperties: false
+      description: Server-derived capability for the classroom PDF presentation. Organization admins, hosts and co-hosts present; teaching assistants annotate; admitted attendees view and annotate only with an unexpired temporary grant while in the active RoomInstance.
+      required:
+        - capability
+        - can_manage
+        - can_suspend
+        - can_resume
+        - can_close
+        - can_manage_annotator_grants
+        - can_exchange_grant
+      properties:
+        capability:
+          $ref: "#/components/schemas/WhiteboardCapability"
+        can_manage:
+          type: boolean
+        can_suspend:
+          type: boolean
+        can_resume:
+          type: boolean
+        can_close:
+          type: boolean
+        can_manage_annotator_grants:
+          type: boolean
+        can_exchange_grant:
+          type: boolean
+    PdfPresentationDocument:
+      type: object
+      additionalProperties: false
+      description: Bounded metadata of the presented room document bound to the exact storage version. Never contains a storage URL or object key; bytes are fetched separately through view-capabilities.
+      required:
+        - file_id
+        - version_id
+        - display_name
+        - media_type
+        - page_count
+        - first_page_aspect
+        - active_content
+        - allow_student_download
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          minLength: 1
+          maxLength: 512
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        media_type:
+          type: string
+          enum: [application/pdf, image/png, image/jpeg, image/webp]
+        page_count:
+          type: integer
+          minimum: 1
+          maximum: 300
+        first_page_aspect:
+          type: number
+          format: double
+        active_content:
+          type: boolean
+        allow_student_download:
+          type: boolean
+    PdfPresentation:
+      type: object
+      additionalProperties: false
+      description: Authorization-filtered classroom PDF presentation (document kind pdf.annotations.v1). Provider names, checkpoints and strokes are intentionally absent. document is null when the presented version is no longer visible in the room library.
+      required:
+        - id
+        - media_space_id
+        - file_id
+        - version_id
+        - page_count
+        - status
+        - version
+        - current_generation
+        - revoke_generation
+        - document
+        - viewer_capabilities
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        media_space_id:
+          type: string
+          format: uuid
+        file_id:
+          type: string
+          format: uuid
+        version_id:
+          type: string
+          minLength: 1
+          maxLength: 512
+        page_count:
+          type: integer
+          minimum: 1
+          maximum: 300
+        status:
+          $ref: "#/components/schemas/WhiteboardStatus"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        current_generation:
+          type: integer
+          format: int64
+          minimum: 1
+        revoke_generation:
+          type: integer
+          format: int64
+          minimum: 1
+        document:
+          oneOf:
+            - $ref: "#/components/schemas/PdfPresentationDocument"
+            - type: "null"
+        viewer_capabilities:
+          $ref: "#/components/schemas/PdfPresentationViewerCapabilities"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PdfAnnotatorGrant:
+      type: object
+      additionalProperties: false
+      description: One unexpired temporary annotation grant of a participant admitted to the active RoomInstance. Only the opaque RoomInstance-scoped participant key is projected; user and session identifiers never are.
+      required: [participant_key, expires_at]
+      properties:
+        participant_key:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+    PdfPresentationProjection:
+      type: object
+      additionalProperties: false
+      description: Server-authoritative classroom PDF presentation discovery for one MediaSpace. A null presentation is an explicit empty state; can_present is projected only after current MediaSpace authorization.
+      required: [presentation, can_present, active_annotator_grants]
+      properties:
+        presentation:
+          oneOf:
+            - $ref: "#/components/schemas/PdfPresentation"
+            - type: "null"
+        can_present:
+          type: boolean
+        active_annotator_grants:
+          type: array
+          maxItems: 50
+          items:
+            $ref: "#/components/schemas/PdfAnnotatorGrant"
+    PresentPdfDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [file_id, idempotency_key]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        idempotency_key:
+          type: string
+          minLength: 16
+          maxLength: 128
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{15,127}$"
+    PdfPresentationActorGrantRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ttl_seconds:
+          type: integer
+          format: int64
+          minimum: 60
+          maximum: 1800
     CodeWorkspaceViewerCapabilities:
       type: object
       additionalProperties: false

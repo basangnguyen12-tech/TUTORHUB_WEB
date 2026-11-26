@@ -1609,6 +1609,40 @@ Exact ACL cho role Core API (`tutorhub_runtime`) phải được migration owner
 - Phụ thuộc chỉ đọc mới của quyền phòng: `SELECT` trên `tutorhub.media_room_instances`, `tutorhub.media_room_role_assignments`,
   `tutorhub.media_participant_sessions` (role production đã có từ P4; bootstrap CI cấp lại tường minh).
 
+## ROOM-TOOLS-FILES-02A — PDF presentation and annotations schema (`000057`)
+
+Migration `000057_pdf_presentations_and_annotations` (ADR-0045 §1, §4 Slice 2) mở rộng `tenant_feature_overrides_key_valid`
+với `classroom_pdf_collaboration` (giữ nguyên 16 khóa của `000056`) và tạo 5 bảng có `tenant_id`, khóa ngoại tổng hợp theo
+`tenant_id` và `REVOKE ALL ON TABLE ... FROM PUBLIC`. Không bảng nào lưu bytes PDF, văn bản trích xuất, object key hay
+presigned URL; nét chú thích chỉ nằm trong checkpoint Yjs.
+
+| Bảng                                 | Ràng buộc chính                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pdf_presentations`                  | Một dòng cho mỗi `(tenant_id, media_space_id, content_file_id, file_version_id)` (`UNIQUE`); FK tới `tenants`, `media_spaces` và `content_files (tenant_id, id)` (`ON DELETE CASCADE`), `memberships`; `file_version_id` `1..512` ký tự, `page_count 1..300`, vòng đời `created | open   | suspended | closed`, CAS `version`, `current_generation`, `revoke_generation`; partial unique `pdf_presentations_one_open_per_space_idx (tenant_id, media_space_id) WHERE status = 'open'` |
+| `pdf_presentation_generations`       | Mô tả bất biến `^pd_[A-Za-z0-9_-]{22,125}$`, `UNIQUE (provider_document_name)`, pin `yjs 13.6.27` / `hocuspocus 4.6.0`                                                                                                                                                          |
+| `pdf_presentation_checkpoints`       | PK `(tenant_id, presentation_id, generation)`, `byte_length 1..1048576` (`1 MiB`), `octet_length(yjs_state) = byte_length`, `checksum` 32 byte, `writer_fence >= 1`, `causal_watermark >= 1`                                                                                    |
+| `pdf_presentation_actor_grants`      | Quyền `edit` (chú thích) tạm thời theo `(tenant_id, presentation_id, actor_user_id)`, TTL `60..1800` giây; thu hồi bằng `revoked_at` (không `DELETE`)                                                                                                                           |
+| `pdf_presentation_mutation_receipts` | Biên nhận idempotency cho `open                                                                                                                                                                                                                                                 | switch | suspend   | resume                                                                                                                                                                         | close` |
+
+Mở lại cùng tệp + cùng phiên bản (kể cả sau `close`) tái dùng đúng dòng, generation và checkpoint (nét chữa được giữ).
+Rollback `000057.down` xóa 5 bảng, xóa override `classroom_pdf_collaboration` và khôi phục nguyên văn allowlist `000056`.
+
+Exact ACL phải được migration owner cấp ngay trong cửa sổ chạy `000057` (`NeonCheckpointStore.probe()` đòi đủ quyền trên
+`tutorhub.pdf_presentation_checkpoints` ngay khi bảng tồn tại). **Không** cấp `DELETE`/`TRUNCATE` cho role nào; PUBLIC vẫn bị
+`REVOKE ALL`:
+
+| Bảng                                 | `tutorhub_runtime` (Core API)                                                                                                                                                                                                                                                                                                                                                     | `tutorhub_collab_worker` (Collaboration Runtime) |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `pdf_presentations`                  | `SELECT`; `INSERT (id, tenant_id, media_space_id, content_file_id, file_version_id, page_count, status, create_idempotency_key, create_request_fingerprint, created_by, updated_by, opened_at, opened_by)`; `UPDATE (status, version, revoke_generation, updated_by, updated_at, opened_at, opened_by, suspended_at, suspended_by, resumed_at, resumed_by, closed_at, closed_by)` | không                                            |
+| `pdf_presentation_generations`       | `SELECT`; `INSERT (tenant_id, presentation_id, generation, provider_document_name, reason, created_by)`                                                                                                                                                                                                                                                                           | không                                            |
+| `pdf_presentation_checkpoints`       | không                                                                                                                                                                                                                                                                                                                                                                             | `SELECT, INSERT, UPDATE`                         |
+| `pdf_presentation_actor_grants`      | `SELECT`; `INSERT (tenant_id, presentation_id, actor_user_id, capability, granted_by, granted_at, expires_at)`; `UPDATE (granted_by, granted_at, expires_at, revoked_at, revoked_by, version)`                                                                                                                                                                                    | không                                            |
+| `pdf_presentation_mutation_receipts` | `SELECT`; `INSERT (tenant_id, actor_user_id, idempotency_key, request_fingerprint, operation, presentation_id, result_presentation_version, result_generation, result_revoke_generation, result_status)`                                                                                                                                                                          | không                                            |
+
+`PdfPresentationService` còn đọc (chỉ `SELECT`, đã có từ P4/`000056`) `tutorhub.media_room_instances`,
+`tutorhub.media_room_role_assignments`, `tutorhub.media_participant_sessions` và `tutorhub.content_files` (qua
+`content.Service.DescribeRoomDocument`).
+
 ## Quy tắc thay đổi schema
 
 1. Không sửa migration đã chạy; tạo migration số tiếp theo với cặp `up/down`.

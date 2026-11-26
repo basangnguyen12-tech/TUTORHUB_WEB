@@ -24,6 +24,9 @@ import {
   CODE_WORKSPACE_MAX_DOCUMENT_BYTES,
   CODE_WORKSPACE_MAX_UPDATE_BYTES,
   documentKindForName,
+  PDF_ANNOTATIONS_DOCUMENT_KIND,
+  PDF_ANNOTATIONS_MAX_DOCUMENT_BYTES,
+  PDF_ANNOTATIONS_MAX_UPDATE_BYTES,
   scopeDocumentKind,
 } from "./documentKind.js";
 import { RuntimeDocumentBudget } from "./runtimeDocumentBudget.js";
@@ -110,12 +113,28 @@ export function createCollaborationRuntime(
     Math.min(CODE_WORKSPACE_MAX_DOCUMENT_BYTES, config.maxDocumentBytes),
     codeMaxUpdateBytes,
   );
-  const isCodeDocument = (documentName: string): boolean =>
-    documentKindForName(documentName) === CODE_WORKSPACE_DOCUMENT_KIND;
-  const budgetFor = (documentName: string): RuntimeDocumentBudget =>
-    isCodeDocument(documentName) ? codeDocumentBudget : documentBudget;
-  const maxUpdateBytesFor = (documentName: string): number =>
-    isCodeDocument(documentName) ? codeMaxUpdateBytes : config.maxUpdateBytes;
+  // ROOM-TOOLS-FILES-02A: `pdf.annotations.v1` documents get their own
+  // 1 MiB / 32 KiB budget, isolated from whiteboard and code headroom.
+  const pdfMaxUpdateBytes = Math.min(
+    PDF_ANNOTATIONS_MAX_UPDATE_BYTES,
+    config.maxUpdateBytes,
+  );
+  const pdfDocumentBudget = new RuntimeDocumentBudget(
+    Math.min(PDF_ANNOTATIONS_MAX_DOCUMENT_BYTES, config.maxDocumentBytes),
+    pdfMaxUpdateBytes,
+  );
+  const budgetFor = (documentName: string): RuntimeDocumentBudget => {
+    const kind = documentKindForName(documentName);
+    if (kind === CODE_WORKSPACE_DOCUMENT_KIND) return codeDocumentBudget;
+    if (kind === PDF_ANNOTATIONS_DOCUMENT_KIND) return pdfDocumentBudget;
+    return documentBudget;
+  };
+  const maxUpdateBytesFor = (documentName: string): number => {
+    const kind = documentKindForName(documentName);
+    if (kind === CODE_WORKSPACE_DOCUMENT_KIND) return codeMaxUpdateBytes;
+    if (kind === PDF_ANNOTATIONS_DOCUMENT_KIND) return pdfMaxUpdateBytes;
+    return config.maxUpdateBytes;
+  };
   const awarenessIngressPolicy = new RuntimeIngressPolicy({
     maxBytesPerWindow:
       config.maxAwarenessBytes * config.maxAwarenessMessagesPerSecond,

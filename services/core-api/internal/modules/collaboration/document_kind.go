@@ -12,11 +12,13 @@ import (
 type DocumentKind string
 
 const (
-	DocumentKindWhiteboard    DocumentKind = "whiteboard.excalidraw.v1"
-	DocumentKindCodeWorkspace DocumentKind = "code.workspace.v1"
+	DocumentKindWhiteboard     DocumentKind = "whiteboard.excalidraw.v1"
+	DocumentKindCodeWorkspace  DocumentKind = "code.workspace.v1"
+	DocumentKindPDFAnnotations DocumentKind = "pdf.annotations.v1"
 
-	whiteboardProviderPrefix    = "wb_"
-	codeWorkspaceProviderPrefix = "cw_"
+	whiteboardProviderPrefix     = "wb_"
+	codeWorkspaceProviderPrefix  = "cw_"
+	pdfAnnotationsProviderPrefix = "pd_"
 )
 
 // NormalizeDocumentKind maps the legacy empty value to the whiteboard kind so
@@ -27,6 +29,8 @@ func NormalizeDocumentKind(kind DocumentKind) (DocumentKind, bool) {
 		return DocumentKindWhiteboard, true
 	case DocumentKindCodeWorkspace:
 		return DocumentKindCodeWorkspace, true
+	case DocumentKindPDFAnnotations:
+		return DocumentKindPDFAnnotations, true
 	default:
 		return "", false
 	}
@@ -40,6 +44,8 @@ func DocumentKindForProviderName(name string) (DocumentKind, bool) {
 		return DocumentKindWhiteboard, true
 	case strings.HasPrefix(name, codeWorkspaceProviderPrefix):
 		return DocumentKindCodeWorkspace, true
+	case strings.HasPrefix(name, pdfAnnotationsProviderPrefix):
+		return DocumentKindPDFAnnotations, true
 	default:
 		return "", false
 	}
@@ -58,10 +64,20 @@ func providerNameMatchesKind(name string, kind DocumentKind) bool {
 type InternalKindRouter struct {
 	whiteboard InternalServiceAPI
 	code       InternalServiceAPI
+	pdf        InternalServiceAPI
 }
 
 func NewInternalKindRouter(whiteboard, code InternalServiceAPI) *InternalKindRouter {
 	return &InternalKindRouter{whiteboard: whiteboard, code: code}
+}
+
+// WithPDFAnnotations registers the `pdf.annotations.v1` control plane
+// (ROOM-TOOLS-FILES-02A). Without it, every `pd_` credential is denied.
+func (router *InternalKindRouter) WithPDFAnnotations(pdf InternalServiceAPI) *InternalKindRouter {
+	if router != nil {
+		router.pdf = pdf
+	}
+	return router
 }
 
 func (router *InternalKindRouter) ConsumeGrant(
@@ -97,8 +113,14 @@ func (router *InternalKindRouter) ValidateGrant(
 }
 
 func (router *InternalKindRouter) target(kind DocumentKind) InternalServiceAPI {
-	if kind == DocumentKindCodeWorkspace {
+	switch kind {
+	case DocumentKindCodeWorkspace:
 		return router.code
+	case DocumentKindPDFAnnotations:
+		return router.pdf
+	case DocumentKindWhiteboard:
+		return router.whiteboard
+	default:
+		return nil
 	}
-	return router.whiteboard
 }

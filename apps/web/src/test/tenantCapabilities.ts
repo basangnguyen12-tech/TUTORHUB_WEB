@@ -59,6 +59,10 @@ export function availableTenantCapabilities(
         configured_enabled: false,
         enabled: false,
       },
+      classroom_pdf_collaboration: {
+        configured_enabled: false,
+        enabled: false,
+      },
       instant_study_rooms: {
         configured_enabled: false,
         enabled: false,

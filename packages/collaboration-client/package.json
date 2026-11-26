@@ -19,6 +19,11 @@
       "development": "./src/codeWorkspaceAuthority.ts",
       "default": "./dist/codeWorkspaceAuthority.js"
     },
+    "./pdf-annotation-authority": {
+      "types": "./src/pdfAnnotationAuthority.ts",
+      "development": "./src/pdfAnnotationAuthority.ts",
+      "default": "./dist/pdfAnnotationAuthority.js"
+    },
     "./portable-code-workspace": {
       "types": "./src/portableCodeWorkspace.ts",
       "development": "./src/portableCodeWorkspace.ts",

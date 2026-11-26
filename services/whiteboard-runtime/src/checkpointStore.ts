@@ -14,6 +14,8 @@ import {
   CODE_WORKSPACE_DOCUMENT_KIND,
   CODE_WORKSPACE_MAX_DOCUMENT_BYTES,
   documentKindForName,
+  PDF_ANNOTATIONS_DOCUMENT_KIND,
+  PDF_ANNOTATIONS_MAX_DOCUMENT_BYTES,
   scopeDocumentKind,
 } from "./documentKind.js";
 
@@ -25,10 +27,12 @@ const PROVIDER_VERSION = "hocuspocus@4.6.0+yjs@13.6.27";
  * are never derived from runtime input.
  */
 interface CheckpointTarget {
-  readonly documentColumn: "document_id" | "workspace_id";
+  readonly documentColumn: "document_id" | "presentation_id" | "workspace_id";
   readonly maxBytes: number;
   readonly table:
-    "code_workspace_checkpoints" | "whiteboard_document_checkpoints";
+    | "code_workspace_checkpoints"
+    | "pdf_presentation_checkpoints"
+    | "whiteboard_document_checkpoints";
 }
 
 const WHITEBOARD_CHECKPOINTS: CheckpointTarget = {
@@ -43,6 +47,22 @@ const CODE_WORKSPACE_CHECKPOINTS: CheckpointTarget = {
   table: "code_workspace_checkpoints",
 };
 
+const PDF_ANNOTATIONS_CHECKPOINTS: CheckpointTarget = {
+  documentColumn: "presentation_id",
+  maxBytes: PDF_ANNOTATIONS_MAX_DOCUMENT_BYTES,
+  table: "pdf_presentation_checkpoints",
+};
+
+/**
+ * Optional per-kind checkpoint tables introduced after the whiteboard table.
+ * Before their migration runs they are absent and whiteboard readiness is
+ * unaffected; once present, the runtime role must read and write them.
+ */
+const ROLLOUT_CHECKPOINT_TABLES = [
+  CODE_WORKSPACE_CHECKPOINTS.table,
+  PDF_ANNOTATIONS_CHECKPOINTS.table,
+] as const;
+
 export function checkpointTargetFor(
   scope: CollaborationScope,
 ): CheckpointTarget {
@@ -50,9 +70,10 @@ export function checkpointTargetFor(
   if (documentKindForName(scope.providerDocumentName) !== kind) {
     throw new CheckpointStoreError("checkpoint_corrupt");
   }
-  return kind === CODE_WORKSPACE_DOCUMENT_KIND
-    ? CODE_WORKSPACE_CHECKPOINTS
-    : WHITEBOARD_CHECKPOINTS;
+  if (kind === CODE_WORKSPACE_DOCUMENT_KIND) return CODE_WORKSPACE_CHECKPOINTS;
+  if (kind === PDF_ANNOTATIONS_DOCUMENT_KIND)
+    return PDF_ANNOTATIONS_CHECKPOINTS;
+  return WHITEBOARD_CHECKPOINTS;
 }
 
 export class CheckpointStoreError extends Error {
@@ -115,37 +136,12 @@ export class NeonCheckpointStore implements CheckpointStore {
       if (!row?.table_exists || row.allowed !== true) {
         throw new CheckpointStoreError("checkpoint_schema_unavailable");
       }
-      // Rollout compatibility: before migration 000054 the code checkpoint
-      // table is absent and whiteboard readiness is unaffected; once it
-      // exists, the runtime role must be able to read and write it.
-      const code = await this.pool.query<{
-        allowed: boolean | null;
-        table_exists: boolean;
-      }>(`
-        SELECT
-          to_regclass('tutorhub.code_workspace_checkpoints') IS NOT NULL AS table_exists,
-          CASE
-            WHEN to_regclass('tutorhub.code_workspace_checkpoints') IS NULL THEN NULL
-            ELSE has_table_privilege(
-              current_user,
-              'tutorhub.code_workspace_checkpoints',
-              'SELECT'
-            )
-            AND has_table_privilege(
-              current_user,
-              'tutorhub.code_workspace_checkpoints',
-              'INSERT'
-            )
-            AND has_table_privilege(
-              current_user,
-              'tutorhub.code_workspace_checkpoints',
-              'UPDATE'
-            )
-          END AS allowed
-      `);
-      const codeRow = code.rows[0];
-      if (codeRow?.table_exists && codeRow.allowed !== true) {
-        throw new CheckpointStoreError("checkpoint_schema_unavailable");
+      // Rollout compatibility: before migrations 000054 (code) and 000057
+      // (PDF annotations) their checkpoint tables are absent and whiteboard
+      // readiness is unaffected; once a table exists, the runtime role must be
+      // able to read and write it. Table names come from a static allowlist.
+      for (const table of ROLLOUT_CHECKPOINT_TABLES) {
+        await assertOptionalCheckpointTable(this.pool, table);
       }
     } catch (error) {
       if (error instanceof CheckpointStoreError) throw error;
@@ -299,6 +295,33 @@ export class NeonCheckpointStore implements CheckpointStore {
     } finally {
       client?.release();
     }
+  }
+}
+
+async function assertOptionalCheckpointTable(
+  pool: Pool,
+  table: (typeof ROLLOUT_CHECKPOINT_TABLES)[number],
+): Promise<void> {
+  const qualified = `tutorhub.${table}`;
+  const result = await pool.query<{
+    allowed: boolean | null;
+    table_exists: boolean;
+  }>(
+    `
+      SELECT
+        to_regclass($1) IS NOT NULL AS table_exists,
+        CASE
+          WHEN to_regclass($1) IS NULL THEN NULL
+          ELSE has_table_privilege(current_user, $1, 'SELECT')
+            AND has_table_privilege(current_user, $1, 'INSERT')
+            AND has_table_privilege(current_user, $1, 'UPDATE')
+        END AS allowed
+    `,
+    [qualified],
+  );
+  const row = result.rows[0];
+  if (row?.table_exists && row.allowed !== true) {
+    throw new CheckpointStoreError("checkpoint_schema_unavailable");
   }
 }
 

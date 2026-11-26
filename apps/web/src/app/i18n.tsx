@@ -1392,6 +1392,8 @@ const messages = {
       "Kho Snippet và bản nháp Code bền vững",
     "capabilities.featureClassroomFilesTool":
       "Công cụ Tài liệu (PDF/ảnh) trong lớp học",
+    "capabilities.featureClassroomPdfCollaboration":
+      "Trình chiếu PDF và chú thích cộng tác trong lớp học",
     "capabilities.featureInstantStudyRooms": "Phòng học nhóm tức thời",
     "capabilities.featureInAppNotifications": "Thông báo trong ứng dụng",
     "capabilities.featureAvailabilityPolls": "Khảo sát thời gian rảnh",
@@ -5241,6 +5243,8 @@ const messages = {
       "Durable code snippet library and drafts",
     "capabilities.featureClassroomFilesTool":
       "Classroom Documents (PDF/image) tool",
+    "capabilities.featureClassroomPdfCollaboration":
+      "Classroom PDF presentation and collaborative annotations",
     "capabilities.featureInstantStudyRooms": "Instant study rooms",
     "capabilities.featureInAppNotifications": "In-app notifications",
     "capabilities.featureAvailabilityPolls": "Availability polls",

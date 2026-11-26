@@ -421,14 +421,38 @@ type RoomDocumentViewCapability struct {
 }
 
 type RoomViewTarget struct {
-	ObjectKey          string
-	VersionID          string
-	MediaType          string
-	ContentLengthBytes int64
-	SHA256             []byte
-	PageCount          int
-	FirstPageAspect    float64
-	ActiveContent      bool
+	ObjectKey            string
+	VersionID            string
+	MediaType            string
+	ContentLengthBytes   int64
+	SHA256               []byte
+	PageCount            int
+	FirstPageAspect      float64
+	ActiveContent        bool
+	DisplayName          string
+	AllowStudentDownload bool
+}
+
+// RoomDocumentDescriptor is the bounded, URL-free metadata of one ready room
+// viewer document (ROOM-TOOLS-FILES-02A). It never carries an object key or a
+// presigned URL, so collaboration can bind a presentation to the exact
+// storage version without gaining byte access.
+type RoomDocumentDescriptor struct {
+	FileID               uuid.UUID
+	VersionID            string
+	DisplayName          string
+	MediaType            string
+	ContentLengthBytes   int64
+	PageCount            int
+	FirstPageAspect      float64
+	ActiveContent        bool
+	AllowStudentDownload bool
+}
+
+// RoomDocumentDescriber is implemented by Service for the PDF presentation
+// control plane; authorization is identical to view-capabilities.
+type RoomDocumentDescriber interface {
+	DescribeRoomDocument(context.Context, AccessContext, uuid.UUID, uuid.UUID) (RoomDocumentDescriptor, error)
 }
 
 type UpdateRoomDocumentInput struct {

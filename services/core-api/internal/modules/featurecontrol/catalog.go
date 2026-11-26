@@ -32,6 +32,9 @@ const (
 	// ROOM-TOOLS-FILES-01A (ADR-0045 §2): the classroom Files / PDF tool and
 	// room document library stay default-off until per-tenant rollout.
 	FeatureClassroomFilesTool FeatureKey = "classroom_files_tool"
+	// ROOM-TOOLS-FILES-02A (ADR-0045 §2, §4 Slice 2): real-time PDF
+	// presentation and page-scoped annotations stay default-off.
+	FeatureClassroomPDFCollaboration FeatureKey = "classroom_pdf_collaboration"
 )
 
 type QuotaKey string
@@ -148,6 +151,9 @@ var featureDefinitions = map[FeatureKey]FeatureDefinition{
 	},
 	FeatureClassroomFilesTool: {
 		Key: FeatureClassroomFilesTool, DefaultEnabled: false,
+	},
+	FeatureClassroomPDFCollaboration: {
+		Key: FeatureClassroomPDFCollaboration, DefaultEnabled: false,
 	},
 }
 

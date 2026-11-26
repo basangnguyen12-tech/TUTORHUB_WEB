@@ -406,6 +406,7 @@ func run() int {
 	var collaborationService collaboration.ServiceAPI
 	var collaborationInternalService collaboration.InternalServiceAPI
 	var codeWorkspaceService collaboration.CodeWorkspaceServiceAPI
+	var pdfPresentationService collaboration.PdfPresentationServiceAPI
 	var codeLibraryService collaboration.CodeLibraryServiceAPI
 	if pool != nil && classroomRepository != nil {
 		var mediaLifecycleErr error
@@ -530,10 +531,40 @@ func run() int {
 				return 1
 			}
 			codeWorkspaceService = codeWorkspaceControlPlane
+			// ROOM-TOOLS-FILES-02A: PDF presentation needs the room document
+			// library to bind a presentation to an exact ready storage version.
+			var pdfPresentationControlPlane *collaboration.PdfPresentationService
+			if contentRoomService != nil {
+				pdfPresentationRepository, pdfErr := collaboration.NewPostgresPdfPresentationRepository(
+					pool,
+					cfg.Database.QueryTimeout,
+					collaboration.PostgresRepositoryConfig{Controls: featureControlEnforcer, Quotas: featureControlQuotas},
+				)
+				if pdfErr != nil {
+					logger.Error("initialize pdf presentation repository", "error", pdfErr)
+					return 1
+				}
+				pdfPresentationControlPlane, pdfErr = collaboration.NewPdfPresentationService(
+					pdfPresentationRepository,
+					mediaLifecycleService,
+					pdfRoomDocumentResolver{documents: contentRoomService},
+					codeGrantBroker,
+					collaboration.ServiceConfig{Clock: time.Now, NewID: uuid.New, RuntimeMode: collaboration.RuntimeMode(cfg.Collaboration.RuntimeMode)},
+				)
+				if pdfErr != nil {
+					logger.Error("initialize pdf presentation control plane", "error", pdfErr)
+					return 1
+				}
+				pdfPresentationService = pdfPresentationControlPlane
+			}
 			if cfg.Collaboration.BrokerEnabled {
-				collaborationInternalService = collaboration.NewInternalKindRouter(
+				router := collaboration.NewInternalKindRouter(
 					collaborationControlPlane, codeWorkspaceControlPlane,
 				)
+				if pdfPresentationControlPlane != nil {
+					router.WithPDFAnnotations(pdfPresentationControlPlane)
+				}
+				collaborationInternalService = router
 				logger.Info("whiteboard one-time grant broker initialized")
 			} else {
 				logger.Info("whiteboard one-time grant broker is deployment-force-off")
@@ -843,6 +874,7 @@ func run() int {
 		Collaboration:         collaborationService,
 		CollaborationInternal: collaborationInternalService,
 		CodeWorkspaces:        codeWorkspaceService,
+		PdfPresentations:      pdfPresentationService,
 		CodeLibrary:           codeLibraryService,
 		CollaborationToken:    cfg.Collaboration.RuntimeToken,
 		CollaborationMode:     cfg.Collaboration.RuntimeMode,
@@ -968,6 +1000,9 @@ func featureControlGuardrails(configuration config.FeatureControlConfig) feature
 	}
 	if !configuration.EnableClassroomFilesTool {
 		forcedOff[featurecontrol.FeatureClassroomFilesTool] = true
+	}
+	if !configuration.EnableClassroomPDFCollaboration {
+		forcedOff[featurecontrol.FeatureClassroomPDFCollaboration] = true
 	}
 
 	tenantQuotaCeilings := map[featurecontrol.QuotaKey]map[uuid.UUID]int64{}

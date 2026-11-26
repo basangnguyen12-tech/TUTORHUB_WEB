@@ -538,6 +538,18 @@ export type CreateCodeWorkspaceRequest =
   components["schemas"]["CreateCodeWorkspaceRequest"];
 export type CodeWorkspaceActorGrantRequest =
   components["schemas"]["CodeWorkspaceActorGrantRequest"];
+export type PdfPresentationViewerCapabilities =
+  components["schemas"]["PdfPresentationViewerCapabilities"];
+export type PdfPresentationDocument =
+  components["schemas"]["PdfPresentationDocument"];
+export type PdfPresentation = components["schemas"]["PdfPresentation"];
+export type PdfAnnotatorGrant = components["schemas"]["PdfAnnotatorGrant"];
+export type PdfPresentationProjection =
+  components["schemas"]["PdfPresentationProjection"];
+export type PresentPdfDocumentRequest =
+  components["schemas"]["PresentPdfDocumentRequest"];
+export type PdfPresentationActorGrantRequest =
+  components["schemas"]["PdfPresentationActorGrantRequest"];
 export type CodeLanguage = components["schemas"]["CodeLanguage"];
 export type CodeSnippetVisibility =
   components["schemas"]["CodeSnippetVisibility"];
@@ -5104,6 +5116,209 @@ export async function deleteCodeWorkspaceActorGrant(
     {
       params: {
         path: { workspace_id: workspaceID, participant_key: participantKey },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      headers: { Accept: "application/problem+json" },
+      signal: options.signal,
+    },
+  );
+  if (!response.ok) {
+    throw new APIRequestError(
+      response.status,
+      isProblem(error) ? error : undefined,
+      retryAfterSeconds(response),
+    );
+  }
+}
+
+// ROOM-TOOLS-FILES-02A (ADR-0045 §1, §4 Slice 2): classroom PDF presentation
+// and page-scoped annotations. The server re-derives presenter, annotator and
+// viewer authority on every call; the browser never chooses a capability.
+
+export async function resolvePdfPresentation(
+  tenantID: string,
+  mediaSpaceID: string,
+  options: APIRequestOptions = {},
+): Promise<PdfPresentationProjection> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/media/spaces/{space_id}/pdf-presentation",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<PdfPresentationProjection>(
+    data as PdfPresentationProjection | undefined,
+    error,
+    response,
+  );
+}
+
+/** One-tap atomic open/switch of the room presentation to a ready document. */
+export async function presentPdfDocument(
+  tenantID: string,
+  mediaSpaceID: string,
+  input: PresentPdfDocumentRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<PdfPresentation> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/media/spaces/{space_id}/pdf-presentation",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<PdfPresentation>(
+    data as PdfPresentation | undefined,
+    error,
+    response,
+  );
+}
+
+export async function transitionPdfPresentation(
+  tenantID: string,
+  presentationID: string,
+  operation: "suspend" | "resume" | "close",
+  input: WhiteboardTransitionRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<PdfPresentation> {
+  requireTenantScope(tenantID);
+  const client = createTutorHubClient(options);
+  const request = {
+    params: {
+      path: { presentation_id: presentationID },
+      header: {
+        "X-CSRF-Token": csrfToken,
+        "X-TutorHub-Expected-Tenant-ID": tenantID,
+      },
+    },
+    body: input,
+    headers: { Accept: "application/json" },
+    signal: options.signal,
+  } as const;
+  const result =
+    operation === "suspend"
+      ? await client.POST(
+          "/api/v1/pdf-presentations/{presentation_id}/suspend",
+          request,
+        )
+      : operation === "resume"
+        ? await client.POST(
+            "/api/v1/pdf-presentations/{presentation_id}/resume",
+            request,
+          )
+        : await client.POST(
+            "/api/v1/pdf-presentations/{presentation_id}/close",
+            request,
+          );
+  return requireData<PdfPresentation>(
+    result.data as PdfPresentation | undefined,
+    result.error,
+    result.response,
+  );
+}
+
+export async function exchangePdfPresentationGrant(
+  tenantID: string,
+  presentationID: string,
+  input: WhiteboardGrantExchangeRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<WhiteboardGrantCredential> {
+  requireTenantScope(tenantID);
+  const origin = resolvePublicRequestOrigin(options.baseUrl ?? "/api");
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/pdf-presentations/{presentation_id}/grant-exchanges",
+    {
+      params: {
+        path: { presentation_id: presentationID },
+        header: {
+          Origin: origin,
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<WhiteboardGrantCredential>(
+    data as WhiteboardGrantCredential | undefined,
+    error,
+    response,
+  );
+}
+
+export async function putPdfPresentationActorGrant(
+  tenantID: string,
+  presentationID: string,
+  participantKey: string,
+  input: PdfPresentationActorGrantRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<PdfAnnotatorGrant> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PUT(
+    "/api/v1/pdf-presentations/{presentation_id}/actor-grants/{participant_key}",
+    {
+      params: {
+        path: {
+          presentation_id: presentationID,
+          participant_key: participantKey,
+        },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<PdfAnnotatorGrant>(
+    data as PdfAnnotatorGrant | undefined,
+    error,
+    response,
+  );
+}
+
+export async function deletePdfPresentationActorGrant(
+  tenantID: string,
+  presentationID: string,
+  participantKey: string,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<void> {
+  requireTenantScope(tenantID);
+  const { error, response } = await createTutorHubClient(options).DELETE(
+    "/api/v1/pdf-presentations/{presentation_id}/actor-grants/{participant_key}",
+    {
+      params: {
+        path: {
+          presentation_id: presentationID,
+          participant_key: participantKey,
+        },
         header: {
           "X-CSRF-Token": csrfToken,
           "X-TutorHub-Expected-Tenant-ID": tenantID,

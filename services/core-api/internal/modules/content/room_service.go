@@ -312,6 +312,40 @@ func (service *Service) IssueRoomDocumentViewCapability(
 	}, nil
 }
 
+// DescribeRoomDocument returns the bounded metadata of one ready room viewer
+// document under exactly the same authorization as
+// IssueRoomDocumentViewCapability, without presigning any storage URL.
+func (service *Service) DescribeRoomDocument(
+	ctx context.Context,
+	access AccessContext,
+	spaceID uuid.UUID,
+	fileID uuid.UUID,
+) (RoomDocumentDescriptor, error) {
+	if service == nil {
+		return RoomDocumentDescriptor{}, fmt.Errorf("describe room document: service is unavailable")
+	}
+	if !validAccess(access) {
+		return RoomDocumentDescriptor{}, ErrAccessDenied
+	}
+	if fileID == uuid.Nil {
+		return RoomDocumentDescriptor{}, ErrNotFound
+	}
+	access, _, err := service.roomAccess(ctx, access, spaceID)
+	if err != nil {
+		return RoomDocumentDescriptor{}, err
+	}
+	target, err := service.rooms.PrepareRoomView(ctx, access, spaceID, fileID, service.now().UTC())
+	if err != nil {
+		return RoomDocumentDescriptor{}, normalizeRepositoryError(err)
+	}
+	return RoomDocumentDescriptor{
+		FileID: fileID, VersionID: target.VersionID, DisplayName: target.DisplayName,
+		MediaType: target.MediaType, ContentLengthBytes: target.ContentLengthBytes,
+		PageCount: target.PageCount, FirstPageAspect: target.FirstPageAspect,
+		ActiveContent: target.ActiveContent, AllowStudentDownload: target.AllowStudentDownload,
+	}, nil
+}
+
 func (service *Service) UpdateRoomDocument(
 	ctx context.Context,
 	access AccessContext,

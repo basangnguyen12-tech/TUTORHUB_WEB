@@ -64,6 +64,7 @@ type Options struct {
 	Collaboration         collaboration.ServiceAPI
 	CollaborationInternal collaboration.InternalServiceAPI
 	CodeWorkspaces        collaboration.CodeWorkspaceServiceAPI
+	PdfPresentations      collaboration.PdfPresentationServiceAPI
 	CodeLibrary           collaboration.CodeLibraryServiceAPI
 	CollaborationToken    string
 	CollaborationMode     string
@@ -245,6 +246,7 @@ func NewHandlerWithOptions(cfg config.Config, logger *slog.Logger, options Optio
 	discovery := newDiscoveryHandlers(logger, auth, options.Discovery)
 	whiteboards := newWhiteboardHandlers(logger, auth, options.Collaboration)
 	codeWorkspaces := newCodeWorkspaceHandlers(logger, auth, options.CodeWorkspaces)
+	pdfPresentations := newPdfPresentationHandlers(logger, auth, options.PdfPresentations)
 	codeLibrary := newCodeLibraryHandlers(logger, auth, options.CodeLibrary)
 	whiteboardInternal := newWhiteboardInternalHandlers(
 		logger, options.CollaborationInternal, options.CollaborationToken, options.CollaborationMode,
@@ -401,6 +403,7 @@ func NewHandlerWithOptions(cfg config.Config, logger *slog.Logger, options Optio
 		codeWorkspaceActorGrantPattern,
 		whiteboardResponseHeaders(http.HandlerFunc(codeWorkspaces.actorGrant)),
 	)
+	pdfPresentations.register(mux)
 	for pattern, handler := range map[string]http.HandlerFunc{
 		codeSnippetsCollectionPath:   codeLibrary.snippets,
 		codeSnippetResourcePattern:   codeLibrary.snippet,

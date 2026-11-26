@@ -103,6 +103,7 @@ func TestLoadDefaults(t *testing.T) {
 		cfg.FeatureControls.EnableClassroomCodeCollaboration ||
 		cfg.FeatureControls.EnableCodeSnippetLibrary ||
 		cfg.FeatureControls.EnableClassroomFilesTool ||
+		cfg.FeatureControls.EnableClassroomPDFCollaboration ||
 		cfg.FeatureControls.MaxActiveMediaSpaces != defaultFeatureActiveMediaSpaceLimit ||
 		cfg.FeatureControls.MaxMediaParticipantsPerSpace != defaultFeatureMediaParticipantsPerSpaceLimit ||
 		cfg.FeatureControls.MaxActiveMediaParticipants != defaultFeatureActiveMediaParticipantLimit ||
@@ -997,5 +998,24 @@ func TestLoadParsesClassroomFilesToolGuardrail(t *testing.T) {
 		"FEATURE_CONTROL_ENABLE_CLASSROOM_FILES_TOOL": "maybe",
 	})); err == nil {
 		t.Fatal("expected invalid classroom files tool flag to fail closed")
+	}
+}
+
+func TestLoadParsesClassroomPDFCollaborationGuardrail(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_PDF_COLLABORATION": "true",
+	}))
+	if err != nil {
+		t.Fatalf("load classroom PDF collaboration guardrail: %v", err)
+	}
+	if !cfg.FeatureControls.EnableClassroomPDFCollaboration {
+		t.Fatalf("classroom PDF collaboration guardrail was not parsed: %+v", cfg.FeatureControls)
+	}
+	if _, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_PDF_COLLABORATION": "maybe",
+	})); err == nil {
+		t.Fatal("expected invalid classroom PDF collaboration flag to fail closed")
 	}
 }
