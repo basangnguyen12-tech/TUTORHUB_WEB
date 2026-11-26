@@ -16,6 +16,10 @@ import {
   ClassroomCodeEditorGrantsContext,
   type ClassroomCodeEditorGrantsModel,
 } from "../classroom-tools/codeEditorGrantsContext";
+import {
+  ClassroomPdfAnnotatorGrantsContext,
+  type ClassroomPdfAnnotatorGrantsModel,
+} from "../classroom-tools/pdfAnnotatorGrantsContext";
 import type { ClassroomModerationControlsModel } from "./ClassroomModerationControls";
 import {
   ClassroomPeoplePanel,
@@ -622,5 +626,222 @@ describe("ClassroomPeoplePanel Code edit grants (ROOM-TOOLS-CODE-02B)", () => {
     );
     view.update(codeGrants());
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("ClassroomPeoplePanel PDF annotator grants (ROOM-TOOLS-FILES-02B)", () => {
+  const classroom = () =>
+    signals({
+      projection: projection({
+        roster: [
+          person(1, "Thu Hà", { instance_role: "host" }),
+          person(2, "Minh Anh"),
+          person(3, "Gia Bảo"),
+          person(4, "Phạm Quỳnh Như", { connection_state: "reconnecting" }),
+          person(7, "Lan Chi"),
+          person(8, "Tuấn Tú"),
+          person(9, "Hoà Bình"),
+        ],
+        raised_hands: [],
+      }),
+    });
+
+  function pdfGrants(
+    overrides: Partial<ClassroomPdfAnnotatorGrantsModel> = {},
+  ): ClassroomPdfAnnotatorGrantsModel {
+    return {
+      activeParticipantKeys: new Set<string>(),
+      canManage: true,
+      error: null,
+      maxAnnotators: 3,
+      pendingParticipantKey: null,
+      onDismissError: vi.fn(),
+      onGrant: vi.fn(),
+      onRevoke: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  function codeGrants(
+    overrides: Partial<ClassroomCodeEditorGrantsModel> = {},
+  ): ClassroomCodeEditorGrantsModel {
+    return {
+      activeParticipantKeys: new Set<string>(),
+      canManage: true,
+      error: null,
+      maxEditors: 3,
+      pendingParticipantKey: null,
+      onDismissError: vi.fn(),
+      onGrant: vi.fn(),
+      onRevoke: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  function renderWithPdf(
+    grants: ClassroomPdfAnnotatorGrantsModel | null,
+    code: ClassroomCodeEditorGrantsModel | null = null,
+    language: "en" | "vi" = "en",
+  ) {
+    const panel = (
+      value: ClassroomPdfAnnotatorGrantsModel | null,
+      codeValue: ClassroomCodeEditorGrantsModel | null,
+    ) => (
+      <I18nProvider initialLanguage={language}>
+        <ClassroomCodeEditorGrantsContext value={codeValue}>
+          <ClassroomPdfAnnotatorGrantsContext value={value}>
+            <ClassroomPeoplePanel
+              moderationDisabled={false}
+              onLowerAll={vi.fn()}
+              onLowerHand={vi.fn()}
+              signals={classroom()}
+            />
+          </ClassroomPdfAnnotatorGrantsContext>
+        </ClassroomCodeEditorGrantsContext>
+      </I18nProvider>
+    );
+    const view = render(panel(grants, code));
+    return {
+      ...view,
+      update: (
+        value: ClassroomPdfAnnotatorGrantsModel | null,
+        codeValue: ClassroomCodeEditorGrantsModel | null = code,
+      ) => view.rerender(panel(value, codeValue)),
+    };
+  }
+
+  const row = (name: string) =>
+    screen.getByText(name).closest("li") as HTMLElement;
+
+  async function openMenu(name: string) {
+    const trigger = screen.getByRole("button", { name });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    return screen.findByRole("menu", { name });
+  }
+
+  it("shows the Documents drawing badge only on students holding a grant", () => {
+    const view = renderWithPdf(null);
+    expect(
+      screen.queryByRole("img", { name: "Can draw on Documents" }),
+    ).not.toBeInTheDocument();
+    view.update(
+      pdfGrants({
+        activeParticipantKeys: new Set([key(2), key(1)]),
+        canManage: false,
+      }),
+    );
+    const badge = within(row("Minh Anh")).getByRole("img", {
+      name: "Can draw on Documents",
+    });
+    expect(badge).toBeVisible();
+    expect(badge).toHaveAttribute("data-people-tip", "Can draw on Documents");
+    // It sits in the status column, so other status icons stay aligned.
+    expect(badge.closest(".media-p406-people-row__status")).not.toBeNull();
+    expect(
+      within(row("Thu Hà")).queryByRole("img", {
+        name: "Can draw on Documents",
+      }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Actions for Minh Anh" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("grants and revokes Documents drawing (10 minutes) from the ⋮ menu", async () => {
+    const grants = pdfGrants();
+    const view = renderWithPdf(grants, null, "vi");
+    expect(
+      screen.queryByRole("button", { name: "Thao tác với Gia Bảo" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Thao tác với Phạm Quỳnh Như" }),
+    ).not.toBeInTheDocument();
+
+    let menu = await openMenu("Thao tác với Minh Anh");
+    fireEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: "Cho phép vẽ lên Tài liệu (10 phút)",
+      }),
+    );
+    expect(grants.onGrant).toHaveBeenCalledWith(key(2));
+
+    const granted = pdfGrants({ activeParticipantKeys: new Set([key(2)]) });
+    view.update(granted);
+    expect(
+      within(row("Minh Anh")).getByRole("img", {
+        name: "Đang được phép vẽ lên Tài liệu",
+      }),
+    ).toBeVisible();
+    menu = await openMenu("Thao tác với Minh Anh");
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Thu hồi quyền vẽ Tài liệu" }),
+    );
+    expect(granted.onRevoke).toHaveBeenCalledWith(key(2));
+  });
+
+  it("locks granting at three annotators while revoking stays available", async () => {
+    const grants = pdfGrants({
+      activeParticipantKeys: new Set([key(7), key(8), key(9)]),
+    });
+    renderWithPdf(grants);
+    const menu = await openMenu("Actions for Minh Anh");
+    const grant = within(menu).getByRole("menuitem", {
+      name: /Let draw on Documents \(10 min\)/,
+    });
+    expect(grant).toHaveAttribute("aria-disabled", "true");
+    expect(grant).toHaveTextContent("3 students are already drawing");
+    fireEvent.click(grant);
+    expect(grants.onGrant).not.toHaveBeenCalled();
+    fireEvent.keyDown(menu, { key: "Escape" });
+    const other = await openMenu("Actions for Lan Chi");
+    fireEvent.click(
+      within(other).getByRole("menuitem", { name: "Stop Documents drawing" }),
+    );
+    expect(grants.onRevoke).toHaveBeenCalledWith(key(7));
+  });
+
+  it("keeps the Code and Documents grants apart when both sessions are open", async () => {
+    const code = codeGrants({ activeParticipantKeys: new Set([key(2)]) });
+    const pdf = pdfGrants();
+    renderWithPdf(pdf, code);
+    expect(
+      within(row("Minh Anh")).getByRole("img", { name: "Can edit Code" }),
+    ).toBeVisible();
+    expect(
+      within(row("Minh Anh")).queryByRole("img", {
+        name: "Can draw on Documents",
+      }),
+    ).toBeNull();
+    const menu = await openMenu("Actions for Minh Anh");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Stop Code editing", "Let draw on Documents (10 min)"]);
+    expect(within(menu).getByRole("separator")).toBeInTheDocument();
+    fireEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: "Let draw on Documents (10 min)",
+      }),
+    );
+    expect(pdf.onGrant).toHaveBeenCalledWith(key(2));
+    expect(code.onRevoke).not.toHaveBeenCalled();
+  });
+
+  it("reports the annotator limit and a failed change as dismissible alerts", () => {
+    const grants = pdfGrants({ error: "limit" });
+    const view = renderWithPdf(grants, null, "vi");
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Tối đa 3 học sinh được vẽ lên Tài liệu cùng lúc",
+    );
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Đóng thông báo" }),
+    );
+    expect(grants.onDismissError).toHaveBeenCalledTimes(1);
+    view.update(pdfGrants({ error: "failed" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Chưa cập nhật được quyền vẽ Tài liệu. Hãy thử lại.",
+    );
   });
 });

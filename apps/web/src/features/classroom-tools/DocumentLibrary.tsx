@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  MonitorPlay,
   RefreshCw,
   Trash2,
   Upload,
@@ -85,6 +86,9 @@ export function DocumentLibrary({
   onClose,
   onDownload,
   onOpen,
+  onPresent,
+  presentingFileID = null,
+  presentPending = false,
   query,
   tenantID,
 }: {
@@ -94,6 +98,10 @@ export function DocumentLibrary({
   readonly onClose?: () => void;
   readonly onDownload: (document: RoomDocument) => void;
   readonly onOpen: (document: RoomDocument) => void;
+  /** ROOM-TOOLS-FILES-02B: "Trình chiếu cho lớp" (presenters only). */
+  readonly onPresent?: (document: RoomDocument) => void;
+  readonly presentingFileID?: string | null;
+  readonly presentPending?: boolean;
   readonly query: DocumentLibraryQuery;
   readonly tenantID: string;
 }) {
@@ -186,6 +194,9 @@ export function DocumentLibrary({
               mediaSpaceID={mediaSpaceID}
               onDownload={onDownload}
               onOpen={onOpen}
+              onPresent={onPresent}
+              presenting={document.id === presentingFileID}
+              presentPending={presentPending}
               tenantID={tenantID}
             />
           ))}
@@ -272,6 +283,9 @@ function DocumentRow({
   mediaSpaceID,
   onDownload,
   onOpen,
+  onPresent,
+  presenting,
+  presentPending,
   tenantID,
 }: {
   readonly active: boolean;
@@ -280,6 +294,9 @@ function DocumentRow({
   readonly mediaSpaceID: string;
   readonly onDownload: (document: RoomDocument) => void;
   readonly onOpen: (document: RoomDocument) => void;
+  readonly onPresent?: (document: RoomDocument) => void;
+  readonly presenting: boolean;
+  readonly presentPending: boolean;
   readonly tenantID: string;
 }) {
   const { t } = useI18n();
@@ -360,6 +377,12 @@ function DocumentRow({
           <span>
             {formatDocumentSize(document.expected_size_bytes, locale)}
           </span>
+          {presenting ? (
+            <span className="classroom-files-badge classroom-files-badge--live">
+              <MonitorPlay aria-hidden="true" />
+              {t("classroomTools.files.present.presentingBadge")}
+            </span>
+          ) : null}
           {document.active_content ? (
             <span className="classroom-files-badge classroom-files-badge--warning">
               <AlertTriangle aria-hidden="true" />
@@ -430,6 +453,21 @@ function DocumentRow({
         ) : null}
       </div>
       <div className="classroom-files-row__actions">
+        {openable && onPresent && !presenting ? (
+          <Button
+            aria-label={t("classroomTools.files.present.presentNamed", {
+              name: document.display_name,
+            })}
+            className="classroom-files-row__present"
+            disabled={presentPending}
+            leadingIcon={<MonitorPlay />}
+            onClick={() => onPresent(document)}
+            size="sm"
+            variant="secondary"
+          >
+            {t("classroomTools.files.present.present")}
+          </Button>
+        ) : null}
         {openable ? (
           <Button
             aria-label={t("classroomTools.files.library.openNamed", {

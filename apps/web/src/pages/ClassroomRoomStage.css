@@ -6624,6 +6624,13 @@
   height: 12px;
 }
 
+/* ROOM-TOOLS-FILES-02B: "may draw on Documents" badge (amber, same size). */
+.media-p406-people-pdf-grant {
+  border-color: rgb(252 211 77 / 45%);
+  background: rgb(245 158 11 / 16%);
+  color: #fde68a;
+}
+
 .media-p406-people__code-alert {
   display: flex;
   align-items: center;

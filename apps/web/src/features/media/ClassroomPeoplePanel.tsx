@@ -2,6 +2,7 @@ import { Button, IconButton, Skeleton, SkeletonGroup } from "@tutorhub/ui";
 import {
   ChevronUp,
   Hand,
+  Highlighter,
   MicOff,
   Pencil,
   RefreshCw,
@@ -25,11 +26,16 @@ import {
   ClassroomCodeEditorGrantsContext,
   type ClassroomCodeEditorGrantsModel,
 } from "../classroom-tools/codeEditorGrantsContext";
+import {
+  ClassroomPdfAnnotatorGrantsContext,
+  type ClassroomPdfAnnotatorGrantsModel,
+} from "../classroom-tools/pdfAnnotatorGrantsContext";
 import { normalizeEmojiSearch } from "./classroomChatMedia";
 import {
   ClassroomParticipantModerationMenu,
   type ClassroomModerationControlsModel,
   type ClassroomParticipantCodeGrantAction,
+  type ClassroomParticipantPdfGrantAction,
 } from "./ClassroomModerationControls";
 import {
   fnv1aHash,
@@ -113,6 +119,8 @@ export function ClassroomPeoplePanel({
   const slowSync = useDelayedFlag(Boolean(signals?.refreshing), SLOW_SYNC_MS);
   // ROOM-TOOLS-CODE-02B: temporary shared-Code edit grants (room context).
   const codeGrants = useContext(ClassroomCodeEditorGrantsContext);
+  // ROOM-TOOLS-FILES-02B: temporary PDF annotator grants (room context).
+  const pdfGrants = useContext(ClassroomPdfAnnotatorGrantsContext);
 
   const normalizedQuery = normalizeEmojiSearch(query);
   const filterActive = normalizedQuery !== "";
@@ -238,6 +246,28 @@ export function ClassroomPeoplePanel({
         </div>
       ) : null}
 
+      {pdfGrants?.error ? (
+        <div className="media-p406-people__code-alert" role="alert">
+          <span>
+            {t(
+              pdfGrants.error === "limit"
+                ? "media.people.pdf.limitError"
+                : "media.people.pdf.failed",
+              { max: pdfGrants.maxAnnotators },
+            )}
+          </span>
+          <IconButton
+            className="media-p406-people__code-alert-dismiss"
+            label={t("media.room.dismiss")}
+            onClick={pdfGrants.onDismissError}
+            size="sm"
+            variant="quiet"
+          >
+            <X />
+          </IconButton>
+        </div>
+      ) : null}
+
       <div className="media-p406-people__body">
         {lobby && (
           <div className="media-p406-roster-lobby">
@@ -252,6 +282,7 @@ export function ClassroomPeoplePanel({
             baseID={baseID}
             codeGrants={codeGrants}
             collapsed={collapsed}
+            pdfGrants={pdfGrants}
             handByKey={handByKey}
             mediaStates={mediaStates}
             moderation={moderation}
@@ -319,11 +350,13 @@ function PeopleInClass({
   moderationDisabled,
   onLowerHand,
   onToggleGroup,
+  pdfGrants,
   signals,
   visibleGroups,
 }: {
   readonly baseID: string;
   readonly codeGrants: ClassroomCodeEditorGrantsModel | null;
+  readonly pdfGrants: ClassroomPdfAnnotatorGrantsModel | null;
   readonly collapsed: Readonly<Partial<Record<PeopleGroupID, boolean>>>;
   readonly handByKey: ReadonlyMap<string, ClassroomRaisedHandProjection>;
   readonly mediaStates?: ReadonlyMap<string, ClassroomPeopleMediaState>;
@@ -386,7 +419,14 @@ function PeopleInClass({
       person.instance_role === "attendee" &&
       person.connection_state === "connected" &&
       person.participant_key !== projection.self_participant_key;
-    const codeGrantRows = projection.roster.some(codeGrantTarget);
+    const pdfGrantTarget = (person: ClassroomRosterParticipant) =>
+      pdfGrants?.canManage === true &&
+      person.instance_role === "attendee" &&
+      person.connection_state === "connected" &&
+      person.participant_key !== projection.self_participant_key;
+    const codeGrantRows =
+      projection.roster.some(codeGrantTarget) ||
+      projection.roster.some(pdfGrantTarget);
     // Every row reserves the same action width, so status icons line up in
     // one column whether or not a row shows a lower-hand key.
     const actionSlots =
@@ -468,6 +508,17 @@ function PeopleInClass({
                       ? codeGrantAction(codeGrants, person.participant_key)
                       : undefined
                   }
+                  pdfAnnotating={
+                    person.instance_role === "attendee" &&
+                    pdfGrants?.activeParticipantKeys.has(
+                      person.participant_key,
+                    ) === true
+                  }
+                  pdfGrant={
+                    pdfGrants && pdfGrantTarget(person)
+                      ? pdfGrantAction(pdfGrants, person.participant_key)
+                      : undefined
+                  }
                   hand={handByKey.get(person.participant_key)}
                   isSelf={
                     person.participant_key === projection.self_participant_key
@@ -514,6 +565,22 @@ function codeGrantAction(
   };
 }
 
+function pdfGrantAction(
+  grants: ClassroomPdfAnnotatorGrantsModel,
+  participantKey: string,
+): ClassroomParticipantPdfGrantAction {
+  const granted = grants.activeParticipantKeys.has(participantKey);
+  return {
+    granted,
+    limitReached:
+      !granted && grants.activeParticipantKeys.size >= grants.maxAnnotators,
+    maxAnnotators: grants.maxAnnotators,
+    pending: grants.pendingParticipantKey === participantKey,
+    onGrant: () => grants.onGrant(participantKey),
+    onRevoke: () => grants.onRevoke(participantKey),
+  };
+}
+
 function PeopleRow({
   actionSlots,
   canModerateHands,
@@ -526,6 +593,8 @@ function PeopleRow({
   moderationDisabled,
   mutating,
   onLowerHand,
+  pdfAnnotating,
+  pdfGrant,
   person,
   tone,
 }: {
@@ -533,6 +602,8 @@ function PeopleRow({
   readonly canModerateHands: boolean;
   readonly codeEditing: boolean;
   readonly codeGrant?: ClassroomParticipantCodeGrantAction;
+  readonly pdfAnnotating: boolean;
+  readonly pdfGrant?: ClassroomParticipantPdfGrantAction;
   readonly hand?: ClassroomRaisedHandProjection;
   readonly isSelf: boolean;
   readonly media?: ClassroomPeopleMediaState;
@@ -604,6 +675,16 @@ function PeopleRow({
             <Pencil aria-hidden="true" />
           </span>
         )}
+        {pdfAnnotating && (
+          <span
+            aria-label={t("media.people.pdf.annotating")}
+            className="media-p406-people-code-grant media-p406-people-pdf-grant"
+            data-people-tip={t("media.people.pdf.annotating")}
+            role="img"
+          >
+            <Highlighter aria-hidden="true" />
+          </span>
+        )}
         {hand && (
           <span
             className="media-p406-people-hand"
@@ -659,9 +740,10 @@ function PeopleRow({
               <Hand />
             </IconButton>
           )}
-          {(moderation || codeGrant) && (
+          {(moderation || codeGrant || pdfGrant) && (
             <ClassroomParticipantModerationMenu
               codeGrant={codeGrant}
+              pdfGrant={pdfGrant}
               controls={moderation}
               disabled={moderationDisabled}
               displayName={name}

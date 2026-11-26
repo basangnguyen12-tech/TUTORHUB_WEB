@@ -2,6 +2,7 @@ import {
   AnnotationMode,
   getDocument,
   GlobalWorkerOptions,
+  PDFDataRangeTransport,
   TextLayer,
   type PDFDocumentLoadingTask,
   type PDFDocumentProxy,
@@ -60,6 +61,60 @@ export function configurePdfRuntime(): void {
 export function openPdfDocument(bytes: Uint8Array): PDFDocumentLoadingTask {
   configurePdfRuntime();
   return getDocument({ ...PDF_DOCUMENT_OPTIONS, data: bytes.slice() });
+}
+
+/**
+ * ROOM-TOOLS-FILES-02B: a 30–50 MiB PDF is read by HTTP Range through
+ * `PDFDataRangeTransport` (256 KiB chunks, no auto-fetch, no streaming).
+ * Every zero-scripting flag above is unchanged; pdf.js itself still makes no
+ * network request for the document (the reader fetches, without cookies).
+ */
+export const PDF_RANGE_DOCUMENT_OPTIONS = Object.freeze({
+  ...PDF_DOCUMENT_OPTIONS,
+  disableAutoFetch: true,
+  disableRange: false,
+  disableStream: true,
+  rangeChunkSize: 262_144,
+});
+
+/** Byte source for ranged loading (see `pdfRangeTransport.ts`). */
+export interface PdfRangeReader {
+  readonly aborted: boolean;
+  readonly length: number;
+  abort(): void;
+  read(begin: number, end: number): Promise<Uint8Array>;
+}
+
+export function openPdfRangeDocument(
+  reader: PdfRangeReader,
+  onError: (error: unknown) => void,
+): PDFDocumentLoadingTask {
+  configurePdfRuntime();
+  class ReaderTransport extends PDFDataRangeTransport {
+    override requestDataRange(begin: number, end: number): void {
+      reader.read(begin, end).then(
+        (chunk) => {
+          if (reader.aborted) return;
+          try {
+            this.onDataRange(begin, chunk);
+          } catch {
+            // The range reader was cancelled meanwhile (page evicted).
+          }
+        },
+        (error: unknown) => {
+          if (!reader.aborted) onError(error);
+        },
+      );
+    }
+
+    override abort(): void {
+      reader.abort();
+    }
+  }
+  return getDocument({
+    ...PDF_RANGE_DOCUMENT_OPTIONS,
+    range: new ReaderTransport(reader.length, null),
+  });
 }
 
 export { AnnotationMode, TextLayer };

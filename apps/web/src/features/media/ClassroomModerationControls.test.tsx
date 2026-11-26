@@ -262,6 +262,69 @@ describe("ClassroomModerationControls", () => {
     );
   });
 
+  it("offers the PDF drawing grant on its own and next to moderation (ROOM-TOOLS-FILES-02B)", async () => {
+    const onGrant = vi.fn();
+    const onRevoke = vi.fn();
+    const pdfGrant = {
+      granted: false,
+      limitReached: false,
+      maxAnnotators: 3,
+      onGrant,
+      onRevoke,
+      pending: false,
+    };
+    const view = renderModeration(
+      <ClassroomParticipantModerationMenu
+        displayName="Student One"
+        isSelf={false}
+        participantKey={targetParticipantID}
+        pdfGrant={pdfGrant}
+      />,
+    );
+    // Without room moderation the ⋮ key is named for the grant actions.
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Actions for Student One" }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Let draw on Documents (10 min)",
+      }),
+    );
+    expect(onGrant).toHaveBeenCalledTimes(1);
+
+    view.rerender(
+      moderationElement(
+        <ClassroomParticipantModerationMenu
+          controls={createControls({
+            participantOperations: [
+              {
+                participantKey: targetParticipantID,
+                canPromoteCoHost: false,
+                canDemoteCoHost: false,
+                canRemoteMute: true,
+                canRemove: false,
+              },
+            ],
+          })}
+          displayName="Student One"
+          isSelf={false}
+          participantKey={targetParticipantID}
+          pdfGrant={{ ...pdfGrant, granted: true }}
+        />,
+      ),
+    );
+    openParticipantMenu();
+    const revoke = await screen.findByRole("menuitem", {
+      name: "Stop Documents drawing",
+    });
+    expect(
+      screen.getByRole("menuitem", { name: "Mute microphone remotely" }),
+    ).toBeInTheDocument();
+    fireEvent.click(revoke);
+    expect(onRevoke).toHaveBeenCalledTimes(1);
+  });
+
   it("never renders self-moderation even when a malformed projection grants it", () => {
     const controls = createControls({
       participantOperations: [

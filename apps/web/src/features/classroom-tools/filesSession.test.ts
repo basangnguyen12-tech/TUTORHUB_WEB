@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createClassroomFilesSession } from "./filesSession";
+import {
+  CLASSROOM_FILES_RANGE_CACHE_MAX_BYTES,
+  createByteRangeCache,
+  createClassroomFilesSession,
+} from "./filesSession";
 
 const document = {
   activeContent: false,
@@ -47,5 +51,55 @@ describe("ROOM-TOOLS-FILES-01B Documents room-session memory", () => {
     const huge = { byteLength: 65 * 1024 * 1024 } as Uint8Array;
     session.saveBytes("big", "v1", huge);
     expect(session.readBytes("big", "v1")).toBeNull();
+  });
+});
+
+describe("ROOM-TOOLS-FILES-02B Range chunk cache and presentation view", () => {
+  it("keeps Range chunks in a ≤ 32 MiB LRU per document version", () => {
+    const cache = createByteRangeCache(10);
+    cache.set(0, 4, new Uint8Array(4));
+    cache.set(4, 8, new Uint8Array(4));
+    expect(cache.get(0, 4)).not.toBeNull();
+    // 0-4 was read last, so 4-8 is evicted first.
+    cache.set(8, 12, new Uint8Array(4));
+    expect(cache.get(4, 8)).toBeNull();
+    expect(cache.get(0, 4)).not.toBeNull();
+    expect(cache.byteLength).toBe(8);
+    cache.set(0, 20, new Uint8Array(20));
+    expect(cache.get(0, 20)).toBeNull();
+    expect(CLASSROOM_FILES_RANGE_CACHE_MAX_BYTES).toBe(32 * 1024 * 1024);
+  });
+
+  it("drops Range chunks on a document switch, stage close and sign-out", () => {
+    const session = createClassroomFilesSession();
+    const first = session.rangeCache("a", "v1");
+    first.set(0, 2, new Uint8Array(2));
+    expect(session.rangeCache("a", "v1")).toBe(first);
+    const second = session.rangeCache("b", "v1");
+    expect(second).not.toBe(first);
+    expect(first.byteLength).toBe(0);
+    second.set(0, 2, new Uint8Array(2));
+    session.releaseBytes();
+    expect(second.byteLength).toBe(0);
+    const third = session.rangeCache("b", "v1");
+    third.set(0, 2, new Uint8Array(2));
+    session.clear();
+    expect(third.byteLength).toBe(0);
+  });
+
+  it("remembers one presentation's page and zoom until sign-out", () => {
+    const session = createClassroomFilesSession();
+    session.savePresentationView({
+      fitMode: "width",
+      page: 3,
+      presentationID: "p-1",
+      zoom: 1,
+    });
+    expect(session.readPresentationView("p-1")?.page).toBe(3);
+    expect(session.readPresentationView("p-2")).toBeNull();
+    session.releaseBytes();
+    expect(session.readPresentationView("p-1")?.page).toBe(3);
+    session.clear();
+    expect(session.readPresentationView("p-1")).toBeNull();
   });
 });

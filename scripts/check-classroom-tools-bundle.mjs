@@ -26,6 +26,14 @@ import { pathToFileURL } from "node:url";
  * - PDF scripting is never shipped: no file anywhere under `dist/` may be
  *   named like `pdf.sandbox*` or `quickjs-eval*`, and no JavaScript asset may
  *   reference them.
+ *
+ * ROOM-TOOLS-FILES-02B / ADR-0045 Slice 2: the PDF presentation's CRDT code
+ * (`livePdfCollaboration-*` → collaboration client, Yjs, Hocuspocus) is only
+ * reached through `import()` from the viewer chunk. The viewer's static
+ * closure must not contain Yjs, and the whole build ships exactly one Yjs
+ * copy (the `yjs@13.6.27` singleton shared by whiteboard, Code and PDF).
+ * Dynamic chunks of the viewer are reported like `codeDynamicChunks`; the
+ * budgets above are unchanged.
  */
 export const CLASSROOM_TOOLS_BUNDLE_BUDGETS = Object.freeze({
   codeWorkspaceIncrementalGzipBytes: 260 * 1024,
@@ -42,6 +50,8 @@ const PDF_RUNTIME_REQUIRED_FILES = Object.freeze([
 const PDF_SCRIPTING_FILE_PATTERN = /pdf\.sandbox|quickjs-eval/i;
 const PDF_SCRIPTING_REFERENCE_PATTERN =
   /pdf\.sandbox(?:\.min)?\.m?js|quickjs-eval/;
+/** Yjs warns with this text at module load; one copy means one match. */
+const YJS_SIGNATURE = "Yjs was already imported";
 
 const SANDBOX_RUNTIME_FILES = Object.freeze([
   "pyodide.mjs",
@@ -173,6 +183,56 @@ export async function scanClassroomToolsBundle(directory) {
     CLASSROOM_TOOLS_BUNDLE_BUDGETS.documentViewerIncrementalGzipBytes,
   );
 
+  // ROOM-TOOLS-FILES-02B: Yjs stays out of the viewer's static closure and
+  // the build carries exactly one Yjs copy.
+  for (const name of documentClosure) {
+    const source = await readFile(resolve(assetsDirectory, name), "utf8");
+    if (source.includes(YJS_SIGNATURE)) {
+      issues.push(`document viewer statically includes Yjs (${name})`);
+    }
+  }
+  let yjsCopies = 0;
+  for (const name of assetNames.filter((asset) => asset.endsWith(".js"))) {
+    const source = await readFile(resolve(assetsDirectory, name), "utf8");
+    if (source.includes(YJS_SIGNATURE)) yjsCopies += 1;
+  }
+  if (yjsCopies > 1) {
+    issues.push(`the build ships ${yjsCopies} Yjs copies (expected 1)`);
+  }
+  const documentSource = await readFile(
+    resolve(assetsDirectory, documentName),
+    "utf8",
+  );
+  const documentDynamicChunks = [
+    ...new Set(
+      [
+        ...documentSource.matchAll(
+          /\bimport\(\s*[`"']([^`"']+\.js)[`"']\s*\)/g,
+        ),
+      ].map((match) => basename(match[1])),
+    ),
+  ].filter((name) => assetNames.includes(name));
+  const documentLoaded = new Set([...alreadyLoaded, ...documentClosure]);
+  let documentDynamicGzipBytes = 0;
+  const documentDynamicCounted = new Set();
+  for (const name of documentDynamicChunks) {
+    if (documentClosure.has(name)) {
+      issues.push(`document viewer statically imports ${name}`);
+    }
+    for (const dependency of await staticClosure(assetsDirectory, name)) {
+      if (
+        documentLoaded.has(dependency) ||
+        documentDynamicCounted.has(dependency)
+      ) {
+        continue;
+      }
+      documentDynamicCounted.add(dependency);
+      documentDynamicGzipBytes += gzipSync(
+        await readFile(resolve(assetsDirectory, dependency)),
+      ).byteLength;
+    }
+  }
+
   const pdfRuntimeDirectory = resolve(directory, "pdf-runtime");
   const pdfRuntimeFiles = await listFiles(pdfRuntimeDirectory);
   const pdfRuntime = {
@@ -250,6 +310,8 @@ export async function scanClassroomToolsBundle(directory) {
     codeIncrementalRawBytes,
     documentChunk: documentName,
     documentClosureChunks: documentClosure.size,
+    documentDynamicChunks: documentDynamicChunks.length,
+    documentDynamicGzipBytes,
     documentClosureGzipBytes,
     documentIncrementalChunks,
     documentIncrementalGzipBytes,
@@ -260,6 +322,7 @@ export async function scanClassroomToolsBundle(directory) {
     pdfRuntime,
     sandboxRuntime,
     whiteboardChunk: whiteboardName,
+    yjsCopies,
   };
 }
 

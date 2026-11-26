@@ -11,6 +11,7 @@ import {
 import { useI18n } from "../../app/i18n";
 import type { WhiteboardSnippetBridge } from "../collaboration/whiteboardSnippetBridge";
 import { ClassroomHeaderSlotContext } from "../media/ClassroomMediaShell";
+import type { CodePresenceRoster } from "./codePresence";
 import type { ClassroomFilesSession } from "./filesSession";
 import { ClassroomToolActionsContext } from "./toolActions";
 
@@ -23,11 +24,21 @@ import { ClassroomToolActionsContext } from "./toolActions";
 export interface ClassroomFilesToolProps {
   readonly actorID: string;
   /**
+   * ROOM-TOOLS-FILES-02B: `classroom_pdf_collaboration` is on as well
+   * ("Trình chiếu lớp", page-scoped ink, laser). Off keeps Slice 1 exactly
+   * and never requests `/pdf-presentation`.
+   */
+  readonly collaborationEnabled?: boolean;
+  /** The viewer's display name for presence. */
+  readonly displayName?: string;
+  /**
    * `classroom_files_tool` and `file_uploads` are both on. `undefined` while
    * tenant capabilities load; `false` (off or unreadable) renders feature-off.
    */
   readonly enabled?: boolean;
   readonly mediaSpaceID: string;
+  /** The server roster (8-tone presence) shared with the Code tool. */
+  readonly presenceRoster?: CodePresenceRoster | null;
   readonly session: ClassroomFilesSession;
   /** Room bridge for "Đưa sang Bảng trắng"; absent hides the action. */
   readonly snippetBridge?: WhiteboardSnippetBridge;

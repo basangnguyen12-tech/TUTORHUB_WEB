@@ -14,6 +14,7 @@ import {
   MenuTrigger,
 } from "@tutorhub/ui";
 import {
+  Highlighter,
   Lock,
   MicOff,
   MoreVertical,
@@ -122,8 +123,24 @@ export interface ClassroomParticipantCodeGrantAction {
   readonly onRevoke: () => void;
 }
 
+/**
+ * ROOM-TOOLS-FILES-02B: the temporary PDF annotator grant ("Cho phép vẽ lên
+ * Tài liệu") for one student row, offered only while the viewer may manage
+ * annotator grants and the presentation is open (server projection). Kept
+ * separate from the Code grant so both can be shown side by side.
+ */
+export interface ClassroomParticipantPdfGrantAction {
+  readonly granted: boolean;
+  readonly limitReached: boolean;
+  readonly maxAnnotators: number;
+  readonly pending: boolean;
+  readonly onGrant: () => void;
+  readonly onRevoke: () => void;
+}
+
 interface ClassroomParticipantModerationMenuProps {
   readonly codeGrant?: ClassroomParticipantCodeGrantAction;
+  readonly pdfGrant?: ClassroomParticipantPdfGrantAction;
   /** Absent when the viewer only manages Code edit grants. */
   readonly controls?: ClassroomModerationControlsModel;
   readonly disabled?: boolean;
@@ -291,6 +308,7 @@ export function ClassroomParticipantModerationMenu({
   displayName,
   isSelf,
   participantKey,
+  pdfGrant,
 }: ClassroomParticipantModerationMenuProps) {
   const { t } = useI18n();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -323,7 +341,8 @@ export function ClassroomParticipantModerationMenu({
       operations.canRemoteMute ||
       operations.canRemove),
   );
-  if (isSelf || (!hasModeration && !codeGrant)) return null;
+  const hasGrant = Boolean(codeGrant || pdfGrant);
+  if (isSelf || (!hasModeration && !hasGrant)) return null;
   const menuLabel = hasModeration
     ? t("media.p407.participantMenu", { name: displayName })
     : t("media.people.code.menu", { name: displayName });
@@ -340,7 +359,7 @@ export function ClassroomParticipantModerationMenu({
           <IconButton
             className="media-p406-people-action media-p407-participant-trigger"
             data-people-tip={t("media.people.moreActions")}
-            disabled={hasModeration && !codeGrant ? disabled || busy : false}
+            disabled={hasModeration && !hasGrant ? disabled || busy : false}
             label={menuLabel}
             ref={trigger}
             size="sm"
@@ -383,7 +402,36 @@ export function ClassroomParticipantModerationMenu({
               </MenuItem>
             )
           ) : null}
-          {codeGrant && hasModeration ? <MenuSeparator /> : null}
+          {codeGrant && pdfGrant ? <MenuSeparator /> : null}
+          {pdfGrant ? (
+            pdfGrant.granted ? (
+              <MenuItem
+                disabled={pdfGrant.pending}
+                onSelect={pdfGrant.onRevoke}
+              >
+                <PencilOff aria-hidden="true" />
+                {t("media.people.pdf.revoke")}
+              </MenuItem>
+            ) : (
+              <MenuItem
+                disabled={pdfGrant.pending || pdfGrant.limitReached}
+                onSelect={pdfGrant.onGrant}
+              >
+                <Highlighter aria-hidden="true" />
+                <span className="media-p407-menu-item__text">
+                  <span>{t("media.people.pdf.grant")}</span>
+                  {pdfGrant.limitReached ? (
+                    <span className="media-p407-menu-item__hint">
+                      {t("media.people.pdf.limitHint", {
+                        max: pdfGrant.maxAnnotators,
+                      })}
+                    </span>
+                  ) : null}
+                </span>
+              </MenuItem>
+            )
+          ) : null}
+          {hasGrant && hasModeration ? <MenuSeparator /> : null}
           {controls && operations?.canPromoteCoHost && (
             <MenuItem
               disabled={disabled || busy}

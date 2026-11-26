@@ -2,8 +2,10 @@ import {
   Button,
   IconButton,
   Menu,
+  MenuCheckboxItem,
   MenuContent,
   MenuItem,
+  MenuSeparator,
   MenuTrigger,
 } from "@tutorhub/ui";
 import {
@@ -11,6 +13,7 @@ import {
   ChevronUp,
   ClipboardPaste,
   Crop,
+  EyeOff,
   FileText,
   Download,
   Maximize2,
@@ -38,6 +41,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../app/i18n";
+import { RoomDocumentBytesError } from "../../app/roomDocuments";
 import type { PendingWhiteboardSnippet } from "../collaboration/whiteboardSnippetBridge";
 import {
   blobToDataURL,
@@ -76,13 +80,20 @@ import type {
 import {
   AnnotationMode,
   openPdfDocument,
+  openPdfRangeDocument,
   readPdfPageText,
   resolvePdfDestination,
   TextLayer,
   type PdfLinkAnnotation,
+  type PdfRangeReader,
   type PDFDocumentProxy,
   type PDFPageProxy,
 } from "./pdfRuntime";
+import {
+  displayPages as presentationDisplayPages,
+  MANUAL_NAVIGATION_KEYS,
+  nearestDisplayPage,
+} from "./pdfPresentationModel";
 
 export interface DocumentViewerWhiteboard {
   /** `false` when the viewer can only watch the board (display hint). */
@@ -90,14 +101,60 @@ export interface DocumentViewerWhiteboard {
   readonly onSend: (snippet: PendingWhiteboardSnippet) => void;
 }
 
+/**
+ * What the viewer opens: verified in-memory bytes (≤ 30 MiB, images), or a
+ * version-pinned HTTP Range reader for a 30–50 MiB PDF (ROOM-TOOLS-FILES-02B).
+ */
+export type DocumentSource =
+  | { readonly bytes: Uint8Array; readonly kind: "bytes" }
+  | { readonly kind: "range"; readonly reader: PdfRangeReader };
+
+/**
+ * ROOM-TOOLS-FILES-02B: "Trình chiếu lớp". Pages keep their original numbers;
+ * a student's frames skip `hiddenPages`; the stage decides when to scroll
+ * ("Theo dõi GV") and learns when the viewer navigated on their own.
+ */
+export interface DocumentViewerPresentation {
+  /** Draw the page's ink onto a whiteboard snippet canvas (crop-relative). */
+  readonly drawSnippetAnnotations?: (
+    page: number,
+    rect: NormalizedRect,
+    canvas: HTMLCanvasElement,
+  ) => void;
+  readonly hasAnnotations?: (page: number, rect: NormalizedRect) => boolean;
+  readonly hiddenPages: readonly number[];
+  /** Presenter: show hidden pages too (marked "hidden from students"). */
+  readonly showHiddenPages: boolean;
+  /** `followLock` for a viewer: no manual page navigation. */
+  readonly navigationLocked: boolean;
+  readonly onCurrentPageChange?: (page: number) => void;
+  readonly onManualNavigation?: () => void;
+  /** The scroll request with this `seq` has landed. */
+  readonly onScrollRequestApplied?: (seq: number) => void;
+  /** Floating content in the page region (toolbar, follow key). */
+  readonly overlay?: ReactNode;
+  /** Extra items for the ⋯ menu. */
+  readonly menuItems?: ReactNode;
+  /** Ink / laser layer of one live page. */
+  readonly renderPageOverlay?: (page: number, aspect: number) => ReactNode;
+  /** A change of `seq` scrolls to `page` (nearest shown page). */
+  readonly scrollRequest: {
+    readonly page: number;
+    readonly seq: number;
+  } | null;
+}
+
 export interface DocumentViewerProps {
-  readonly bytes: Uint8Array;
   readonly canDownloadOriginal: boolean;
   readonly headerSlot: HTMLElement | null | undefined;
   readonly libraryOpen: boolean;
   readonly onDownloadOriginal: () => void;
   readonly onOpenLibrary: () => void;
   readonly onViewChange: (view: ClassroomFilesViewState) => void;
+  readonly presentation?: DocumentViewerPresentation | null;
+  readonly source: DocumentSource;
+  /** Extra Top Bar content (e.g. "Trình chiếu cho lớp"). */
+  readonly topBarExtra?: ReactNode;
   readonly view: ClassroomFilesViewState;
   readonly whiteboard: DocumentViewerWhiteboard | null;
 }
@@ -171,6 +228,23 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+/** Smooth scrolling unless the person prefers reduced motion. */
+function scrollBehavior(): ScrollBehavior {
+  return typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? "auto"
+    : "smooth";
+}
+
+/** Events coming from an active ink surface never count as navigation. */
+function isInkTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest('[data-pdf-ink="draw"], [data-pdf-ink="laser"]') !== null
+  );
+}
+
 function zeroCanvas(canvas: HTMLCanvasElement | null) {
   if (!canvas) return;
   canvas.width = 0;
@@ -183,13 +257,15 @@ function zeroCanvas(canvas: HTMLCanvasElement | null) {
  * pixels at any time; every other page is a correctly sized placeholder.
  */
 export function DocumentViewer({
-  bytes,
   canDownloadOriginal,
   headerSlot,
   libraryOpen,
   onDownloadOriginal,
   onOpenLibrary,
   onViewChange,
+  presentation = null,
+  source,
+  topBarExtra,
   view,
   whiteboard,
 }: DocumentViewerProps) {
@@ -205,7 +281,9 @@ export function DocumentViewer({
 
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [image, setImage] = useState<ImageSource | null>(null);
-  const [sourceError, setSourceError] = useState(false);
+  const [sourceError, setSourceError] = useState<false | "integrity" | "parse">(
+    false,
+  );
   const [sourceAttempt, setSourceAttempt] = useState(0);
   const [pageSizes, setPageSizes] = useState<ReadonlyMap<number, PageSize>>(
     () => new Map(),
@@ -247,16 +325,57 @@ export function DocumentViewer({
   const restoredRef = useRef(false);
   const mobile = isMobileViewerWidth(viewportWidth);
   const showThumbs = isPDF && (thumbsOpen ?? !mobile);
+  // ROOM-TOOLS-FILES-02B: the frames this viewer gets, by original number.
+  const showHidden = presentation ? presentation.showHiddenPages : true;
+  const hiddenKey = presentation ? presentation.hiddenPages.join(",") : "";
+  const shownPages = useMemo(
+    () =>
+      presentationDisplayPages(
+        pageCount,
+        hiddenKey === "" ? [] : hiddenKey.split(",").map(Number),
+        showHidden,
+      ),
+    [hiddenKey, pageCount, showHidden],
+  );
+  const shownKey = shownPages.join(",");
+  const hiddenSet = useMemo(
+    () => new Set(hiddenKey === "" ? [] : hiddenKey.split(",").map(Number)),
+    [hiddenKey],
+  );
+  const shownRef = useRef<readonly number[]>(shownPages);
+  const presentationRef = useRef(presentation);
+  const navigationLocked = presentation?.navigationLocked === true;
+  const notifyManual = useCallback(() => {
+    presentationRef.current?.onManualNavigation?.();
+  }, []);
+  const [includeInk, setIncludeInk] = useState(true);
 
   useLayoutEffect(() => {
     currentRef.current = current;
   }, [current]);
+  useLayoutEffect(() => {
+    shownRef.current = shownPages;
+    presentationRef.current = presentation;
+  });
 
   // Open the verified bytes: pdf.js for PDFs, a local Blob URL for images.
   useEffect(() => {
     let cancelled = false;
     if (isPDF) {
-      const task = openPdfDocument(bytes);
+      let task: ReturnType<typeof openPdfDocument> | null = null;
+      const fail = (error: unknown) => {
+        if (cancelled) return;
+        setSourceError(
+          error instanceof RoomDocumentBytesError && error.code === "integrity"
+            ? "integrity"
+            : "parse",
+        );
+        void task?.destroy();
+      };
+      task =
+        source.kind === "range"
+          ? openPdfRangeDocument(source.reader, fail)
+          : openPdfDocument(source.bytes);
       task.promise.then(
         (opened) => {
           if (cancelled) return;
@@ -276,18 +395,20 @@ export function DocumentViewer({
             () => undefined,
           );
         },
-        () => {
-          if (!cancelled) setSourceError(true);
-        },
+        (error: unknown) => fail(error),
       );
       return () => {
         cancelled = true;
         TextLayer.cleanup();
-        void task.destroy();
+        void task?.destroy();
       };
     }
+    // Images are always verified in-memory bytes (≤ 10 MiB).
+    if (source.kind !== "bytes") return undefined;
     const url = URL.createObjectURL(
-      new Blob([bytes as Uint8Array<ArrayBuffer>], { type: doc.mediaType }),
+      new Blob([source.bytes as Uint8Array<ArrayBuffer>], {
+        type: doc.mediaType,
+      }),
     );
     const element = new Image();
     element.decoding = "async";
@@ -302,7 +423,7 @@ export function DocumentViewer({
       });
     });
     element.addEventListener("error", () => {
-      if (!cancelled) setSourceError(true);
+      if (!cancelled) setSourceError("parse");
     });
     element.src = url;
     return () => {
@@ -310,7 +431,7 @@ export function DocumentViewer({
       element.removeAttribute("src");
       URL.revokeObjectURL(url);
     };
-  }, [bytes, doc.mediaType, isPDF, sourceAttempt]);
+  }, [doc.mediaType, isPDF, source, sourceAttempt]);
 
   // Release every thumbnail URL with the viewer.
   useEffect(() => () => thumbnails.clear(), [thumbnails]);
@@ -361,28 +482,49 @@ export function DocumentViewer({
         : zoom;
   const cssWidth = Math.round(baseWidth * effectiveZoom);
   const limit = liveCanvasLimit(viewportWidth);
-  const livePages = useMemo(
-    () =>
-      new Set(
-        sourceReady
-          ? selectLivePages({ current, direction, limit, pageCount, visible })
-          : [],
-      ),
-    [current, direction, limit, pageCount, sourceReady, visible],
-  );
+  const livePages = useMemo(() => {
+    if (!sourceReady) return new Set<number>();
+    // Select over display indices, so hidden pages never take a canvas.
+    const indexOf = new Map(
+      shownPages.map((page, index) => [page, index + 1] as const),
+    );
+    const anchor = indexOf.get(nearestDisplayPage(current, shownPages)) ?? 1;
+    const chosen = selectLivePages({
+      current: anchor,
+      direction,
+      limit,
+      pageCount: shownPages.length,
+      visible: visible
+        .map((page) => indexOf.get(page))
+        .filter((index): index is number => index !== undefined),
+    });
+    return new Set(
+      chosen
+        .map((index) => shownPages[index - 1])
+        .filter((page): page is number => page !== undefined),
+    );
+  }, [current, direction, limit, shownPages, sourceReady, visible]);
   useLayoutEffect(() => {
     liveRef.current = livePages;
   }, [livePages]);
 
   const scrollToPage = useCallback(
-    (page: number) => {
-      const target = Math.min(Math.max(1, page), pageCount);
+    (page: number, smooth = false) => {
+      const target = nearestDisplayPage(
+        Math.min(Math.max(1, page), pageCount),
+        shownRef.current,
+      );
       const container = scrollRef.current;
       const frame = container?.querySelector<HTMLElement>(
         `[data-page-frame="${target}"]`,
       );
       if (container && frame) {
-        container.scrollTop = Math.max(0, frame.offsetTop - PAGE_GAP_PX);
+        const top = Math.max(0, frame.offsetTop - PAGE_GAP_PX);
+        if (smooth && typeof container.scrollTo === "function") {
+          container.scrollTo({ behavior: scrollBehavior(), top });
+        } else {
+          container.scrollTop = top;
+        }
       }
       setDirection(target >= currentRef.current ? 1 : -1);
       setCurrent(target);
@@ -440,7 +582,7 @@ export function DocumentViewer({
       observer.disconnect();
       if (frame !== 0) cancelAnimationFrame(frame);
     };
-  }, [pageCount, sourceReady]);
+  }, [pageCount, shownKey, sourceReady]);
 
   // Restore the remembered page once the stage has a size, and keep the
   // current page anchored when zoom or the stage width changes.
@@ -458,6 +600,33 @@ export function DocumentViewer({
       scrollToPage(currentRef.current);
     }
   }, [box.width, cssWidth, scrollToPage, sourceReady]);
+
+  // ROOM-TOOLS-FILES-02B: "Theo dõi GV" — the stage asks for a page; the
+  // first request lands instantly, later ones scroll smoothly.
+  const appliedRequestRef = useRef<number | null>(null);
+  const requestSeq = presentation?.scrollRequest?.seq ?? null;
+  const requestPage = presentation?.scrollRequest?.page ?? null;
+  useLayoutEffect(() => {
+    if (requestSeq === null || requestPage === null) return;
+    if (appliedRequestRef.current === requestSeq) return;
+    if (!sourceReady || box.width === 0) return;
+    const smooth = appliedRequestRef.current !== null;
+    appliedRequestRef.current = requestSeq;
+    scrollToPage(requestPage, smooth);
+    presentationRef.current?.onScrollRequestApplied?.(requestSeq);
+  }, [box.width, requestPage, requestSeq, scrollToPage, shownKey, sourceReady]);
+
+  // A hidden page disappearing under the viewer moves it to a shown one.
+  useLayoutEffect(() => {
+    if (!sourceReady || box.width === 0) return;
+    if (!shownRef.current.includes(currentRef.current)) {
+      scrollToPage(currentRef.current);
+    }
+  }, [box.width, scrollToPage, shownKey, sourceReady]);
+
+  useEffect(() => {
+    presentationRef.current?.onCurrentPageChange?.(current);
+  }, [current]);
 
   // Remember page / zoom in the room session (RAM only).
   useEffect(() => {
@@ -517,11 +686,12 @@ export function DocumentViewer({
           }
         }
         if (cancelled) return;
+        // Pages hidden from students never show up in their results.
         const matches = findDocumentMatches(
           cache,
           searchQuery,
           ignoreDiacritics,
-        );
+        ).filter((match) => shownRef.current.includes(match.page));
         const totalText = [...cache.values()].reduce(
           (sum, text) => sum + text.trim().length,
           0,
@@ -533,15 +703,30 @@ export function DocumentViewer({
           scanning: false,
         });
         const first = nextMatchPage(matches, currentRef.current - 1, 1);
-        if (first !== null) scrollToPage(first);
+        if (first !== null) {
+          notifyManual();
+          scrollToPage(first);
+        }
       })();
     }, 250);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [ignoreDiacritics, needle, pdf, scrollToPage, searchOpen, searchQuery]);
-  const totalMatches = search.matches.reduce(
+  }, [
+    ignoreDiacritics,
+    needle,
+    notifyManual,
+    pdf,
+    scrollToPage,
+    searchOpen,
+    searchQuery,
+  ]);
+  const shownMatches = useMemo(() => {
+    const shown = new Set(shownKey.split(",").map(Number));
+    return search.matches.filter((match) => shown.has(match.page));
+  }, [search.matches, shownKey]);
+  const totalMatches = shownMatches.reduce(
     (sum, match) => sum + match.count,
     0,
   );
@@ -570,6 +755,14 @@ export function DocumentViewer({
     if (!canvas) {
       setSnippet({ kind: "error", reason: "render" });
       return;
+    }
+    // ROOM-TOOLS-FILES-02B: "Kèm nét chữa trên trang" (on by default).
+    if (includeInk && presentation?.drawSnippetAnnotations) {
+      try {
+        presentation.drawSnippetAnnotations(page, rect, canvas);
+      } catch {
+        // The page image still goes over without the ink.
+      }
     }
     const encoded = await encodeDocumentSnippet(canvas, domSnippetEncoderHost);
     zeroCanvas(canvas);
@@ -651,17 +844,27 @@ export function DocumentViewer({
     if (modifier || event.altKey || isEditableTarget(event.target) || crop) {
       return;
     }
+    if (MANUAL_NAVIGATION_KEYS.has(event.key)) {
+      if (navigationLocked) {
+        // "GV đang khóa theo dõi": the page is the teacher's.
+        event.preventDefault();
+        return;
+      }
+      notifyManual();
+    }
+    const list = shownRef.current;
+    const index = list.indexOf(nearestDisplayPage(currentRef.current, list));
     const goto =
       event.key === "PageDown"
-        ? currentRef.current + 1
+        ? list[Math.min(list.length - 1, index + 1)]
         : event.key === "PageUp"
-          ? currentRef.current - 1
+          ? list[Math.max(0, index - 1)]
           : event.key === "Home"
-            ? 1
+            ? list[0]
             : event.key === "End"
-              ? pageCount
-              : null;
-    if (goto !== null) {
+              ? list[list.length - 1]
+              : undefined;
+    if (goto !== undefined) {
       event.preventDefault();
       scrollToPage(goto);
     }
@@ -671,7 +874,10 @@ export function DocumentViewer({
     if (pageDraft === null) return;
     const parsed = Number.parseInt(pageDraft, 10);
     setPageDraft(null);
-    if (Number.isFinite(parsed)) scrollToPage(parsed);
+    if (Number.isFinite(parsed) && !navigationLocked) {
+      if (parsed !== currentRef.current) notifyManual();
+      scrollToPage(parsed);
+    }
   };
 
   const percent = new Intl.NumberFormat(language === "vi" ? "vi-VN" : "en-US", {
@@ -703,6 +909,7 @@ export function DocumentViewer({
             aria-label={t("classroomTools.files.viewer.pageInput", {
               count: pageCount,
             })}
+            disabled={navigationLocked}
             inputMode="numeric"
             max={pageCount}
             min={1}
@@ -825,9 +1032,22 @@ export function DocumentViewer({
               <Crop aria-hidden="true" />
               {t("classroomTools.files.snippet.crop")}
             </MenuItem>
+            {presentation?.drawSnippetAnnotations ? (
+              <>
+                <MenuSeparator />
+                <MenuCheckboxItem
+                  checked={includeInk}
+                  onCheckedChange={(checked) => setIncludeInk(checked === true)}
+                  onSelect={(event) => event.preventDefault()}
+                >
+                  {t("classroomTools.files.snippet.includeInk")}
+                </MenuCheckboxItem>
+              </>
+            ) : null}
           </MenuContent>
         </Menu>
       ) : null}
+      {topBarExtra}
       <Menu modal={false}>
         <MenuTrigger asChild>
           <IconButton
@@ -872,6 +1092,12 @@ export function DocumentViewer({
             <FileText aria-hidden="true" />
             {t("classroomTools.files.library.title")}
           </MenuItem>
+          {presentation?.menuItems ? (
+            <>
+              <MenuSeparator />
+              {presentation.menuItems}
+            </>
+          ) : null}
           {canDownloadOriginal ? (
             <MenuItem onSelect={onDownloadOriginal}>
               <Download aria-hidden="true" />
@@ -896,19 +1122,28 @@ export function DocumentViewer({
       <div className="classroom-files-state" role="alert">
         {headerSlot ? createPortal(topBar, headerSlot) : null}
         <p className="classroom-files-state__title">
-          {t("classroomTools.files.viewer.parseError")}
+          {sourceError === "integrity"
+            ? t("classroomTools.files.viewer.integrity")
+            : t("classroomTools.files.viewer.parseError")}
         </p>
-        <Button
-          leadingIcon={<RefreshCw />}
-          onClick={() => {
-            setSourceError(false);
-            setSourceAttempt((value) => value + 1);
-          }}
-          size="sm"
-          variant="secondary"
-        >
-          {t("state.retry")}
-        </Button>
+        {/* A version mismatch fails closed: reopen from the library. */}
+        {sourceError === "integrity" ? (
+          <Button onClick={onOpenLibrary} size="sm" variant="secondary">
+            {t("classroomTools.files.library.title")}
+          </Button>
+        ) : (
+          <Button
+            leadingIcon={<RefreshCw />}
+            onClick={() => {
+              setSourceError(false);
+              setSourceAttempt((value) => value + 1);
+            }}
+            size="sm"
+            variant="secondary"
+          >
+            {t("state.retry")}
+          </Button>
+        )}
       </div>
     );
   }
@@ -944,11 +1179,14 @@ export function DocumentViewer({
               if (event.key === "Enter") {
                 event.preventDefault();
                 const next = nextMatchPage(
-                  search.matches,
+                  shownMatches,
                   currentRef.current,
                   event.shiftKey ? -1 : 1,
                 );
-                if (next !== null) scrollToPage(next);
+                if (next !== null && !navigationLocked) {
+                  notifyManual();
+                  scrollToPage(next);
+                }
               }
             }}
             placeholder={t("classroomTools.files.search.placeholder")}
@@ -965,15 +1203,14 @@ export function DocumentViewer({
             {t("classroomTools.files.search.ignoreDiacritics")}
           </label>
           <IconButton
-            disabled={search.matches.length === 0}
+            disabled={shownMatches.length === 0 || navigationLocked}
             label={t("classroomTools.files.search.previous")}
             onClick={() => {
-              const next = nextMatchPage(
-                search.matches,
-                currentRef.current,
-                -1,
-              );
-              if (next !== null) scrollToPage(next);
+              const next = nextMatchPage(shownMatches, currentRef.current, -1);
+              if (next !== null) {
+                notifyManual();
+                scrollToPage(next);
+              }
             }}
             size="sm"
             variant="quiet"
@@ -981,11 +1218,14 @@ export function DocumentViewer({
             <ChevronUp />
           </IconButton>
           <IconButton
-            disabled={search.matches.length === 0}
+            disabled={shownMatches.length === 0 || navigationLocked}
             label={t("classroomTools.files.search.next")}
             onClick={() => {
-              const next = nextMatchPage(search.matches, currentRef.current, 1);
-              if (next !== null) scrollToPage(next);
+              const next = nextMatchPage(shownMatches, currentRef.current, 1);
+              if (next !== null) {
+                notifyManual();
+                scrollToPage(next);
+              }
             }}
             size="sm"
             variant="quiet"
@@ -1006,11 +1246,11 @@ export function DocumentViewer({
                   })
                 : search.noText
                   ? t("classroomTools.files.search.scanned")
-                  : search.matches.length === 0
+                  : shownMatches.length === 0
                     ? t("classroomTools.files.search.none")
                     : t("classroomTools.files.search.results", {
                         count: totalMatches,
-                        pages: search.matches.length,
+                        pages: shownMatches.length,
                       })}
           </p>
           <IconButton
@@ -1030,13 +1270,17 @@ export function DocumentViewer({
             current={current}
             currentRef={currentRef}
             liveRef={liveRef}
+            hiddenPages={presentation && showHidden ? hiddenSet : null}
+            locked={navigationLocked}
             onClose={mobile ? () => setThumbsOpen(false) : undefined}
             onSelect={(page) => {
+              if (navigationLocked) return;
+              if (page !== currentRef.current) notifyManual();
               scrollToPage(page);
               if (mobile) setThumbsOpen(false);
             }}
             onThumbnail={bumpThumbnails}
-            pageCount={pageCount}
+            pages={shownPages}
             pdf={pdf}
             scheduler={scheduler}
             thumbnails={thumbnails}
@@ -1051,23 +1295,42 @@ export function DocumentViewer({
           */}
           <div
             aria-label={regionLabel}
-            className="classroom-files-pages"
+            className={`classroom-files-pages${navigationLocked ? " classroom-files-pages--locked" : ""}`}
+            data-follow-locked={navigationLocked || undefined}
             id={regionID}
             onKeyDown={handleKeyDown}
+            onPointerDown={(event) => {
+              // The scrollbar (or the gutter between pages) was grabbed.
+              if (event.target === event.currentTarget) notifyManual();
+            }}
+            onTouchMove={(event) => {
+              if (!isInkTarget(event.target)) notifyManual();
+            }}
+            onWheel={() => {
+              if (!navigationLocked) notifyManual();
+            }}
             ref={scrollRef}
             role="region"
             tabIndex={0}
           >
             {sourceReady ? (
-              Array.from({ length: pageCount }, (_, index) => {
-                const page = index + 1;
+              shownPages.map((page) => {
                 const live = livePages.has(page);
                 const height = Math.round(cssWidth / aspectOf(page));
+                const hiddenForStudents =
+                  presentation !== null && showHidden && hiddenSet.has(page);
                 return (
                   <PageFrame
                     height={height}
+                    hidden={hiddenForStudents}
                     key={page}
-                    label={t("classroomTools.files.viewer.page", { page })}
+                    label={
+                      hiddenForStudents
+                        ? t("classroomTools.files.present.pageHiddenLabel", {
+                            page,
+                          })
+                        : t("classroomTools.files.viewer.page", { page })
+                    }
                     page={page}
                     width={cssWidth}
                   >
@@ -1083,7 +1346,11 @@ export function DocumentViewer({
                           linkReturnFocusRef.current = element;
                           setPendingLink(link);
                         }}
-                        onInternalLink={scrollToPage}
+                        onInternalLink={(target) => {
+                          if (navigationLocked) return;
+                          notifyManual();
+                          scrollToPage(target);
+                        }}
                         onPageSize={reportPageSize}
                         page={page}
                         pdf={pdf}
@@ -1104,6 +1371,15 @@ export function DocumentViewer({
                         {page}
                       </span>
                     )}
+                    {live && sourceReady && presentation?.renderPageOverlay
+                      ? presentation.renderPageOverlay(page, aspectOf(page))
+                      : null}
+                    {hiddenForStudents ? (
+                      <span className="classroom-files-page__hidden-badge">
+                        <EyeOff aria-hidden="true" />
+                        {t("classroomTools.files.present.hiddenBadge")}
+                      </span>
+                    ) : null}
                     {crop?.page === page ? (
                       <CropOverlay
                         hintID={cropHintID}
@@ -1127,6 +1403,7 @@ export function DocumentViewer({
               </div>
             )}
           </div>
+          {presentation?.overlay}
         </div>
       </div>
       <p className="classroom-files-sr-only" id={cropHintID}>
@@ -1180,12 +1457,14 @@ export function DocumentViewer({
 function PageFrame({
   children,
   height,
+  hidden = false,
   label,
   page,
   width,
 }: {
   children: ReactNode;
   height: number;
+  hidden?: boolean;
   label: string;
   page: number;
   width: number;
@@ -1194,6 +1473,7 @@ function PageFrame({
     <div
       aria-label={label}
       className="classroom-files-page"
+      data-hidden-for-students={hidden || undefined}
       data-page-frame={page}
       role="group"
       style={{ height, width }}
@@ -1523,11 +1803,13 @@ function ThumbnailRail({
   aspectOf,
   current,
   currentRef,
+  hiddenPages,
   liveRef,
+  locked,
   onClose,
   onSelect,
   onThumbnail,
-  pageCount,
+  pages,
   pdf,
   scheduler,
   thumbnails,
@@ -1536,11 +1818,15 @@ function ThumbnailRail({
   aspectOf: (page: number) => number;
   current: number;
   currentRef: RefObject<number>;
+  /** Presenter: pages hidden from students (badged), else null. */
+  hiddenPages: ReadonlySet<number> | null;
   liveRef: RefObject<ReadonlySet<number>>;
+  locked: boolean;
   onClose?: () => void;
   onSelect: (page: number) => void;
   onThumbnail: () => void;
-  pageCount: number;
+  /** Original page numbers shown to this viewer. */
+  pages: readonly number[];
   pdf: PDFDocumentProxy;
   scheduler: RenderScheduler;
   thumbnails: ThumbnailUrlCache;
@@ -1548,6 +1834,7 @@ function ThumbnailRail({
 }) {
   const { t } = useI18n();
   const listRef = useRef<HTMLOListElement>(null);
+  const pagesKey = pages.join(",");
   const [shown, setShown] = useState<readonly number[]>([]);
   const inFlightRef = useRef(new Set<number>());
   const mountedRef = useRef(true);
@@ -1589,7 +1876,7 @@ function ThumbnailRail({
       observer.disconnect();
       if (frame !== 0) cancelAnimationFrame(frame);
     };
-  }, [pageCount]);
+  }, [pagesKey]);
 
   useEffect(() => {
     const queued = new Map<number, () => void>();
@@ -1648,9 +1935,11 @@ function ThumbnailRail({
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLOListElement>) => {
     const step =
       event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
-    if (step === 0) return;
+    if (step === 0 || locked) return;
     event.preventDefault();
-    const next = Math.min(Math.max(1, current + step), pageCount);
+    const index = Math.max(0, pages.indexOf(current));
+    const next =
+      pages[Math.min(Math.max(0, index + step), pages.length - 1)] ?? current;
     onSelect(next);
     requestAnimationFrame(() =>
       listRef.current
@@ -1678,18 +1967,30 @@ function ThumbnailRail({
         </div>
       ) : null}
       <ol onKeyDown={handleKeyDown} ref={listRef}>
-        {Array.from({ length: pageCount }, (_, index) => {
-          const page = index + 1;
+        {pages.map((page) => {
           const url = thumbnails.get(page);
           const active = page === current;
+          const hidden = hiddenPages?.has(page) === true;
           return (
             <li data-thumb={page} key={page}>
               <button
                 aria-current={active ? "page" : undefined}
-                aria-label={t("classroomTools.files.viewer.page", { page })}
+                aria-disabled={locked || undefined}
+                aria-label={
+                  hidden
+                    ? t("classroomTools.files.present.pageHiddenLabel", {
+                        page,
+                      })
+                    : t("classroomTools.files.viewer.page", { page })
+                }
                 className="classroom-files-thumb"
+                data-hidden-for-students={hidden || undefined}
                 onClick={() => onSelect(page)}
-                tabIndex={active ? 0 : -1}
+                tabIndex={
+                  active || (!pages.includes(current) && page === pages[0])
+                    ? 0
+                    : -1
+                }
                 type="button"
               >
                 <span
@@ -1704,6 +2005,7 @@ function ThumbnailRail({
                   aria-hidden="true"
                   className="classroom-files-thumb__number"
                 >
+                  {hidden ? <EyeOff /> : null}
                   {page}
                 </span>
               </button>

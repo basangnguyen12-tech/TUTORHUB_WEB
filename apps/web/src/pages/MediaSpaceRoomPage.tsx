@@ -45,6 +45,11 @@ import {
 import type { CodePresenceRoster } from "../features/classroom-tools/codePresence";
 import { createClassroomCodeSession } from "../features/classroom-tools/codeSession";
 import { createClassroomFilesSession } from "../features/classroom-tools/filesSession";
+import {
+  ClassroomPdfAnnotatorGrantsContext,
+  type ClassroomPdfAnnotatorGrantError,
+  type ClassroomPdfAnnotatorGrantsModel,
+} from "../features/classroom-tools/pdfAnnotatorGrantsContext";
 import { ClassroomWhiteboardTool } from "../features/collaboration/ClassroomWhiteboardTool";
 import { createWhiteboardSnippetBridge } from "../features/collaboration/whiteboardSnippetBridge";
 import {
@@ -68,6 +73,15 @@ import {
   useDeleteCodeWorkspaceEditorGrant,
   usePutCodeWorkspaceEditorGrant,
 } from "../app/codeWorkspaces";
+import {
+  isPdfAnnotatorLimitError,
+  PDF_PRESENTATION_MAX_ANNOTATORS,
+  PDF_PRESENTATION_POLL_INTERVAL_MS,
+  pdfPresentationAutoOpenKey,
+  useDeletePdfPresentationAnnotatorGrant,
+  usePdfPresentationTool,
+  usePutPdfPresentationAnnotatorGrant,
+} from "../app/pdfPresentations";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { useWhiteboardTool } from "../app/whiteboards";
 import "./ClassroomRoomStage.css";
@@ -77,6 +91,7 @@ const whiteboardPollIntervalMs = 4_000;
 /** ROOM-TOOLS-CODE-02B: the shared code workspace projection poll. */
 const codeWorkspacePollIntervalMs = 4_000;
 const NO_EDITOR_GRANTS: readonly { readonly participant_key: string }[] = [];
+const NO_ANNOTATOR_GRANTS: readonly { readonly participant_key: string }[] = [];
 
 export function MediaSpaceRoomPage() {
   const { spaceId, roomInstanceId } = useParams();
@@ -166,6 +181,13 @@ function MediaSpaceRoomSession({
     : tenantCapabilities.isError
       ? false
       : undefined;
+  // ROOM-TOOLS-FILES-02B (ADR-0045 Slice 2): the shared "Trình chiếu lớp"
+  // presentation, page-scoped annotations and laser need all three switches.
+  // Off (or unreadable) keeps Slice 1 exactly: no /pdf-presentation request.
+  const pdfCollaborationEnabled =
+    filesToolEnabled === true &&
+    tenantCapabilities.data?.features.classroom_pdf_collaboration?.enabled ===
+      true;
   // Per-room-session Documents memory (open document, page, verified bytes
   // in RAM only) and the "Đưa sang Bảng trắng" snippet bridge. Both are
   // wiped on sign-out (clearPrivateSessionCache) and when the room unmounts.
@@ -301,6 +323,92 @@ function MediaSpaceRoomSession({
           }
         : null,
     [signalSnapshot],
+  );
+  // ROOM-TOOLS-FILES-02B: an open PDF presentation brings the Documents tool
+  // onto every stage once per `id:generation:revoke_generation` (A → B → A
+  // and suspend → resume reopen it; a pen grant change does not).
+  const pdfPresentationTool = usePdfPresentationTool(
+    tenantId,
+    spaceId ?? "",
+    pdfCollaborationEnabled && signalScopeReady && roomLive,
+    { pollIntervalMs: PDF_PRESENTATION_POLL_INTERVAL_MS },
+  );
+  const pdfProjection =
+    pdfCollaborationEnabled && pdfPresentationTool.isSuccess
+      ? pdfPresentationTool.data
+      : undefined;
+  const pdfPresentation = pdfProjection?.presentation ?? null;
+  const pdfAutoOpenKey = pdfPresentationAutoOpenKey(pdfPresentation);
+  const putAnnotatorGrant = usePutPdfPresentationAnnotatorGrant(
+    tenantId,
+    spaceId ?? "",
+  );
+  const deleteAnnotatorGrant = useDeletePdfPresentationAnnotatorGrant(
+    tenantId,
+    spaceId ?? "",
+  );
+  const { mutate: grantAnnotator } = putAnnotatorGrant;
+  const { mutate: revokeAnnotator } = deleteAnnotatorGrant;
+  const [pdfGrantError, setPdfGrantError] =
+    useState<ClassroomPdfAnnotatorGrantError | null>(null);
+  const [pendingPdfGrantKey, setPendingPdfGrantKey] = useState<string | null>(
+    null,
+  );
+  const pdfPresentationID = pdfPresentation?.id ?? null;
+  const pdfGrantsManageable =
+    pdfPresentation?.status === "open" &&
+    pdfPresentation.viewer_capabilities.can_manage_annotator_grants;
+  const activeAnnotatorGrants =
+    pdfProjection?.active_annotator_grants ?? NO_ANNOTATOR_GRANTS;
+  const pdfAnnotatorGrants = useMemo<ClassroomPdfAnnotatorGrantsModel | null>(
+    () =>
+      pdfPresentationID === null || pdfPresentation?.status !== "open"
+        ? null
+        : {
+            activeParticipantKeys: new Set(
+              activeAnnotatorGrants.map((grant) => grant.participant_key),
+            ),
+            canManage: pdfGrantsManageable,
+            error: pdfGrantError,
+            maxAnnotators: PDF_PRESENTATION_MAX_ANNOTATORS,
+            pendingParticipantKey: pendingPdfGrantKey,
+            onDismissError: () => setPdfGrantError(null),
+            onGrant: (participantKey) => {
+              setPdfGrantError(null);
+              setPendingPdfGrantKey(participantKey);
+              grantAnnotator(
+                { participantKey, presentationID: pdfPresentationID },
+                {
+                  onError: (error) =>
+                    setPdfGrantError(
+                      isPdfAnnotatorLimitError(error) ? "limit" : "failed",
+                    ),
+                  onSettled: () => setPendingPdfGrantKey(null),
+                },
+              );
+            },
+            onRevoke: (participantKey) => {
+              setPdfGrantError(null);
+              setPendingPdfGrantKey(participantKey);
+              revokeAnnotator(
+                { participantKey, presentationID: pdfPresentationID },
+                {
+                  onError: () => setPdfGrantError("failed"),
+                  onSettled: () => setPendingPdfGrantKey(null),
+                },
+              );
+            },
+          },
+    [
+      activeAnnotatorGrants,
+      grantAnnotator,
+      pdfGrantError,
+      pdfGrantsManageable,
+      pdfPresentation?.status,
+      pdfPresentationID,
+      pendingPdfGrantKey,
+      revokeAnnotator,
+    ],
   );
   const putEditorGrant = usePutCodeWorkspaceEditorGrant(
     tenantId,
@@ -748,11 +856,15 @@ function MediaSpaceRoomSession({
         title: t("classroomTools.codeTitle"),
       },
       {
+        autoOpenKey: pdfAutoOpenKey,
         content: (
           <ClassroomFilesTool
             actorID={userId}
+            collaborationEnabled={pdfCollaborationEnabled}
+            displayName={displayName}
             enabled={filesToolEnabled}
             mediaSpaceID={spaceId}
+            presenceRoster={codeRoster}
             session={filesSession}
             snippetBridge={snippetBridge}
             tenantID={tenantId}
@@ -783,7 +895,13 @@ function MediaSpaceRoomSession({
           edit grants from here.
         */}
         <ClassroomCodeEditorGrantsContext value={codeEditorGrants}>
-          <ClassroomLiveKitRoom {...roomProps} />
+          {/*
+            ROOM-TOOLS-FILES-02B: always rendered too (null without a PDF
+            presentation), so adding it never remounts the LiveKit room.
+          */}
+          <ClassroomPdfAnnotatorGrantsContext value={pdfAnnotatorGrants}>
+            <ClassroomLiveKitRoom {...roomProps} />
+          </ClassroomPdfAnnotatorGrantsContext>
         </ClassroomCodeEditorGrantsContext>
       </MediaLobbyWaitingCountProvider>
       {roomError && (

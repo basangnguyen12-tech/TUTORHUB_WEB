@@ -2786,6 +2786,14 @@ const messages = {
     "media.people.code.failed":
       "Chưa cập nhật được quyền sửa Code. Hãy thử lại.",
     "media.people.code.menu": "Thao tác với {name}",
+    "media.people.pdf.annotating": "Đang được phép vẽ lên Tài liệu",
+    "media.people.pdf.grant": "Cho phép vẽ lên Tài liệu (10 phút)",
+    "media.people.pdf.revoke": "Thu hồi quyền vẽ Tài liệu",
+    "media.people.pdf.limitHint": "Đã đủ {max} học sinh đang vẽ",
+    "media.people.pdf.limitError":
+      "Tối đa {max} học sinh được vẽ lên Tài liệu cùng lúc",
+    "media.people.pdf.failed":
+      "Chưa cập nhật được quyền vẽ Tài liệu. Hãy thử lại.",
     "media.people.micOff": "Micro đang tắt",
     "media.people.speaking": "Đang nói",
     "media.people.lowerAll": "Hạ tất cả tay ({count})",
@@ -3761,7 +3769,7 @@ const messages = {
     "classroomTools.files.viewer.forbidden":
       "Không mở được tài liệu này (không có quyền hoặc đã bị xóa).",
     "classroomTools.files.viewer.tooLarge":
-      "Tệp lớn hơn 30 MiB chưa xem được trong phòng ở giai đoạn này.",
+      "Tệp lớn hơn 50 MiB nên không xem được trong phòng.",
     "classroomTools.files.viewer.integrity":
       "Tài liệu tải về không khớp mã kiểm tra nên đã bị loại bỏ.",
     "classroomTools.files.viewer.loadError": "Không tải được tài liệu.",
@@ -3829,6 +3837,102 @@ const messages = {
     "classroomTools.files.snippet.failed":
       "Không tạo được ảnh từ trang này. Hãy thử lại.",
     "classroomTools.files.snippet.dismiss": "Đóng thông báo",
+    "classroomTools.files.snippet.includeInk": "Kèm nét chữa trên trang",
+    "classroomTools.files.present.present": "Trình chiếu cho lớp",
+    "classroomTools.files.present.presentNamed": "Trình chiếu {name} cho lớp",
+    "classroomTools.files.present.presentingBadge": "Đang trình chiếu",
+    "classroomTools.files.present.presentFailed":
+      "Chưa trình chiếu được tài liệu này. Hãy thử lại.",
+    "classroomTools.files.present.transitionFailed":
+      "Chưa cập nhật được buổi trình chiếu. Hãy thử lại.",
+    "classroomTools.files.present.modeGroup": "Chế độ Tài liệu",
+    "classroomTools.files.present.modeClass": "Trình chiếu lớp",
+    "classroomTools.files.present.modePrivate": "Xem riêng",
+    "classroomTools.files.present.modeLive": "đang trình chiếu",
+    "classroomTools.files.present.autoSwitched":
+      "Giáo viên vừa trình chiếu tài liệu — đã chuyển sang Trình chiếu lớp.",
+    "classroomTools.files.present.liveBar": "Trạng thái trình chiếu",
+    "classroomTools.files.present.statusPresenter":
+      "Bạn đang trình chiếu — cả lớp ở trang {page}",
+    "classroomTools.files.present.statusViewer":
+      "Đang xem giáo viên trình chiếu",
+    "classroomTools.files.present.statusEditor":
+      "Bạn đang được phép vẽ tạm thời",
+    "classroomTools.files.present.statusLocked": "GV đang khóa theo dõi",
+    "classroomTools.files.present.follow": "Theo dõi GV",
+    "classroomTools.files.present.followLock": "Khóa theo dõi",
+    "classroomTools.files.present.hidePage": "Ẩn trang {page} với HS",
+    "classroomTools.files.present.showPage": "Hiện lại trang {page}",
+    "classroomTools.files.present.lastPage":
+      "Cần giữ ít nhất 1 trang hiển thị cho học sinh.",
+    "classroomTools.files.present.hiddenBadge": "Đã ẩn với HS",
+    "classroomTools.files.present.pageHiddenLabel":
+      "Trang {page} (đã ẩn với học sinh)",
+    "classroomTools.files.present.returnToPresenter":
+      "Quay về trang GV (Trang {page})",
+    "classroomTools.files.present.controls": "Điều khiển trình chiếu",
+    "classroomTools.files.present.suspend": "Tạm dừng trình chiếu",
+    "classroomTools.files.present.resume": "Tiếp tục trình chiếu",
+    "classroomTools.files.present.close": "Kết thúc trình chiếu",
+    "classroomTools.files.present.suspendedTitle":
+      "Buổi trình chiếu đang tạm dừng",
+    "classroomTools.files.present.suspendedBody":
+      "Học sinh đang không thấy tài liệu. Tiếp tục để mở lại đúng trang và nét chữa.",
+    "classroomTools.files.present.documentGoneTitle":
+      "Tài liệu đang trình chiếu không còn trong Kho tài liệu",
+    "classroomTools.files.present.documentGoneBody":
+      "Tệp gốc đã bị xóa hoặc hết hạn. Hãy kết thúc buổi trình chiếu này.",
+    "classroomTools.files.present.documentGoneViewer":
+      "Tài liệu đang trình chiếu không còn khả dụng.",
+    "classroomTools.files.present.connecting": "Đang kết nối nét chữa…",
+    "classroomTools.files.present.retry": "Kết nối lại nét chữa",
+    "classroomTools.files.present.upgraded":
+      "Giáo viên cho phép bạn vẽ lên tài liệu.",
+    "classroomTools.files.present.downgraded":
+      "Quyền vẽ tạm thời đã kết thúc — chuyển về chế độ xem.",
+    "classroomTools.files.ink.toolbar": "Công cụ chú thích",
+    "classroomTools.files.ink.tool.select": "Chọn / cuộn",
+    "classroomTools.files.ink.tool.pen": "Bút viết",
+    "classroomTools.files.ink.tool.highlighter": "Bút dạ quang",
+    "classroomTools.files.ink.tool.eraser": "Tẩy nét",
+    "classroomTools.files.ink.tool.laser": "Laser chỉ bài",
+    "classroomTools.files.ink.tone.label": "Màu nét",
+    "classroomTools.files.ink.tone.menu": "Màu nét: {name}",
+    "classroomTools.files.ink.tone.yellow": "Vàng",
+    "classroomTools.files.ink.tone.red": "Đỏ",
+    "classroomTools.files.ink.tone.blue": "Xanh dương",
+    "classroomTools.files.ink.tone.green": "Xanh lá",
+    "classroomTools.files.ink.tone.purple": "Tím",
+    "classroomTools.files.ink.tone.orange": "Cam",
+    "classroomTools.files.ink.tone.black": "Đen",
+    "classroomTools.files.ink.tone.pink": "Hồng",
+    "classroomTools.files.ink.width.label": "Cỡ nét",
+    "classroomTools.files.ink.width.menu": "Cỡ nét: {size}",
+    "classroomTools.files.ink.width.s": "Nhỏ (S)",
+    "classroomTools.files.ink.width.m": "Vừa (M)",
+    "classroomTools.files.ink.width.l": "Lớn (L)",
+    "classroomTools.files.ink.undo": "Hoàn tác (Ctrl+Z)",
+    "classroomTools.files.ink.redo": "Làm lại (Ctrl+Y)",
+    "classroomTools.files.ink.clearPage": "Xóa tất cả nét trang {page}",
+    "classroomTools.files.ink.clearTitle": "Xóa tất cả nét trên trang {page}?",
+    "classroomTools.files.ink.clearBody":
+      "Mọi nét của cả lớp trên trang này sẽ bị xóa với tất cả mọi người.",
+    "classroomTools.files.ink.clearConfirm": "Xóa nét",
+    "classroomTools.files.ink.laserMark": "Laser của giáo viên",
+    "classroomTools.files.ink.laserOf": "Laser của {name}",
+    "classroomTools.files.ink.dismiss": "Đóng thông báo",
+    "classroomTools.files.ink.error.pageLimit":
+      "Trang này đã đủ số nét tối đa. Hãy xóa bớt nét cũ.",
+    "classroomTools.files.ink.error.documentLimit":
+      "Tài liệu đã đạt giới hạn nét chữa. Hãy xóa bớt nét cũ.",
+    "classroomTools.files.ink.error.notOwned":
+      "Bạn chỉ xóa được nét của chính mình.",
+    "classroomTools.files.ink.error.strokeTooLarge":
+      "Nét vẽ quá dài. Hãy vẽ ngắn hơn.",
+    "classroomTools.files.ink.error.readOnly":
+      "Bạn đang ở chế độ xem nên không vẽ được.",
+    "classroomTools.files.ink.error.failed":
+      "Chưa lưu được nét vẽ. Hãy thử lại.",
     "whiteboard.snippet.caption": "Trích từ {name} — trang {page}",
     "whiteboard.snippet.captionImage": "Trích từ {name}",
     "whiteboard.snippet.pending":
@@ -6645,6 +6749,13 @@ const messages = {
       "Up to {max} students can edit at the same time",
     "media.people.code.failed": "Couldn't update Code editing. Try again.",
     "media.people.code.menu": "Actions for {name}",
+    "media.people.pdf.annotating": "Can draw on Documents",
+    "media.people.pdf.grant": "Let draw on Documents (10 min)",
+    "media.people.pdf.revoke": "Stop Documents drawing",
+    "media.people.pdf.limitHint": "{max} students are already drawing",
+    "media.people.pdf.limitError":
+      "Up to {max} students can draw on Documents at the same time",
+    "media.people.pdf.failed": "Couldn't update Documents drawing. Try again.",
     "media.people.micOff": "Microphone off",
     "media.people.speaking": "Speaking",
     "media.people.lowerAll": "Lower all hands ({count})",
@@ -7631,7 +7742,7 @@ const messages = {
     "classroomTools.files.viewer.forbidden":
       "This document can't be opened (no access, or it was removed).",
     "classroomTools.files.viewer.tooLarge":
-      "Files over 30 MiB can't be viewed in the room yet.",
+      "Files over 50 MiB can't be viewed in the room.",
     "classroomTools.files.viewer.integrity":
       "The downloaded document didn't match its checksum and was discarded.",
     "classroomTools.files.viewer.loadError": "Couldn't load the document.",
@@ -7704,6 +7815,102 @@ const messages = {
     "classroomTools.files.snippet.failed":
       "Couldn't create an image from this page. Try again.",
     "classroomTools.files.snippet.dismiss": "Dismiss",
+    "classroomTools.files.snippet.includeInk": "Include the page's annotations",
+    "classroomTools.files.present.present": "Present to class",
+    "classroomTools.files.present.presentNamed": "Present {name} to class",
+    "classroomTools.files.present.presentingBadge": "Presenting",
+    "classroomTools.files.present.presentFailed":
+      "Couldn't present this document. Try again.",
+    "classroomTools.files.present.transitionFailed":
+      "Couldn't update the presentation. Try again.",
+    "classroomTools.files.present.modeGroup": "Documents mode",
+    "classroomTools.files.present.modeClass": "Class presentation",
+    "classroomTools.files.present.modePrivate": "My view",
+    "classroomTools.files.present.modeLive": "live",
+    "classroomTools.files.present.autoSwitched":
+      "Your teacher started presenting — switched to Class presentation.",
+    "classroomTools.files.present.liveBar": "Presentation status",
+    "classroomTools.files.present.statusPresenter":
+      "You're presenting — the class is on page {page}",
+    "classroomTools.files.present.statusViewer": "Watching the teacher present",
+    "classroomTools.files.present.statusEditor":
+      "You can draw for a limited time",
+    "classroomTools.files.present.statusLocked": "Teacher locked follow",
+    "classroomTools.files.present.follow": "Follow teacher",
+    "classroomTools.files.present.followLock": "Lock follow",
+    "classroomTools.files.present.hidePage": "Hide page {page} from students",
+    "classroomTools.files.present.showPage": "Show page {page} again",
+    "classroomTools.files.present.lastPage":
+      "Keep at least 1 page visible to students.",
+    "classroomTools.files.present.hiddenBadge": "Hidden from students",
+    "classroomTools.files.present.pageHiddenLabel":
+      "Page {page} (hidden from students)",
+    "classroomTools.files.present.returnToPresenter":
+      "Back to teacher's page (Page {page})",
+    "classroomTools.files.present.controls": "Presentation controls",
+    "classroomTools.files.present.suspend": "Pause presentation",
+    "classroomTools.files.present.resume": "Resume presentation",
+    "classroomTools.files.present.close": "End presentation",
+    "classroomTools.files.present.suspendedTitle": "The presentation is paused",
+    "classroomTools.files.present.suspendedBody":
+      "Students can't see the document. Resume to reopen the same page and annotations.",
+    "classroomTools.files.present.documentGoneTitle":
+      "The presented document is no longer in the library",
+    "classroomTools.files.present.documentGoneBody":
+      "The original file was deleted or expired. End this presentation.",
+    "classroomTools.files.present.documentGoneViewer":
+      "The presented document is no longer available.",
+    "classroomTools.files.present.connecting": "Connecting annotations…",
+    "classroomTools.files.present.retry": "Reconnect annotations",
+    "classroomTools.files.present.upgraded":
+      "Your teacher let you draw on the document.",
+    "classroomTools.files.present.downgraded":
+      "Your temporary drawing access ended — back to view only.",
+    "classroomTools.files.ink.toolbar": "Annotation tools",
+    "classroomTools.files.ink.tool.select": "Select / scroll",
+    "classroomTools.files.ink.tool.pen": "Pen",
+    "classroomTools.files.ink.tool.highlighter": "Highlighter",
+    "classroomTools.files.ink.tool.eraser": "Eraser",
+    "classroomTools.files.ink.tool.laser": "Laser pointer",
+    "classroomTools.files.ink.tone.label": "Ink color",
+    "classroomTools.files.ink.tone.menu": "Ink color: {name}",
+    "classroomTools.files.ink.tone.yellow": "Yellow",
+    "classroomTools.files.ink.tone.red": "Red",
+    "classroomTools.files.ink.tone.blue": "Blue",
+    "classroomTools.files.ink.tone.green": "Green",
+    "classroomTools.files.ink.tone.purple": "Purple",
+    "classroomTools.files.ink.tone.orange": "Orange",
+    "classroomTools.files.ink.tone.black": "Black",
+    "classroomTools.files.ink.tone.pink": "Pink",
+    "classroomTools.files.ink.width.label": "Stroke size",
+    "classroomTools.files.ink.width.menu": "Stroke size: {size}",
+    "classroomTools.files.ink.width.s": "Small (S)",
+    "classroomTools.files.ink.width.m": "Medium (M)",
+    "classroomTools.files.ink.width.l": "Large (L)",
+    "classroomTools.files.ink.undo": "Undo (Ctrl+Z)",
+    "classroomTools.files.ink.redo": "Redo (Ctrl+Y)",
+    "classroomTools.files.ink.clearPage":
+      "Clear all annotations on page {page}",
+    "classroomTools.files.ink.clearTitle":
+      "Clear all annotations on page {page}?",
+    "classroomTools.files.ink.clearBody":
+      "Everyone's annotations on this page will be removed for the whole class.",
+    "classroomTools.files.ink.clearConfirm": "Clear annotations",
+    "classroomTools.files.ink.laserMark": "Teacher's laser",
+    "classroomTools.files.ink.laserOf": "{name}'s laser",
+    "classroomTools.files.ink.dismiss": "Dismiss",
+    "classroomTools.files.ink.error.pageLimit":
+      "This page has the maximum number of strokes. Erase some first.",
+    "classroomTools.files.ink.error.documentLimit":
+      "This document reached its annotation limit. Erase some first.",
+    "classroomTools.files.ink.error.notOwned":
+      "You can only erase your own strokes.",
+    "classroomTools.files.ink.error.strokeTooLarge":
+      "That stroke is too long. Draw a shorter one.",
+    "classroomTools.files.ink.error.readOnly":
+      "You're in view mode, so you can't draw.",
+    "classroomTools.files.ink.error.failed":
+      "Couldn't save the stroke. Try again.",
     "whiteboard.snippet.caption": "From {name} — page {page}",
     "whiteboard.snippet.captionImage": "From {name}",
     "whiteboard.snippet.pending":

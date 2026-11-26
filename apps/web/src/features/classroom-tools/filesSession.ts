@@ -29,9 +29,79 @@ export interface ClassroomFilesViewState {
   readonly zoom: number;
 }
 
+/**
+ * ROOM-TOOLS-FILES-02B: RAM-only LRU of HTTP Range chunks for one 30–50 MiB
+ * PDF version (≤ 32 MiB), so switching tools does not refetch every range.
+ */
+export interface ByteRangeCache {
+  readonly byteLength: number;
+  clear(): void;
+  get(begin: number, end: number): Uint8Array | null;
+  set(begin: number, end: number, bytes: Uint8Array): void;
+}
+
+export const CLASSROOM_FILES_RANGE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+
+export function createByteRangeCache(
+  maxBytes = CLASSROOM_FILES_RANGE_CACHE_MAX_BYTES,
+): ByteRangeCache {
+  // Insertion order is recency order (LRU).
+  const chunks = new Map<string, Uint8Array>();
+  let total = 0;
+  const key = (begin: number, end: number) => `${begin}-${end}`;
+  return {
+    get byteLength() {
+      return total;
+    },
+    clear() {
+      chunks.clear();
+      total = 0;
+    },
+    get(begin, end) {
+      const entryKey = key(begin, end);
+      const entry = chunks.get(entryKey);
+      if (!entry) return null;
+      chunks.delete(entryKey);
+      chunks.set(entryKey, entry);
+      return entry;
+    },
+    set(begin, end, bytes) {
+      if (bytes.byteLength > maxBytes) return;
+      const entryKey = key(begin, end);
+      const previous = chunks.get(entryKey);
+      if (previous) {
+        total -= previous.byteLength;
+        chunks.delete(entryKey);
+      }
+      chunks.set(entryKey, bytes);
+      total += bytes.byteLength;
+      while (total > maxBytes) {
+        const oldest = chunks.keys().next().value;
+        if (oldest === undefined) break;
+        total -= chunks.get(oldest)?.byteLength ?? 0;
+        chunks.delete(oldest);
+      }
+    },
+  };
+}
+
+/** Page / zoom of a presentation, kept across tool switches (RAM only). */
+export interface ClassroomFilesPresentationView {
+  readonly fitMode: ClassroomFilesFitMode;
+  readonly page: number;
+  readonly presentationID: string;
+  readonly zoom: number;
+}
+
 export interface ClassroomFilesSession {
   clear(): void;
   readBytes(fileID: string, versionID: string): Uint8Array | null;
+  /** The Range chunk cache of one document version (others are dropped). */
+  rangeCache(fileID: string, versionID: string): ByteRangeCache;
+  readPresentationView(
+    presentationID: string,
+  ): ClassroomFilesPresentationView | null;
+  savePresentationView(view: ClassroomFilesPresentationView): void;
   /** Drops the bytes but keeps the open document / page (stage closed). */
   releaseBytes(): void;
   readView(): ClassroomFilesViewState | null;
@@ -49,6 +119,8 @@ export function createClassroomFilesSession(): ClassroomFilesSession {
   const bytes = new Map<string, Uint8Array>();
   const listeners = new Set<() => void>();
   let view: ClassroomFilesViewState | null = null;
+  let range: { cache: ByteRangeCache; key: string } | null = null;
+  let presentationView: ClassroomFilesPresentationView | null = null;
   const key = (fileID: string, versionID: string) =>
     `${fileID}\u0000${versionID}`;
   const total = () =>
@@ -56,6 +128,9 @@ export function createClassroomFilesSession(): ClassroomFilesSession {
   return {
     clear() {
       bytes.clear();
+      range?.cache.clear();
+      range = null;
+      presentationView = null;
       view = null;
       for (const listener of [...listeners]) listener();
     },
@@ -70,8 +145,25 @@ export function createClassroomFilesSession(): ClassroomFilesSession {
     readView() {
       return view;
     },
+    rangeCache(fileID, versionID) {
+      const entryKey = key(fileID, versionID);
+      if (range?.key === entryKey) return range.cache;
+      range?.cache.clear();
+      range = { cache: createByteRangeCache(), key: entryKey };
+      return range.cache;
+    },
+    readPresentationView(presentationID) {
+      return presentationView?.presentationID === presentationID
+        ? presentationView
+        : null;
+    },
     releaseBytes() {
       bytes.clear();
+      range?.cache.clear();
+      range = null;
+    },
+    savePresentationView(next) {
+      presentationView = next;
     },
     saveBytes(fileID, versionID, next) {
       if (next.byteLength > CLASSROOM_FILES_SESSION_MAX_BYTES) return;
