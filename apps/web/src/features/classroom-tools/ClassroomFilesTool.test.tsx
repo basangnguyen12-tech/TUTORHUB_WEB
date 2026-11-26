@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,17 +15,25 @@ import {
   APIRequestError,
   type RoomDocument,
   type RoomDocumentLibraryViewerAccess,
+  type RoomDocumentViewCapability,
 } from "@tutorhub/api-client";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
 import { ClassroomFilesTool } from "./ClassroomFilesTool";
-import { createClassroomFilesSession } from "./filesSession";
+import { DocumentLibrary, type DocumentLibraryQuery } from "./DocumentLibrary";
+import { DocumentLoader } from "./DocumentLoader";
+import {
+  createClassroomFilesSession,
+  type ClassroomFilesViewState,
+} from "./filesSession";
 
 const api = vi.hoisted(() => ({
   download: vi.fn(),
   list: vi.fn(),
   rotateCSRF: vi.fn(),
   update: vi.fn(),
+  view: vi.fn(),
 }));
 
 vi.mock("@tutorhub/api-client", async () => {
@@ -34,6 +43,7 @@ vi.mock("@tutorhub/api-client", async () => {
   return {
     ...actual,
     issueFileDownloadCapability: api.download,
+    issueRoomDocumentViewCapability: api.view,
     listRoomDocuments: api.list,
     rotateCSRFToken: api.rotateCSRF,
     updateRoomDocument: api.update,
@@ -182,12 +192,23 @@ describe("ROOM-TOOLS-FILES-01B Documents tool", () => {
     });
     const rows = within(list).getAllByRole("listitem");
     expect(rows).toHaveLength(4);
-    expect(rows[0]).toHaveTextContent("Tệp của lớp");
+    // ROOM-UI-POLISH-01: short source tag on the metadata line.
+    expect(rows[0]).toHaveTextContent("Lớp");
     expect(rows[0]).toHaveTextContent("PDF · 12 trang");
     expect(rows[0]).toHaveTextContent("1,3 MB");
     expect(rows[0]).toHaveTextContent("Có nội dung chủ động");
-    expect(rows[1]).toHaveTextContent("Tệp phòng học");
+    expect(rows[1]).toHaveTextContent("Phòng");
     expect(rows[1]).toHaveTextContent("Ảnh");
+    expect(
+      rows[0]!.querySelector('.file-type-icon[data-file-kind="pdf"]'),
+    ).not.toBeNull();
+    expect(
+      rows[1]!.querySelector('.file-type-icon[data-file-kind="image"]'),
+    ).not.toBeNull();
+    // The heading carries how many documents the library holds.
+    expect(
+      document.querySelector(".classroom-files-library__count"),
+    ).toHaveTextContent("4 tài liệu");
     expect(rows[2]).toHaveTextContent("Đang kiểm tra tệp…");
     expect(within(rows[2]!).queryByRole("button", { name: /Mở/ })).toBeNull();
     expect(rows[3]).toHaveTextContent(
@@ -492,4 +513,330 @@ describe("study export permissions in a paginated room library", () => {
       }
     },
   );
+});
+
+function withProviders(children: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  });
+  return (
+    <QueryClientProvider client={client}>
+      <I18nProvider initialLanguage="vi">{children}</I18nProvider>
+    </QueryClientProvider>
+  );
+}
+
+function libraryQuery(
+  documents: readonly RoomDocument[],
+  viewerAccess: RoomDocumentLibraryViewerAccess = staffAccess,
+): DocumentLibraryQuery {
+  return {
+    documents,
+    error: null,
+    fetchNextPage: vi.fn(),
+    hasNextPage: false,
+    isError: false,
+    isFetchingNextPage: false,
+    isPending: false,
+    refetch: vi.fn(),
+    viewerAccess,
+  };
+}
+
+describe("ROOM-UI-POLISH-01 compact document library", () => {
+  afterEach(() => cleanup());
+
+  const managed = roomDocument({
+    viewer_access: {
+      can_download_original: true,
+      can_manage: true,
+      can_retry_upload: false,
+      can_view: true,
+    },
+  });
+  const diagram = roomDocument({
+    declared_media_type: "image/png",
+    display_name: "Sơ đồ.png",
+    id: "66666666-6666-4666-8666-666666666666",
+    owner_kind: "class",
+  });
+
+  it("keeps the title, count, Upload and Close on one header row in the drawer", () => {
+    const onClose = vi.fn();
+    render(
+      withProviders(
+        <DocumentLibrary
+          activeFileID={null}
+          mediaSpaceID={spaceID}
+          mode="drawer"
+          onClose={onClose}
+          onDownload={vi.fn()}
+          onOpen={vi.fn()}
+          query={libraryQuery([managed, diagram])}
+          tenantID={tenantID}
+        />,
+      ),
+    );
+    const region = screen.getByRole("region", { name: "Kho tài liệu" });
+    const header = region.querySelector("header")!;
+    const heading = within(header).getByRole("heading", {
+      name: "Kho tài liệu",
+    });
+    // The drawer moves focus to its heading (no visible box, see CSS).
+    expect(heading).toHaveFocus();
+    expect(header).toHaveTextContent("2 tài liệu");
+    // The long subtitle only shows on the full stage.
+    expect(
+      within(header).queryByText(
+        "Tài liệu của lớp và tệp riêng của phòng học này.",
+      ),
+    ).toBeNull();
+    const actions = header.querySelector<HTMLElement>(
+      ".classroom-files-library__header-actions",
+    )!;
+    expect(
+      within(actions)
+        .getAllByRole("button")
+        .map((key) => key.textContent?.trim()),
+    ).toEqual(["Tải tài liệu lên", "Đóng kho tài liệu"]);
+    fireEvent.click(
+      within(actions).getByRole("button", { name: "Đóng kho tài liệu" }),
+    );
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the subtitle on the stage and no count for an empty library", () => {
+    render(
+      withProviders(
+        <DocumentLibrary
+          activeFileID={null}
+          mediaSpaceID={spaceID}
+          mode="stage"
+          onDownload={vi.fn()}
+          onOpen={vi.fn()}
+          query={libraryQuery([], studentAccess)}
+          tenantID={tenantID}
+        />,
+      ),
+    );
+    expect(
+      screen.getByText("Tài liệu của lớp và tệp riêng của phòng học này."),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(".classroom-files-library__count"),
+    ).toBeNull();
+  });
+
+  it("folds the download switch into the metadata line and keeps every action name", () => {
+    const onOpen = vi.fn();
+    const onPresent = vi.fn();
+    const onDownload = vi.fn();
+    render(
+      withProviders(
+        <DocumentLibrary
+          activeFileID={null}
+          mediaSpaceID={spaceID}
+          mode="stage"
+          onDownload={onDownload}
+          onOpen={onOpen}
+          onPresent={onPresent}
+          presentingFileID={diagram.id}
+          query={libraryQuery([managed, diagram])}
+          tenantID={tenantID}
+        />,
+      ),
+    );
+    const [first, second] = within(
+      screen.getByRole("list", { name: "Danh sách tài liệu" }),
+    ).getAllByRole("listitem");
+
+    // Row 1: a PDF tile, then the name over "Phòng · PDF · 12 trang · size".
+    expect(first!.querySelector(".file-type-icon")).toHaveAttribute(
+      "data-file-kind",
+      "pdf",
+    );
+    const meta = first!.querySelector<HTMLElement>(
+      ".classroom-files-row__meta",
+    )!;
+    expect(meta).toHaveTextContent(/^Phòng\s*·\s*PDF · 12 trang\s*·\s*1,3 MB/u);
+    const allow = within(first!).getByRole("switch", {
+      name: "Cho phép HS tải bản gốc",
+    });
+    expect(meta).toContainElement(allow);
+    expect(allow.closest("label")).toHaveTextContent("Cho phép HS tải");
+
+    // Presenting is a 1-click icon key named after the file.
+    const present = within(first!).getByRole("button", {
+      name: "Trình chiếu De.pdf cho lớp",
+    });
+    expect(present).toHaveAttribute("data-tooltip", "Trình chiếu cho lớp");
+    fireEvent.click(present);
+    expect(onPresent).toHaveBeenCalledWith(managed);
+    fireEvent.click(within(first!).getByRole("button", { name: "De.pdf" }));
+    fireEvent.click(within(first!).getByRole("button", { name: "Mở De.pdf" }));
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    fireEvent.click(
+      within(first!).getByRole("button", { name: "Tải bản gốc De.pdf" }),
+    );
+    expect(onDownload).toHaveBeenCalledWith(managed);
+    expect(
+      within(first!).getByRole("button", { name: "Xóa De.pdf khỏi phòng" }),
+    ).toHaveAttribute("data-tooltip", "Xóa khỏi phòng");
+
+    // Row 2: the presented class image shows the live badge, not the key.
+    expect(second!.querySelector(".file-type-icon")).toHaveAttribute(
+      "data-file-kind",
+      "image",
+    );
+    expect(second).toHaveTextContent("Đang trình chiếu");
+    expect(
+      second!.querySelector(".classroom-files-row__meta"),
+    ).toHaveTextContent(/^Lớp\s*·\s*Ảnh/u);
+    expect(
+      within(second!).queryByRole("button", { name: /^Trình chiếu/u }),
+    ).toBeNull();
+  });
+});
+
+describe("ROOM-UI-POLISH-01 DocumentLoader join-race retry", () => {
+  const fileID = "11111111-1111-4111-8111-111111111111";
+  const capability: RoomDocumentViewCapability = {
+    active_content: false,
+    content_length_bytes: 3,
+    expires_at: "2030-08-08T01:05:00Z",
+    first_page_aspect: 0.7071,
+    media_type: "application/pdf",
+    method: "GET",
+    page_count: 1,
+    sha256: "00".repeat(32),
+    url: "https://storage.example.test/view",
+    version_id: "v1",
+  };
+  const view: ClassroomFilesViewState = {
+    document: {
+      activeContent: false,
+      displayName: "De.pdf",
+      fileID,
+      firstPageAspect: 0.7071,
+      mediaType: "application/pdf",
+      pageCount: 1,
+      versionID: null,
+    },
+    fitMode: "width",
+    page: 1,
+    zoom: 1,
+  };
+  const flush = (ms = 0) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  let viewer: { mockRestore(): void } | null = null;
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    api.rotateCSRF.mockResolvedValue({ csrf_token: "csrf" });
+    viewer = vi
+      .spyOn(await import("./DocumentViewer"), "DocumentViewer")
+      .mockImplementation(() => <p>Viewer ready</p>);
+  });
+  afterEach(() => {
+    cleanup();
+    viewer?.mockRestore();
+    vi.useRealTimers();
+  });
+
+  function renderLoader() {
+    const session = createClassroomFilesSession();
+    session.saveBytes(fileID, "v1", new Uint8Array([1, 2, 3]));
+    const onLoaded = vi.fn();
+    const onOpenLibrary = vi.fn();
+    const result = render(
+      withProviders(
+        <DocumentLoader
+          actorID={actorID}
+          canDownloadOriginal={false}
+          headerSlot={null}
+          libraryOpen={false}
+          mediaSpaceID={spaceID}
+          onDownloadOriginal={vi.fn()}
+          onLoaded={onLoaded}
+          onOpenLibrary={onOpenLibrary}
+          onViewChange={vi.fn()}
+          session={session}
+          tenantID={tenantID}
+          view={view}
+          whiteboard={null}
+        />,
+      ),
+    );
+    return { ...result, onLoaded, onOpenLibrary };
+  }
+
+  it("retries a concealed first answer after 700 ms and 1600 ms, then opens", async () => {
+    api.view
+      .mockRejectedValueOnce(new APIRequestError(404))
+      .mockRejectedValueOnce(new APIRequestError(404))
+      .mockResolvedValueOnce(capability);
+    const { onLoaded } = renderLoader();
+    await flush();
+    expect(api.view).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Đang chuẩn bị tài liệu…",
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await flush(699);
+    expect(api.view).toHaveBeenCalledTimes(1);
+    await flush(1);
+    expect(api.view).toHaveBeenCalledTimes(2);
+    await flush(1_599);
+    expect(api.view).toHaveBeenCalledTimes(2);
+    await flush(1);
+    expect(api.view).toHaveBeenCalledTimes(3);
+    expect(screen.getByText("Viewer ready")).toBeInTheDocument();
+    expect(onLoaded).toHaveBeenCalledWith("v1");
+  });
+
+  it("then shows the concealed error with Retry beside the library key", async () => {
+    api.view.mockRejectedValue(new APIRequestError(404));
+    const { onOpenLibrary } = renderLoader();
+    await flush();
+    await flush(700);
+    await flush(1_600);
+    expect(api.view).toHaveBeenCalledTimes(3);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(
+      "Không mở được tài liệu này (không có quyền hoặc đã bị xóa).",
+    );
+    fireEvent.click(
+      within(alert).getByRole("button", { name: "Kho tài liệu" }),
+    );
+    expect(onOpenLibrary).toHaveBeenCalledTimes(1);
+
+    // A manual retry asks once more and never loops on its own.
+    fireEvent.click(within(alert).getByRole("button", { name: "Thử lại" }));
+    await flush();
+    await flush(5_000);
+    expect(api.view).toHaveBeenCalledTimes(4);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("does not retry other failures and cancels a pending retry on unmount", async () => {
+    api.view.mockRejectedValueOnce(new APIRequestError(500));
+    const first = renderLoader();
+    await flush();
+    await flush(5_000);
+    expect(api.view).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    first.unmount();
+
+    api.view.mockRejectedValue(new APIRequestError(404));
+    const second = renderLoader();
+    await flush();
+    expect(api.view).toHaveBeenCalledTimes(2);
+    second.unmount();
+    await flush(5_000);
+    expect(api.view).toHaveBeenCalledTimes(2);
+  });
 });

@@ -186,7 +186,7 @@ const en = {
     "Verification codes are issued by the TutorHub identity portal, so no code is sent from this page. Continue with secure sign-in to verify your email.",
   signUpNoticeTitle: "Finish on the TutorHub identity portal",
   signUpNotice:
-    "TutorHub V2 creates accounts through its central identity portal. Nothing you entered here was sent or saved.",
+    "TutorHub creates accounts through its central identity portal. Nothing you entered here was sent or saved.",
   continueSecure: "Continue to secure sign-in",
   recoverTitle: "Recover Password",
   recoverSubtitle: "Enter your registered email to receive an OTP code",
@@ -391,7 +391,7 @@ const vi: SignInCopy = {
     "Mã xác minh do cổng định danh TutorHub cấp nên trang này không gửi mã. Hãy tiếp tục đăng nhập bảo mật để xác minh email.",
   signUpNoticeTitle: "Hoàn tất tại cổng định danh TutorHub",
   signUpNotice:
-    "TutorHub V2 tạo tài khoản qua cổng định danh tập trung. Thông tin bạn vừa nhập chưa được gửi hay lưu lại.",
+    "TutorHub tạo tài khoản qua cổng định danh tập trung. Thông tin bạn vừa nhập chưa được gửi hay lưu lại.",
   continueSecure: "Tiếp tục đăng nhập bảo mật",
   recoverTitle: "Khôi phục mật khẩu",
   recoverSubtitle: "Nhập email đã đăng ký để nhận mã OTP",

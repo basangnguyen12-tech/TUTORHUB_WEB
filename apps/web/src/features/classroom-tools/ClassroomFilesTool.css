@@ -120,28 +120,71 @@
   }
 }
 
+/* ROOM-UI-POLISH-01: title (+ count) left, Upload + Close pinned right,
+   always on one row. */
 .classroom-files-library__header {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
+.classroom-files-library__heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.classroom-files-library__title-row {
+  display: flex;
+  min-width: 0;
+  min-height: 28px;
+  align-items: center;
+  gap: 8px;
+}
+
 .classroom-files-library__title {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   color: #f3f4f6;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
+  letter-spacing: -0.006em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .classroom-files-library__title:focus {
   outline: none;
 }
 
+h3.classroom-files-library__title:focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .classroom-files-library__title:focus-visible {
   outline: 2px solid var(--room-focus-ring, #93c5fd);
   outline-offset: 2px;
+}
+
+.classroom-files-library__count {
+  display: inline-flex;
+  box-sizing: border-box;
+  min-width: 22px;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid rgb(147 197 253 / 30%);
+  border-radius: 999px;
+  background: rgb(59 130 246 / 16%);
+  color: #dbeafe;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
 }
 
 .classroom-files-library__subtitle {
@@ -152,8 +195,27 @@
 
 .classroom-files-library__header-actions {
   display: flex;
+  flex: none;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
+}
+
+.classroom-files-library__upload.th-button {
+  height: 28px;
+  min-height: 28px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+
+.classroom-files-library__close.th-icon-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 999px;
 }
 
 .classroom-files-library__body {
@@ -172,45 +234,61 @@
   list-style: none;
 }
 
+/* ROOM-UI-POLISH-01: icon | name + meta (two lines) | one row of actions. */
 .classroom-files-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
   align-items: start;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px 12px;
+  padding: 9px 10px;
   border: 1px solid rgb(255 255 255 / 9%);
   border-radius: 12px;
   background: rgb(255 255 255 / 4%);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
 }
 
-.classroom-files-row--active {
+.classroom-files-row:hover {
+  border-color: rgb(255 255 255 / 15%);
+  background: rgb(255 255 255 / 6%);
+}
+
+.classroom-files-row--active,
+.classroom-files-row--active:hover {
   border-color: rgb(96 165 250 / 60%);
   background: rgb(59 130 246 / 12%);
-}
-
-.classroom-files-row__icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: 9px;
-  background: rgb(147 197 253 / 12%);
-  color: #93c5fd;
-}
-
-.classroom-files-row__icon svg {
-  width: 18px;
-  height: 18px;
 }
 
 .classroom-files-row__main {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+}
+
+/* A long name keeps its line; badges wrap under it instead of squeezing. */
+.classroom-files-row__line {
+  display: flex;
+  min-width: 0;
+  min-height: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+}
+
+.classroom-files-row__line .classroom-files-badge {
+  flex: none;
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
 }
 
 .classroom-files-row__title {
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
   overflow: hidden;
   color: #f3f4f6;
   font-size: 13.5px;
@@ -232,17 +310,50 @@
 }
 
 .classroom-files-row__title--button:hover {
+  color: #ffffff;
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .classroom-files-row__meta {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 0 5px;
   margin: 0;
   color: #a7b0c0;
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 22px;
+}
+
+.classroom-files-row__source {
+  font-weight: 600;
+}
+
+.classroom-files-row__source--class {
+  color: #bbf7d0;
+}
+
+.classroom-files-row__source--media_space {
+  color: #bfdbfe;
+}
+
+.classroom-files-row__actions .classroom-files-row__open.th-button {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+
+.classroom-files-row__actions .th-icon-button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 999px;
 }
 
 .classroom-files-badge {
@@ -321,6 +432,20 @@
   accent-color: #60a5fa;
 }
 
+/* The per-file download policy folds into the metadata line. */
+.classroom-files-row__meta .classroom-files-row__switch {
+  gap: 5px;
+  margin-left: 3px;
+  padding-left: 8px;
+  border-left: 1px solid rgb(255 255 255 / 14%);
+  line-height: 1.2;
+}
+
+.classroom-files-row__meta .classroom-files-row__switch input {
+  width: 14px;
+  height: 14px;
+}
+
 .classroom-files-row__error,
 .classroom-files-upload__error {
   margin: 0;
@@ -357,6 +482,7 @@
 
 .classroom-files-row__actions {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
 }
@@ -635,35 +761,73 @@
   text-align: center;
 }
 
-.classroom-files-topbar__fit {
+/*
+ * ROOM-UI-POLISH-01: icon-only 28px keys (fit mode, "Đưa sang Bảng trắng",
+ * "Trình chiếu cho lớp"). Their names stay in the DOM (sr-only label or
+ * IconButton label) and in the room tooltip (`data-tooltip`).
+ */
+.classroom-files-topbar
+  :is(
+    .classroom-files-topbar__fit.th-icon-button,
+    .classroom-files-topbar__send.th-button,
+    .classroom-files-topbar__present.th-button
+  ) {
+  position: relative;
   box-sizing: border-box;
-  max-width: 140px;
+  width: 28px;
+  min-width: 28px;
   height: 28px;
-  padding: 0 24px 0 10px;
-  border: 1px solid rgb(255 255 255 / 13%);
-  border-radius: 999px;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23e5e7eb' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E")
-      no-repeat right 9px center,
-    rgb(255 255 255 / 7%);
-  color: #f3f4f6;
-  color-scheme: dark;
-  font: inherit;
-  font-size: 12.5px;
-  appearance: none;
-}
-
-.classroom-files-topbar__fit option {
-  background: #1a1f2b;
-  color: #f3f4f6;
-}
-
-.classroom-files-topbar__send.th-button {
   min-height: 28px;
-  height: 28px;
-  padding: 0 10px;
+  flex: none;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
   border-radius: 999px;
-  font-size: 12.5px;
+}
+
+.classroom-files-topbar .classroom-files-topbar__fit.th-icon-button,
+.classroom-files-topbar .classroom-files-topbar__send.th-button {
+  border: 1px solid rgb(255 255 255 / 13%);
+  background: rgb(255 255 255 / 7%);
+  color: #f3f4f6;
+}
+
+.classroom-files-topbar
+  :is(.classroom-files-topbar__fit, .classroom-files-topbar__send):hover:not(
+    :disabled
+  ) {
+  border-color: rgb(255 255 255 / 22%);
+  background: rgb(255 255 255 / 13%);
+}
+
+.classroom-files-topbar
+  :is(
+    .classroom-files-topbar__fit,
+    .classroom-files-topbar__send
+  )[aria-expanded="true"] {
+  border-color: rgb(147 197 253 / 60%);
+  background: rgb(59 130 246 / 26%);
+}
+
+.classroom-files-topbar
+  :is(
+    .classroom-files-topbar__fit,
+    .classroom-files-topbar__send,
+    .classroom-files-topbar__present
+  )
+  svg {
+  width: 15px;
+  height: 15px;
+}
+
+.classroom-files-topbar__send-label,
+.classroom-files-topbar__present-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .classroom-files-menu {
@@ -1125,21 +1289,6 @@
 /* ---- Narrow stages & phones ---------------------------------------- */
 
 @media (max-width: 959px) {
-  .classroom-files-topbar__send-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .classroom-files-topbar__send.th-button {
-    width: 28px;
-    justify-content: center;
-    padding: 0;
-  }
-
   .classroom-files-topbar__file {
     max-width: 150px;
   }
@@ -1169,17 +1318,40 @@
   .classroom-files-library {
     padding: 12px;
   }
+}
 
+/*
+ * ROOM-UI-POLISH-01: the library reflows on its own width (stage, 420px
+ * drawer or a phone), so the actions drop under the name only when the row
+ * really has no room, and Upload folds to an icon key.
+ */
+.classroom-files-library {
+  container: classroom-files-library / inline-size;
+}
+
+@container classroom-files-library (max-width: 360px) {
   .classroom-files-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .classroom-files-row__icon {
-    display: none;
+    grid-template-columns: 36px minmax(0, 1fr);
   }
 
   .classroom-files-row__actions {
+    grid-column: 2;
     flex-wrap: wrap;
+  }
+
+  .classroom-files-library__upload-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .classroom-files-library__upload.th-button {
+    width: 28px;
+    min-width: 28px;
+    padding: 0;
   }
 }
 
@@ -1193,7 +1365,8 @@
   }
 
   .classroom-files-topbar__file {
-    max-width: 88px;
+    max-width: 76px;
+    gap: 4px;
     padding: 0 6px;
   }
 
@@ -1214,7 +1387,9 @@
   .classroom-files-upload,
   .classroom-files-dropzone,
   .classroom-files-badge,
+  .classroom-files-library__count,
   .classroom-files-topbar__file,
+  .classroom-files-topbar__send,
   .classroom-files-topbar__page input,
   .classroom-files-topbar__fit,
   .classroom-files-search,
@@ -1369,12 +1544,13 @@
 
 .classroom-files-live-bar {
   display: flex;
-  min-height: 34px;
+  min-height: 30px;
+  box-sizing: border-box;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 6px 10px;
-  padding: 4px 10px;
+  gap: 4px 10px;
+  padding: 2px 10px;
   border-bottom: 1px solid rgb(255 255 255 / 8%);
   background: #111723;
   color: #e5e7eb;
@@ -1448,10 +1624,30 @@
   opacity: 0.7;
 }
 
+/* ROOM-UI-POLISH-01: presenter keys are 26px icons; the name stays in a
+   sr-only span and in the room tooltip. */
+.classroom-files-live-toggle--icon {
+  position: relative;
+  width: 26px;
+  min-width: 26px;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+}
+
+.classroom-files-live-toggle:hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 26%);
+  background: rgb(255 255 255 / 11%);
+}
+
+.classroom-files-live-toggle[aria-pressed="true"]:hover:not(:disabled),
+.classroom-files-live-toggle[data-hidden]:hover:not(:disabled) {
+  border-color: rgb(147 197 253 / 70%);
+  background: rgb(59 130 246 / 30%);
+}
+
 .classroom-files-live-bar__menu.th-button,
-.classroom-files-live-bar__retry.th-button,
-.classroom-files-topbar__present.th-button,
-.classroom-files-row__present.th-button {
+.classroom-files-live-bar__retry.th-button {
   min-height: 26px;
   height: 26px;
   padding: 0 10px;
@@ -1459,8 +1655,15 @@
   font-size: 12.5px;
 }
 
-.classroom-files-topbar__present.th-button {
-  height: 28px;
+.classroom-files-live-bar__menu.th-icon-button {
+  width: 26px;
+  min-width: 26px;
+  padding: 0;
+}
+
+.classroom-files-live-bar__menu.th-icon-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .classroom-files-badge--live {
@@ -1649,29 +1852,12 @@
   bottom: 64px;
 }
 
-@media (max-width: 959px) {
-  .classroom-files-topbar__present-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .classroom-files-topbar__present.th-button {
-    width: 28px;
-    justify-content: center;
-    padding: 0;
-  }
-}
-
 @media (max-width: 767px) {
   .classroom-files-live-bar {
-    padding: 4px 8px;
+    padding: 2px 8px;
   }
 
-  .classroom-files-live-toggle {
+  .classroom-files-live-toggle:not(.classroom-files-live-toggle--icon) {
     padding: 0 8px;
     font-size: 11.5px;
   }

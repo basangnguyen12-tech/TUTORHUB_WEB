@@ -2556,7 +2556,8 @@ test("ROOM-MEET-DOCK-04 / ROOM-COMPACT-05 keeps one 28px Lock key in the Top Bar
 
   const tooltip = page.getByTestId("room-tooltip");
   const header = page.locator(".media-p405-header");
-  // Effects and End room moved to the Dock: the Top Bar keeps only Lock.
+  // Effects and End room moved to the Dock: the Top Bar keeps Lock on the left
+  // and the 28px Full screen key on the right (ROOM-UI-POLISH-01).
   await expect(page.locator(".media-p405-effects-badge")).toHaveCount(0);
   await expect(
     header.getByRole("button", { name: /Hiệu ứng|Nền và hiệu ứng/ }),
@@ -2564,11 +2565,18 @@ test("ROOM-MEET-DOCK-04 / ROOM-COMPACT-05 keeps one 28px Lock key in the Top Bar
   await expect(
     header.getByRole("button", { name: "Kết thúc phòng", exact: true }),
   ).toHaveCount(0);
-  await expect(header.getByRole("button")).toHaveCount(1);
+  await expect(header.getByRole("button")).toHaveCount(2);
   const lock = header.getByRole("button", { name: "Khóa phòng", exact: true });
+  const fullscreen = header.getByRole("button", {
+    name: "Toàn màn hình (Shift+F)",
+    exact: true,
+  });
   const lockBox = await lock.boundingBox();
+  const fullscreenBox = await fullscreen.boundingBox();
   expect(Math.round(lockBox!.width)).toBe(28);
   expect(Math.round(lockBox!.height)).toBe(28);
+  expect(Math.round(fullscreenBox!.width)).toBe(28);
+  expect(Math.round(fullscreenBox!.height)).toBe(28);
   await expect(lock).toHaveCSS("border-top-left-radius", "999px");
   // The text is gone visually but stays the control's accessible name.
   await expect(lock.locator(".media-p405-button-label")).toHaveCSS(
@@ -2588,11 +2596,11 @@ test("ROOM-MEET-DOCK-04 / ROOM-COMPACT-05 keeps one 28px Lock key in the Top Bar
       lockBox!.y + lockBox!.height / 2 - (headerBox!.y + headerBox!.height / 2),
     ),
   ).toBeLessThanOrEqual(1.5);
-  // No open tool: the right side of the bar is empty.
+  // No open tool: the right side holds only the 28px Full screen key.
   const actionsBox = await page
     .locator(".media-p405-header-actions")
     .boundingBox();
-  expect(actionsBox?.width ?? 0).toBeLessThanOrEqual(1);
+  expect(Math.round(actionsBox?.width ?? 0)).toBeLessThanOrEqual(32);
 
   await lock.hover();
   await expect(tooltip).toHaveText("Khóa phòng");
@@ -2977,9 +2985,16 @@ test("ROOM-COMPACT-05 keeps a student's end-call pill a plain Leave key and open
   });
   await loadRoomStudioStyles(page);
 
-  // No moderation authority: no Lock key, the lesson name still shows.
+  // No moderation authority: no Lock key, only the Full screen key on the right;
+  // the lesson name still shows.
   const header = page.locator(".media-p405-header");
-  await expect(header.getByRole("button")).toHaveCount(0);
+  await expect(header.getByRole("button")).toHaveCount(1);
+  await expect(
+    header.getByRole("button", {
+      name: "Toàn màn hình (Shift+F)",
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(
     header.getByRole("heading", { level: 1, name: roomCompactTitle }),
   ).toBeVisible();

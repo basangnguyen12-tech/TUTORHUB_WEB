@@ -15,6 +15,7 @@ import {
   useClassFileUpload,
 } from "../app/classFiles";
 import { useI18n, type TranslationKey } from "../app/i18n";
+import { fileFormatLabel, FileTypeIcon } from "./FileTypeIcon";
 import { useSession } from "../app/session";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 
@@ -250,17 +251,26 @@ function ClassFileRow({
     language === "vi" ? "vi-VN" : "en-US",
     { dateStyle: "medium", timeStyle: "short" },
   );
+  // ROOM-UI-POLISH-01: a colour-coded type tile and a friendly format
+  // ("PDF · 420 KB") instead of the raw MIME string.
+  const format = fileFormatLabel(file.display_name, file.declared_media_type);
   return (
     <li>
-      <FileText aria-hidden="true" />
+      <FileTypeIcon
+        className="class-files__type"
+        fileName={file.display_name}
+        mediaType={file.declared_media_type}
+      />
       <div>
-        <strong>{file.display_name}</strong>
-        <span>
-          {formatBytes(file.expected_size_bytes)} · {file.declared_media_type}
+        <strong title={file.display_name}>{file.display_name}</strong>
+        <span className="class-files__meta">
+          {format ? `${format} · ` : ""}
+          {formatBytes(file.expected_size_bytes)}
+          <span aria-hidden="true"> · </span>
+          <time dateTime={file.updated_at}>
+            {formatter.format(new Date(file.updated_at))}
+          </time>
         </span>
-        <time dateTime={file.updated_at}>
-          {formatter.format(new Date(file.updated_at))}
-        </time>
       </div>
       <span className="class-files__status" data-status={file.status}>
         {t(fileStatusKey(file.status))}

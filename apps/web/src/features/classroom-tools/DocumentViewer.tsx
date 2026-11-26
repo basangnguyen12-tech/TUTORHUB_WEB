@@ -5,6 +5,8 @@ import {
   MenuCheckboxItem,
   MenuContent,
   MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
   MenuTrigger,
 } from "@tutorhub/ui";
@@ -19,12 +21,15 @@ import {
   Maximize2,
   Minus,
   MoreHorizontal,
+  MoveHorizontal,
   NotebookPen,
   PanelLeft,
   Plus,
   RefreshCw,
+  Scan,
   Search,
   X,
+  ZoomIn,
 } from "lucide-react";
 import {
   useCallback,
@@ -42,6 +47,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../../app/i18n";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { RoomDocumentBytesError } from "../../app/roomDocuments";
 import { useRoomStudyNotes } from "../../app/roomStudyNotes";
 import { StudyNotesPanel } from "./StudyNotesPanel";
@@ -937,6 +943,12 @@ export function DocumentViewer({
   const percent = new Intl.NumberFormat(language === "vi" ? "vi-VN" : "en-US", {
     maximumFractionDigits: 0,
   }).format(Math.round(effectiveZoom * 100));
+  const fitLabel =
+    fitMode === "width"
+      ? t("classroomTools.files.viewer.fitWidth")
+      : fitMode === "page"
+        ? t("classroomTools.files.viewer.fitPage")
+        : t("classroomTools.files.viewer.fitCustom");
 
   const topBar = (
     <div className="classroom-files-topbar">
@@ -951,7 +963,11 @@ export function DocumentViewer({
         onClick={onOpenLibrary}
         type="button"
       >
-        <FileText aria-hidden="true" />
+        <FileTypeIcon
+          fileName={doc.displayName}
+          mediaType={doc.mediaType}
+          size="sm"
+        />
         <span className="classroom-files-topbar__file-name">
           {doc.displayName}
         </span>
@@ -1018,24 +1034,59 @@ export function DocumentViewer({
           <Plus />
         </IconButton>
       </div>
-      <select
-        aria-label={t("classroomTools.files.viewer.fitMode")}
-        className="classroom-files-topbar__fit"
-        onChange={(event) => {
-          const next = event.target.value as ClassroomFilesFitMode;
-          if (next === "custom") setZoom(effectiveZoom);
-          setFitMode(next);
-        }}
-        value={fitMode}
-      >
-        <option value="width">
-          {t("classroomTools.files.viewer.fitWidth")}
-        </option>
-        <option value="page">{t("classroomTools.files.viewer.fitPage")}</option>
-        <option value="custom">
-          {t("classroomTools.files.viewer.fitCustom")}
-        </option>
-      </select>
+      {/*
+        ROOM-UI-POLISH-01: the fit mode folds into one 28px key whose glyph
+        shows the current mode; the radio menu names every choice.
+      */}
+      <Menu modal={false}>
+        <MenuTrigger asChild>
+          <IconButton
+            className="classroom-files-topbar__fit"
+            data-fit-mode={fitMode}
+            data-tooltip={`${t("classroomTools.files.viewer.fitMode")}: ${fitLabel}`}
+            data-tooltip-side="bottom"
+            label={t("classroomTools.files.viewer.fitMode")}
+            size="sm"
+            variant="quiet"
+          >
+            {fitMode === "width" ? (
+              <MoveHorizontal />
+            ) : fitMode === "page" ? (
+              <Scan />
+            ) : (
+              <ZoomIn />
+            )}
+          </IconButton>
+        </MenuTrigger>
+        <MenuContent
+          align="end"
+          aria-label={t("classroomTools.files.viewer.fitMode")}
+          className="classroom-files-menu"
+          data-theme="dark"
+          sideOffset={8}
+        >
+          <MenuRadioGroup
+            onValueChange={(value) => {
+              if (value !== "width" && value !== "page" && value !== "custom") {
+                return;
+              }
+              if (value === "custom") setZoom(effectiveZoom);
+              setFitMode(value);
+            }}
+            value={fitMode}
+          >
+            <MenuRadioItem value="width">
+              {t("classroomTools.files.viewer.fitWidth")}
+            </MenuRadioItem>
+            <MenuRadioItem value="page">
+              {t("classroomTools.files.viewer.fitPage")}
+            </MenuRadioItem>
+            <MenuRadioItem value="custom">
+              {t("classroomTools.files.viewer.fitCustom")}
+            </MenuRadioItem>
+          </MenuRadioGroup>
+        </MenuContent>
+      </Menu>
       {isPDF ? (
         <IconButton
           aria-pressed={searchOpen}

@@ -404,6 +404,7 @@
 
 .media-p405-room .media-p407-room-actions .th-button,
 .media-p405-room .media-p405-header-close.th-icon-button,
+.media-p405-room .media-p405-header-window-key.th-icon-button,
 .media-p405-room .whiteboard-topbar-menu-trigger.th-icon-button {
   position: relative;
   box-sizing: border-box;
@@ -423,6 +424,7 @@
 
 .media-p405-room .media-p407-room-actions .th-button__icon svg,
 .media-p405-room .media-p405-header-close svg,
+.media-p405-room .media-p405-header-window-key svg,
 .media-p405-room .whiteboard-topbar-menu-trigger svg {
   width: 15px;
   height: 15px;
@@ -432,6 +434,7 @@
   :is(
     .media-p407-room-actions .th-button,
     .media-p405-header-close.th-icon-button,
+    .media-p405-header-window-key.th-icon-button,
     .whiteboard-topbar-menu-trigger.th-icon-button
   ):hover:not(:disabled) {
   border-color: rgb(255 255 255 / 20%);
@@ -458,10 +461,24 @@
   :is(
     .media-p407-room-actions .th-button,
     .media-p405-header-close,
+    .media-p405-header-window-key,
     .whiteboard-topbar-menu-trigger
   ):focus-visible {
   outline: 2px solid var(--room-focus-ring);
   outline-offset: 2px;
+}
+
+/* ROOM-UI-POLISH-01: an engaged window key (stage focus, full screen). */
+.media-p405-room
+  .media-p405-header-window-key.th-icon-button[data-active="true"],
+.media-p405-room
+  .media-p405-header-window-key.th-icon-button[data-active="true"]:hover:not(
+    :disabled
+  ) {
+  border-color: var(--room-sapphire-rim);
+  background: var(--room-sapphire);
+  box-shadow: var(--room-sapphire-shadow);
+  color: #fff;
 }
 
 .media-p405-room .media-p407-status {
@@ -551,6 +568,24 @@
 
 .media-p405-room .media-p405-error {
   border-color: rgb(248 113 113 / 55%);
+}
+
+/*
+ * ROOM-UI-POLISH-01: shell notices ("Đang đồng bộ danh sách lớp...") are a
+ * slim centred pill; the negative margin gives back most of the flex gap so
+ * the stage below barely moves.
+ */
+.media-p405-room .media-p405-shell > .media-p405-notice {
+  box-sizing: border-box;
+  max-width: min(100%, 720px);
+  min-height: 0;
+  align-self: center;
+  margin: -4px 0 -2px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: center;
 }
 
 /* ---- Waiting-room banner (only visible while someone is waiting) ---- */
@@ -2368,6 +2403,43 @@
   left: 36px;
 }
 
+/*
+ * ROOM-UI-POLISH-01 — "Mở rộng sân khấu" (Teams "Focus on content"): the
+ * tool takes the whole row. The camera column is only hidden, never
+ * unmounted, so every <video> keeps its node (LiveKit's adaptive stream
+ * pauses hidden tracks on its own) and returns in place.
+ */
+@media (min-width: 960px) {
+  .media-p405-room
+    .media-p405-classroom--tool-stage.media-p405-classroom--stage-focus {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .media-p405-classroom--tool-stage.media-p405-classroom--stage-focus
+    > :is(.media-p405-stage, .media-p405-rail) {
+    display: none;
+  }
+}
+
+/*
+ * ROOM-UI-POLISH-01 — pseudo full screen where the Fullscreen API is not
+ * available: the room shell pins itself over the viewport (below every
+ * portalled menu, drawer and dialog) with slimmer gutters.
+ */
+.media-p405-room .media-p405-shell[data-pseudo-fullscreen="true"] {
+  position: fixed;
+  z-index: var(--z-sticky, 100);
+  inset: 0;
+  padding: 0 6px 6px;
+}
+
+.media-p405-room
+  .media-p405-shell[data-pseudo-fullscreen="true"]
+  > .media-p405-header {
+  margin-inline: -6px;
+  padding-inline: 6px;
+}
+
 /* ---- Effects drawer reserve ------------------------------------------
  * The Teams-style effects panel is non-modal. On wide rooms the shell gives
  * up the panel's width so the stage, whiteboard and Dock reflow beside it
@@ -2454,6 +2526,18 @@
     row-gap: 6px;
     margin: 0 -8px;
     padding: 6px 8px;
+  }
+
+  /*
+   * ROOM-UI-POLISH-01: without a tool on stage, mobile users still get the
+   * Top Bar full-screen key; when an open tool fills the 320px row, an
+   * inactive full-screen key steps aside to keep Close on screen (while
+   * active full screen stays reachable so it can always be exited).
+   */
+  .media-p405-room
+    .media-p405-header-actions:has(> .media-p405-header-close)
+    .media-p405-header-fullscreen:not([data-active="true"]) {
+    display: none;
   }
 
   .media-p405-room .media-p405-header-title {

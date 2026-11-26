@@ -8694,46 +8694,49 @@ textarea:focus-visible {
   list-style: none;
 }
 
+/* ROOM-UI-POLISH-01: type tile | name over "PDF · 420 KB · date" | status |
+   download, aligned on one row. */
 .class-files__list > li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 13px;
-  padding: 13px 15px;
+  gap: 12px;
+  padding: 11px 14px;
   background: var(--color-surface);
-}
-
-.class-files__list > li > svg {
-  width: 19px;
-  color: var(--color-text-muted);
 }
 
 .class-files__list > li > div {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 2px;
 }
 
 .class-files__list strong,
-.class-files__list span,
-.class-files__list time {
+.class-files__meta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.class-files__list span,
-.class-files__list time {
+.class-files__list strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.class-files__meta {
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .class-files__status {
   padding: 4px 8px;
   border-radius: 999px;
   background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
   font-size: 11px;
   font-weight: 650;
+  white-space: nowrap;
 }
 
 .class-files__status[data-status="ready"] {
@@ -8755,9 +8758,22 @@ textarea:focus-visible {
     flex-direction: column;
   }
 
-  .class-files__transfer form,
-  .class-files__list > li {
+  .class-files__transfer form {
     grid-template-columns: 1fr;
+  }
+
+  .class-files__list > li {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 8px;
+  }
+
+  .class-files__list > li > .class-files__status {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .class-files__list > li > button {
+    grid-column: 1 / -1;
   }
 
   .class-files__transfer form > button,

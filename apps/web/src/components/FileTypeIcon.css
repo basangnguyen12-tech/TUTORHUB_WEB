@@ -1,0 +1,144 @@
+/*
+ * ROOM-UI-POLISH-01: colour-coded file tiles. Light pages use the deep
+ * shade for the glyph (>= 4.5:1 on white); the dark classroom (Liquid Glass)
+ * switches to the bright tone. Badges are white on the deep shade (>= 4.5:1).
+ */
+.file-type-icon {
+  --fti-rgb: 148 163 184;
+  --fti-tone: #94a3b8;
+  --fti-deep: #475569;
+
+  position: relative;
+  display: inline-grid;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border: 1px solid rgb(var(--fti-rgb) / 32%);
+  border-radius: 10px;
+  background: rgb(var(--fti-rgb) / 10%);
+  color: var(--fti-deep);
+  line-height: 1;
+}
+
+.file-type-icon[data-file-kind="pdf"] {
+  --fti-rgb: 239 68 68;
+  --fti-tone: #ef4444;
+  --fti-deep: #dc2626;
+}
+
+.file-type-icon[data-file-kind="word"] {
+  --fti-rgb: 59 130 246;
+  --fti-tone: #3b82f6;
+  --fti-deep: #2563eb;
+}
+
+.file-type-icon[data-file-kind="excel"] {
+  --fti-rgb: 16 185 129;
+  --fti-tone: #10b981;
+  --fti-deep: #047857;
+}
+
+.file-type-icon[data-file-kind="powerpoint"] {
+  --fti-rgb: 249 115 22;
+  --fti-tone: #f97316;
+  --fti-deep: #c2410c;
+}
+
+.file-type-icon[data-file-kind="image"] {
+  --fti-rgb: 168 85 247;
+  --fti-tone: #a855f7;
+  --fti-deep: #7e22ce;
+}
+
+.file-type-icon[data-file-kind="code"] {
+  --fti-rgb: 6 182 212;
+  --fti-tone: #06b6d4;
+  --fti-deep: #0e7490;
+}
+
+.file-type-icon[data-file-kind="archive"] {
+  --fti-rgb: 234 179 8;
+  --fti-tone: #eab308;
+  --fti-deep: #a16207;
+}
+
+.file-type-icon .file-type-icon__glyph {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.9;
+}
+
+/* A badged tile lifts the glyph so the format tag sits under it. */
+.file-type-icon:has(> .file-type-icon__badge) .file-type-icon__glyph {
+  width: 15px;
+  height: 15px;
+  transform: translateY(-6px);
+}
+
+.file-type-icon__badge {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--fti-deep);
+  color: #ffffff;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.05;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* Inline 16px glyph (Top Bar file key). */
+.file-type-icon.file-type-icon--sm {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.file-type-icon.file-type-icon--sm .file-type-icon__glyph {
+  width: 15px;
+  height: 15px;
+  transform: none;
+}
+
+/* Dark Liquid Glass classroom: the bright tone reads on the glass. */
+:is(.media-p405-room, .classroom-files, .classroom-files-topbar)
+  .file-type-icon {
+  border-color: rgb(var(--fti-rgb) / 40%);
+  background: rgb(var(--fti-rgb) / 16%);
+  color: var(--fti-tone);
+}
+
+:is(.media-p405-room, .classroom-files, .classroom-files-topbar)
+  .file-type-icon.file-type-icon--sm {
+  border: 0;
+  background: none;
+}
+
+@media (forced-colors: active) {
+  .file-type-icon,
+  :is(.media-p405-room, .classroom-files, .classroom-files-topbar)
+    .file-type-icon {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .file-type-icon__badge {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .file-type-icon.file-type-icon--sm {
+    border: 0;
+  }
+}

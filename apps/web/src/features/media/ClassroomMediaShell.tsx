@@ -42,8 +42,12 @@ import {
   Hand,
   LayoutGrid,
   LogOut,
+  Maximize2,
   Mic,
   MicOff,
+  Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
   PhoneOff,
   Pin,
   PinOff,
@@ -665,6 +669,8 @@ export function ClassroomMediaShell({
   );
   const [autoOpenedToolID, setAutoOpenedToolID] =
     useState<ClassroomToolID | null>(null);
+  const [stageFocus, setStageFocus] = useState(false);
+  const fullscreen = useRoomFullscreen();
   const [seenAutoOpenKeys, setSeenAutoOpenKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -1424,6 +1430,13 @@ export function ClassroomMediaShell({
 
   const activeTool = tools.find((tool) => tool.id === openToolID) ?? null;
 
+  // ROOM-UI-POLISH-01: Teams-style "Focus on content". With a tool on a
+  // desktop stage the 256px camera column can step aside; CSS only hides
+  // it, so no media node remounts. Closing the tool resets the choice.
+  if (stageFocus && activeTool === null) setStageFocus(false);
+  const stageFocusAvailable = activeTool !== null && width >= 960;
+  const stageFocusActive = stageFocus && stageFocusAvailable;
+
   // ROOM-TOOLS-CODE-01: the tool stage is a non-modal region and the Dock
   // stays reachable. Choosing a tile closes the popover, puts that tool on
   // the stage (replacing another one; LiveKit media never remounts) and
@@ -1614,6 +1627,7 @@ export function ClassroomMediaShell({
             : ""
         }`}
         data-inspector={inspector ?? undefined}
+        data-pseudo-fullscreen={fullscreen.pseudo ? "true" : undefined}
         ref={shellRef}
       >
         {/*
@@ -1683,6 +1697,57 @@ export function ClassroomMediaShell({
               className="media-p405-header-tool-slot"
               ref={setHeaderSlotElement}
             />
+            {/*
+              ROOM-UI-POLISH-01: window keys on the right edge of the Top Bar,
+              far from the Dock's red leave key. Full screen is always
+              available in the room (and via Shift+F); Stage focus appears
+              whenever a desktop tool stage is open. Both flip their action
+              verb label, so WAI-ARIA APG omits aria-pressed in favour of
+              data-active styling.
+            */}
+            {stageFocusAvailable && (
+              <IconButton
+                className="media-p405-header-window-key media-p405-header-stage-focus"
+                data-active={stageFocusActive ? "true" : undefined}
+                data-tooltip={t(
+                  stageFocusActive
+                    ? "media.p405.stageFocusOff"
+                    : "media.p405.stageFocusOn",
+                )}
+                data-tooltip-side="bottom"
+                label={t(
+                  stageFocusActive
+                    ? "media.p405.stageFocusOff"
+                    : "media.p405.stageFocusOn",
+                )}
+                onClick={() => setStageFocus((value) => !value)}
+                size="sm"
+                variant="quiet"
+              >
+                {stageFocusActive ? <PanelRightOpen /> : <PanelRightClose />}
+              </IconButton>
+            )}
+            <IconButton
+              aria-keyshortcuts="Shift+F"
+              className="media-p405-header-window-key media-p405-header-fullscreen"
+              data-active={fullscreen.active ? "true" : undefined}
+              data-tooltip={t(
+                fullscreen.active
+                  ? "media.p405.fullscreenExit"
+                  : "media.p405.fullscreenEnter",
+              )}
+              data-tooltip-side="bottom"
+              label={t(
+                fullscreen.active
+                  ? "media.p405.fullscreenExit"
+                  : "media.p405.fullscreenEnter",
+              )}
+              onClick={fullscreen.toggle}
+              size="sm"
+              variant="quiet"
+            >
+              {fullscreen.active ? <Minimize2 /> : <Maximize2 />}
+            </IconButton>
             {activeTool && (
               <IconButton
                 className="media-p405-header-close"
@@ -1753,7 +1818,10 @@ export function ClassroomMediaShell({
           </p>
         )}
         {signals?.loading && (
-          <p className="media-p405-notice" role="status">
+          <p
+            className="media-p405-notice media-p405-notice--sync"
+            role="status"
+          >
             {t("media.p406.loading")}
           </p>
         )}
@@ -1816,7 +1884,7 @@ export function ClassroomMediaShell({
         <div
           className={`media-p405-classroom media-p405-classroom--${projection.mode}${
             activeTool ? " media-p405-classroom--tool-stage" : ""
-          }`}
+          }${stageFocusActive ? " media-p405-classroom--stage-focus" : ""}`}
         >
           {/*
           The tool stage occupies its own conditional slot ahead of the media
@@ -2590,6 +2658,192 @@ export function ClassroomMediaShell({
  */
 function DockIcon({ icon }: { icon: ReactNode }) {
   return <span className="media-p405-dock-icon">{icon}</span>;
+}
+
+/*
+ * ROOM-UI-POLISH-01 — Zoom / Teams / Meet style full screen. Only the
+ * document element ever goes full screen, so every Radix portal on
+ * `document.body` (menus, dialogs, drawers, tooltips) stays inside the
+ * full-screen tree and React never remounts LiveKit or a <video>.
+ */
+interface FullscreenCapableDocument extends Document {
+  webkitExitFullscreen?: () => Promise<void> | void;
+  webkitFullscreenElement?: Element | null;
+  webkitFullscreenEnabled?: boolean;
+}
+
+interface FullscreenCapableElement extends HTMLElement {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+}
+
+function currentFullscreenElement(
+  doc: FullscreenCapableDocument,
+): Element | null {
+  return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+}
+
+function standardFullscreenAvailable(doc: FullscreenCapableDocument) {
+  return (
+    doc.fullscreenEnabled === true &&
+    typeof doc.documentElement.requestFullscreen === "function"
+  );
+}
+
+function webkitFullscreenAvailable(doc: FullscreenCapableDocument) {
+  return (
+    doc.webkitFullscreenEnabled === true &&
+    typeof (doc.documentElement as FullscreenCapableElement)
+      .webkitRequestFullscreen === "function"
+  );
+}
+
+function requestDocumentFullscreen(
+  doc: FullscreenCapableDocument,
+): Promise<void> {
+  try {
+    if (standardFullscreenAvailable(doc)) {
+      return Promise.resolve(
+        doc.documentElement.requestFullscreen({ navigationUI: "hide" }),
+      );
+    }
+    const root = doc.documentElement as FullscreenCapableElement;
+    return Promise.resolve(root.webkitRequestFullscreen?.());
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+function exitDocumentFullscreen(doc: FullscreenCapableDocument): Promise<void> {
+  try {
+    if (doc.fullscreenElement && typeof doc.exitFullscreen === "function") {
+      return Promise.resolve(doc.exitFullscreen());
+    }
+    if (
+      doc.webkitFullscreenElement &&
+      typeof doc.webkitExitFullscreen === "function"
+    ) {
+      return Promise.resolve(doc.webkitExitFullscreen());
+    }
+    return Promise.resolve();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+/** Typing, modal dialogs and open menus keep their own keys. */
+const ROOM_SHORTCUT_IGNORED_TARGETS = [
+  "input",
+  "textarea",
+  "select",
+  '[contenteditable]:not([contenteditable="false"])',
+  ".cm-editor",
+  '[role="dialog"][aria-modal="true"]',
+  '[role="alertdialog"]',
+  ".th-dialog-content",
+  '[role="menu"]',
+  '[role="listbox"]',
+].join(", ");
+
+function isRoomShortcutIgnoredTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target instanceof HTMLElement && target.isContentEditable) return true;
+  return target.closest(ROOM_SHORTCUT_IGNORED_TARGETS) !== null;
+}
+
+/** `Shift+F` without Ctrl / ⌘ / Alt, never while typing or in a modal. */
+function isRoomFullscreenShortcut(event: globalThis.KeyboardEvent): boolean {
+  if (event.key !== "F" && event.key !== "f") return false;
+  if (!event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+    return false;
+  }
+  if (event.repeat || event.isComposing || event.defaultPrevented) {
+    return false;
+  }
+  return !isRoomShortcutIgnoredTarget(event.target);
+}
+
+/**
+ * Native full screen when the browser allows it; otherwise (an iPad web
+ * view, a rejected request) a "pseudo" full screen that pins the room shell
+ * over the viewport. Leaving the room undoes only what the room turned on.
+ */
+function useRoomFullscreen() {
+  const [nativeActive, setNativeActive] = useState(
+    () =>
+      typeof document !== "undefined" &&
+      currentFullscreenElement(document) !== null,
+  );
+  const [pseudoActive, setPseudoActive] = useState(false);
+  const ownsNative = useRef(false);
+
+  useEffect(() => {
+    const doc: FullscreenCapableDocument = document;
+    const sync = () => {
+      const active = currentFullscreenElement(doc) !== null;
+      if (!active) ownsNative.current = false;
+      setNativeActive(active);
+    };
+    doc.addEventListener("fullscreenchange", sync);
+    doc.addEventListener("webkitfullscreenchange", sync);
+    return () => {
+      doc.removeEventListener("fullscreenchange", sync);
+      doc.removeEventListener("webkitfullscreenchange", sync);
+      if (
+        ownsNative.current &&
+        currentFullscreenElement(doc) === doc.documentElement
+      ) {
+        ownsNative.current = false;
+        void exitDocumentFullscreen(doc).catch(() => undefined);
+      }
+    };
+  }, []);
+
+  const toggle = useCallback(() => {
+    const doc: FullscreenCapableDocument = document;
+    if (pseudoActive) {
+      setPseudoActive(false);
+      return;
+    }
+    if (currentFullscreenElement(doc) !== null) {
+      void exitDocumentFullscreen(doc).catch(() => undefined);
+      return;
+    }
+    if (!standardFullscreenAvailable(doc) && !webkitFullscreenAvailable(doc)) {
+      setPseudoActive(true);
+      return;
+    }
+    ownsNative.current = true;
+    requestDocumentFullscreen(doc).catch(() => {
+      ownsNative.current = false;
+      setPseudoActive(true);
+    });
+  }, [pseudoActive]);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (isRoomFullscreenShortcut(event)) {
+        event.preventDefault();
+        toggle();
+        return;
+      }
+      if (
+        pseudoActive &&
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        !isRoomShortcutIgnoredTarget(event.target)
+      ) {
+        setPseudoActive(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [pseudoActive, toggle]);
+
+  return {
+    active: nativeActive || pseudoActive,
+    pseudo: pseudoActive,
+    toggle,
+  };
 }
 
 /** Elements that show the room tooltip (see `RoomTooltipLayer`). */

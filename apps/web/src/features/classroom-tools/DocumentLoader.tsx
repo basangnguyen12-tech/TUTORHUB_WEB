@@ -49,6 +49,31 @@ type LoadState =
         | "tooLarge";
     };
 
+/**
+ * ROOM-UI-POLISH-01: right after joining, the server may still see the
+ * LiveKit participant session as "connecting" and conceal the document
+ * (404 → `forbidden`) for a few hundred ms. The first attempt therefore
+ * retries a concealed answer twice on a short backoff before showing it.
+ */
+const DOCUMENT_VIEW_FORBIDDEN_RETRY_DELAYS_MS: readonly number[] = [700, 1600];
+
+/** Resolves after `ms`, or at once when `signal` aborts (timer cleared). */
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      globalThis.clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = globalThis.setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
 export interface DocumentLoaderProps {
   readonly actorID: string;
   readonly activePresentation?: PdfPresentation | null;
@@ -118,14 +143,34 @@ export function DocumentLoader({
     if (attempt === 0 && initial.kind === "ready") return undefined;
     const controller = new AbortController();
     let reader: RoomDocumentRangeLoader | null = null;
+    const retryDelays =
+      attempt === 0 ? DOCUMENT_VIEW_FORBIDDEN_RETRY_DELAYS_MS : [];
+    const requestView = async () => {
+      for (let retry = 0; ; retry += 1) {
+        try {
+          return await requestRoomDocumentView(
+            tenantID,
+            mediaSpaceID,
+            fileID,
+            controller.signal,
+          );
+        } catch (error) {
+          const delay = retryDelays[retry];
+          if (
+            delay === undefined ||
+            controller.signal.aborted ||
+            classifyRoomDocumentError(error) !== "forbidden"
+          ) {
+            throw error;
+          }
+          await pause(delay, controller.signal);
+          if (controller.signal.aborted) throw error;
+        }
+      }
+    };
     void (async () => {
       try {
-        const capability = await requestRoomDocumentView(
-          tenantID,
-          mediaSpaceID,
-          fileID,
-          controller.signal,
-        );
+        const capability = await requestView();
         if (controller.signal.aborted) return;
         if (
           expectedVersionID !== undefined &&
@@ -259,8 +304,8 @@ export function DocumentLoader({
       <div className="classroom-files-state" role="alert">
         <p className="classroom-files-state__title">{message}</p>
         <div className="classroom-files-state__actions">
-          {state.reason === "forbidden" ||
-          state.reason === "featureOff" ||
+          {/* A concealed answer may be a join race: Retry stays offered. */}
+          {state.reason === "featureOff" ||
           fileID.startsWith("chat:") ? null : (
             <Button
               leadingIcon={<RefreshCw />}

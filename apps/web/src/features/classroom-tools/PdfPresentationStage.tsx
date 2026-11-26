@@ -692,6 +692,10 @@ export function PdfPresentationStage({
     showHiddenPages: presenter,
   };
 
+  const hiddenPageLabel = hiddenCurrent
+    ? t("classroomTools.files.present.showPage", { page: currentPage })
+    : t("classroomTools.files.present.hidePage", { page: currentPage });
+
   const status = presenter
     ? t("classroomTools.files.present.statusPresenter", {
         page: meta.presenterPage,
@@ -753,9 +757,15 @@ export function PdfPresentationStage({
           ) : null}
           {presenter && session ? (
             <>
+              {/*
+                ROOM-UI-POLISH-01: 26px icon keys; the name stays in a sr-only
+                span (accessible name, tests) and in the room tooltip.
+              */}
               <button
                 aria-pressed={meta.followLock}
-                className="classroom-files-live-toggle"
+                className="classroom-files-live-toggle classroom-files-live-toggle--icon"
+                data-tooltip={t("classroomTools.files.present.followLock")}
+                data-tooltip-side="bottom"
                 onClick={toggleLock}
                 type="button"
               >
@@ -764,11 +774,15 @@ export function PdfPresentationStage({
                 ) : (
                   <LockOpen aria-hidden="true" />
                 )}
-                {t("classroomTools.files.present.followLock")}
+                <span className="classroom-files-sr-only">
+                  {t("classroomTools.files.present.followLock")}
+                </span>
               </button>
               <button
-                className="classroom-files-live-toggle"
+                className="classroom-files-live-toggle classroom-files-live-toggle--icon"
                 data-hidden={hiddenCurrent || undefined}
+                data-tooltip={hiddenPageLabel}
+                data-tooltip-side="bottom"
                 onClick={toggleHidden}
                 type="button"
               >
@@ -777,13 +791,9 @@ export function PdfPresentationStage({
                 ) : (
                   <EyeOff aria-hidden="true" />
                 )}
-                {hiddenCurrent
-                  ? t("classroomTools.files.present.showPage", {
-                      page: currentPage,
-                    })
-                  : t("classroomTools.files.present.hidePage", {
-                      page: currentPage,
-                    })}
+                <span className="classroom-files-sr-only">
+                  {hiddenPageLabel}
+                </span>
               </button>
             </>
           ) : null}
@@ -792,6 +802,7 @@ export function PdfPresentationStage({
             <PresentationLifecycleMenu
               canClose={presentation.viewer_capabilities.can_close}
               canSuspend={presentation.viewer_capabilities.can_suspend}
+              compact
               onTransition={onTransition}
               pending={transitionPending}
             />
@@ -837,32 +848,53 @@ export function PresentationLifecycleMenu({
   canClose,
   canResume = false,
   canSuspend,
+  compact = false,
   onTransition,
   pending,
 }: {
   readonly canClose: boolean;
   readonly canResume?: boolean;
   readonly canSuspend: boolean;
+  /**
+   * ROOM-UI-POLISH-01: a 26px icon key on the live bar; the full-text
+   * button stays where it is the only action (missing-document state).
+   */
+  readonly compact?: boolean;
   readonly onTransition: (operation: PdfPresentationOperation) => void;
   readonly pending: boolean;
 }) {
   const { t } = useI18n();
+  const label = t("classroomTools.files.present.controls");
   return (
     <Menu modal={false}>
       <MenuTrigger asChild>
-        <Button
-          className="classroom-files-live-bar__menu"
-          disabled={pending}
-          leadingIcon={<MonitorPlay />}
-          size="sm"
-          variant="secondary"
-        >
-          {t("classroomTools.files.present.controls")}
-        </Button>
+        {compact ? (
+          <IconButton
+            className="classroom-files-live-bar__menu"
+            data-tooltip={label}
+            data-tooltip-side="bottom"
+            disabled={pending}
+            label={label}
+            size="sm"
+            variant="secondary"
+          >
+            <MonitorPlay />
+          </IconButton>
+        ) : (
+          <Button
+            className="classroom-files-live-bar__menu"
+            disabled={pending}
+            leadingIcon={<MonitorPlay />}
+            size="sm"
+            variant="secondary"
+          >
+            {label}
+          </Button>
+        )}
       </MenuTrigger>
       <MenuContent
         align="end"
-        aria-label={t("classroomTools.files.present.controls")}
+        aria-label={label}
         className="classroom-files-menu"
         data-theme="dark"
         sideOffset={8}

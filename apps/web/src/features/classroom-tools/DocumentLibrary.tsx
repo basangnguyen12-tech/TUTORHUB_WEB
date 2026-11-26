@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   Download,
   FileText,
-  Image as ImageIcon,
   MonitorPlay,
   RefreshCw,
   Trash2,
@@ -23,6 +22,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { ClassFileTransferPhase } from "../../app/classFiles";
+import { FileTypeIcon } from "../../components/FileTypeIcon";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 import {
   classifyRoomDocumentError,
@@ -218,6 +218,8 @@ export function DocumentLibrary({
   const showUpload =
     access.can_upload &&
     (uploadOpen || (!query.isPending && query.documents.length === 0));
+  const documentCount = query.isError ? 0 : query.documents.length;
+  const countText = `${documentCount}${query.hasNextPage ? "+" : ""}`;
 
   return (
     <section
@@ -226,34 +228,56 @@ export function DocumentLibrary({
       onKeyDown={handleKeyDown}
       ref={rootRef}
     >
+      {/*
+        ROOM-UI-POLISH-01: one non-wrapping row - the title (+ count) on the
+        left, Upload and Close pinned to the top-right corner.
+      */}
       <header className="classroom-files-library__header">
-        <div>
-          <h3
-            className="classroom-files-library__title"
-            id={titleID}
-            ref={headingRef}
-            tabIndex={-1}
-          >
-            {t("classroomTools.files.library.title")}
-          </h3>
-          <p className="classroom-files-library__subtitle">
-            {t("classroomTools.files.library.subtitle")}
-          </p>
+        <div className="classroom-files-library__heading">
+          <div className="classroom-files-library__title-row">
+            <h3
+              className="classroom-files-library__title"
+              id={titleID}
+              ref={headingRef}
+              tabIndex={-1}
+            >
+              {t("classroomTools.files.library.title")}
+            </h3>
+            {documentCount > 0 ? (
+              <span className="classroom-files-library__count">
+                <span aria-hidden="true">{countText}</span>
+                <span className="classroom-files-sr-only">
+                  {t("classroomTools.files.library.count", {
+                    count: countText,
+                  })}
+                </span>
+              </span>
+            ) : null}
+          </div>
+          {mode === "drawer" ? null : (
+            <p className="classroom-files-library__subtitle">
+              {t("classroomTools.files.library.subtitle")}
+            </p>
+          )}
         </div>
         <div className="classroom-files-library__header-actions">
           {access.can_upload ? (
             <Button
               aria-expanded={showUpload}
+              className="classroom-files-library__upload"
               leadingIcon={<Upload />}
               onClick={() => setUploadOpen((value) => !value)}
               size="sm"
             >
-              {t("classroomTools.files.upload.open")}
+              <span className="classroom-files-library__upload-label">
+                {t("classroomTools.files.upload.open")}
+              </span>
             </Button>
           ) : null}
           {mode === "drawer" ? (
             <IconButton
               className="classroom-files-library__close"
+              data-tooltip={t("classroomTools.files.library.close")}
               label={t("classroomTools.files.library.close")}
               onClick={onClose}
               size="sm"
@@ -317,8 +341,8 @@ function DocumentRow({
     : t("classroomTools.files.library.kindImage");
   const source =
     document.owner_kind === "class"
-      ? t("classroomTools.files.library.sourceClass")
-      : t("classroomTools.files.library.sourceRoom");
+      ? t("classroomTools.files.library.sourceClassShort")
+      : t("classroomTools.files.library.sourceRoomShort");
 
   useEffect(() => {
     if (confirmingDelete) confirmRef.current?.focus();
@@ -349,34 +373,31 @@ function DocumentRow({
       className={`classroom-files-row${active ? " classroom-files-row--active" : ""}`}
       data-status={document.status}
     >
-      <span aria-hidden="true" className="classroom-files-row__icon">
-        {isPDF ? <FileText /> : <ImageIcon />}
-      </span>
+      <FileTypeIcon
+        className="classroom-files-row__icon"
+        fileName={document.display_name}
+        mediaType={document.declared_media_type}
+      />
       <div className="classroom-files-row__main">
-        {openable ? (
-          <button
-            aria-current={active ? "true" : undefined}
-            className="classroom-files-row__title classroom-files-row__title--button"
-            onClick={() => onOpen(document)}
-            type="button"
-          >
-            {document.display_name}
-          </button>
-        ) : (
-          <span className="classroom-files-row__title">
-            {document.display_name}
-          </span>
-        )}
-        <p className="classroom-files-row__meta">
-          <span
-            className={`classroom-files-badge classroom-files-badge--${document.owner_kind}`}
-          >
-            {source}
-          </span>
-          <span>{kind}</span>
-          <span>
-            {formatDocumentSize(document.expected_size_bytes, locale)}
-          </span>
+        <div className="classroom-files-row__line">
+          {openable ? (
+            <button
+              aria-current={active ? "true" : undefined}
+              className="classroom-files-row__title classroom-files-row__title--button"
+              onClick={() => onOpen(document)}
+              title={document.display_name}
+              type="button"
+            >
+              {document.display_name}
+            </button>
+          ) : (
+            <span
+              className="classroom-files-row__title"
+              title={document.display_name}
+            >
+              {document.display_name}
+            </span>
+          )}
           {presenting ? (
             <span className="classroom-files-badge classroom-files-badge--live">
               <MonitorPlay aria-hidden="true" />
@@ -389,26 +410,48 @@ function DocumentRow({
               {t("classroomTools.files.library.activeContent")}
             </span>
           ) : null}
-        </p>
+        </div>
+        <div className="classroom-files-row__meta">
+          <span
+            className={`classroom-files-row__source classroom-files-row__source--${document.owner_kind}`}
+          >
+            {source}
+          </span>
+          <span aria-hidden="true" className="classroom-files-row__dot">
+            ·
+          </span>
+          <span>{kind}</span>
+          <span aria-hidden="true" className="classroom-files-row__dot">
+            ·
+          </span>
+          <span>
+            {formatDocumentSize(document.expected_size_bytes, locale)}
+          </span>
+          {document.viewer_access.can_manage && ready ? (
+            <label className="classroom-files-row__switch" htmlFor={switchID}>
+              <input
+                aria-label={t(
+                  "classroomTools.files.library.allowStudentDownload",
+                )}
+                checked={document.allow_student_download}
+                disabled={update.isPending}
+                id={switchID}
+                onChange={(event) =>
+                  update.mutate({
+                    document,
+                    patch: { allowStudentDownload: event.target.checked },
+                  })
+                }
+                role="switch"
+                type="checkbox"
+              />
+              <span className="classroom-files-row__switch-label">
+                {t("classroomTools.files.library.allowStudentDownloadShort")}
+              </span>
+            </label>
+          ) : null}
+        </div>
         {status}
-        {document.viewer_access.can_manage && ready ? (
-          <label className="classroom-files-row__switch" htmlFor={switchID}>
-            <input
-              checked={document.allow_student_download}
-              disabled={update.isPending}
-              id={switchID}
-              onChange={(event) =>
-                update.mutate({
-                  document,
-                  patch: { allowStudentDownload: event.target.checked },
-                })
-              }
-              role="switch"
-              type="checkbox"
-            />
-            {t("classroomTools.files.library.allowStudentDownload")}
-          </label>
-        ) : null}
         {update.isError ? (
           <p className="classroom-files-row__error" role="alert">
             {classifyRoomDocumentError(update.error) === "conflict"
@@ -454,25 +497,26 @@ function DocumentRow({
       </div>
       <div className="classroom-files-row__actions">
         {openable && onPresent && !presenting ? (
-          <Button
-            aria-label={t("classroomTools.files.present.presentNamed", {
+          <IconButton
+            className="classroom-files-row__present"
+            data-tooltip={t("classroomTools.files.present.present")}
+            disabled={presentPending}
+            label={t("classroomTools.files.present.presentNamed", {
               name: document.display_name,
             })}
-            className="classroom-files-row__present"
-            disabled={presentPending}
-            leadingIcon={<MonitorPlay />}
             onClick={() => onPresent(document)}
             size="sm"
             variant="secondary"
           >
-            {t("classroomTools.files.present.present")}
-          </Button>
+            <MonitorPlay />
+          </IconButton>
         ) : null}
         {openable ? (
           <Button
             aria-label={t("classroomTools.files.library.openNamed", {
               name: document.display_name,
             })}
+            className="classroom-files-row__open"
             onClick={() => onOpen(document)}
             size="sm"
             variant={active ? "secondary" : "primary"}
@@ -482,6 +526,8 @@ function DocumentRow({
         ) : null}
         {ready && document.viewer_access.can_download_original ? (
           <IconButton
+            className="classroom-files-row__icon-action"
+            data-tooltip={t("classroomTools.files.library.download")}
             label={t("classroomTools.files.library.downloadNamed", {
               name: document.display_name,
             })}
@@ -494,6 +540,8 @@ function DocumentRow({
         ) : null}
         {document.viewer_access.can_manage ? (
           <IconButton
+            className="classroom-files-row__icon-action"
+            data-tooltip={t("classroomTools.files.library.deleteAction")}
             label={t("classroomTools.files.library.deleteNamed", {
               name: document.display_name,
             })}

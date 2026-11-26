@@ -1690,6 +1690,318 @@ describe("ClassroomMediaShell", () => {
     focus.mockRestore();
   });
 
+  describe("ROOM-UI-POLISH-01 full screen and stage focus", () => {
+    const whiteboardTool = () => ({
+      content: <TestWhiteboardTool />,
+      icon: <span aria-hidden="true">W</span>,
+      id: "whiteboard" as const,
+      label: "Whiteboard",
+      title: "Classroom whiteboard",
+    });
+    const topBar = () =>
+      document.querySelector<HTMLElement>("header.media-p405-header")!;
+    let fullscreenElement: Element | null = null;
+    const root = document.documentElement;
+
+    function installFullscreenAPI({
+      enabled,
+      rejects = false,
+    }: {
+      enabled: boolean;
+      rejects?: boolean;
+    }) {
+      fullscreenElement = null;
+      Object.defineProperty(document, "fullscreenEnabled", {
+        configurable: true,
+        value: enabled,
+      });
+      Object.defineProperty(document, "fullscreenElement", {
+        configurable: true,
+        get: () => fullscreenElement,
+      });
+      const request = vi.fn(async () => {
+        if (rejects) throw new TypeError("Permissions check failed");
+        fullscreenElement = root;
+        document.dispatchEvent(new Event("fullscreenchange"));
+      });
+      const exit = vi.fn(async () => {
+        fullscreenElement = null;
+        document.dispatchEvent(new Event("fullscreenchange"));
+      });
+      Object.defineProperty(root, "requestFullscreen", {
+        configurable: true,
+        value: request,
+      });
+      Object.defineProperty(document, "exitFullscreen", {
+        configurable: true,
+        value: exit,
+      });
+      return { exit, request };
+    }
+
+    afterEach(() => {
+      for (const key of [
+        "fullscreenEnabled",
+        "fullscreenElement",
+        "exitFullscreen",
+      ]) {
+        Reflect.deleteProperty(document, key);
+      }
+      Reflect.deleteProperty(root, "requestFullscreen");
+      fullscreenElement = null;
+    });
+
+    it("always shows the Full screen key in the Top Bar and adds Stage focus beside Close when a tool opens", () => {
+      installFullscreenAPI({ enabled: true });
+      renderShell({ tools: [whiteboardTool()] });
+      const initialFullKey = within(topBar()).getByRole("button", {
+        name: "Full screen (Shift+F)",
+      });
+      expect(initialFullKey).not.toHaveAttribute("aria-pressed");
+      expect(initialFullKey).not.toHaveAttribute("data-active");
+      expect(
+        within(topBar()).queryByRole("button", { name: "Expand the stage" }),
+      ).toBeNull();
+
+      chooseTool("Whiteboard");
+      const stageKey = within(topBar()).getByRole("button", {
+        name: "Expand the stage",
+      });
+      const fullKey = within(topBar()).getByRole("button", {
+        name: "Full screen (Shift+F)",
+      });
+      const close = within(topBar()).getByRole("button", { name: "Close" });
+      // tool slot → stage focus → full screen → Close, all in the actions.
+      expect(stageKey.previousElementSibling).toHaveClass(
+        "media-p405-header-tool-slot",
+      );
+      expect(stageKey.nextElementSibling).toBe(fullKey);
+      expect(fullKey.nextElementSibling).toBe(close);
+      expect(fullKey).not.toHaveAttribute("aria-pressed");
+      expect(fullKey).not.toHaveAttribute("data-active");
+      expect(fullKey).toHaveAttribute("aria-keyshortcuts", "Shift+F");
+      expect(fullKey).toHaveAttribute("data-tooltip", "Full screen (Shift+F)");
+      expect(fullKey).toHaveAttribute("data-tooltip-side", "bottom");
+      expect(stageKey).not.toHaveAttribute("aria-pressed");
+      expect(stageKey).not.toHaveAttribute("data-active");
+      expect(stageKey).toHaveAttribute("data-tooltip", "Expand the stage");
+    });
+
+    it("toggles document full screen from the key and Shift+F without remounting media", async () => {
+      const { exit, request } = installFullscreenAPI({ enabled: true });
+      const view = renderShell({ tools: [whiteboardTool()] });
+      chooseTool("Whiteboard");
+      const mediaTile = view.container.querySelector(".media-p405-grid > li");
+      const videos = Array.from(view.container.querySelectorAll("video"));
+
+      fireEvent.click(
+        within(topBar()).getByRole("button", { name: "Full screen (Shift+F)" }),
+      );
+      await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+      // Only the document element: portals on <body> stay in the tree.
+      expect(request.mock.contexts[0]).toBe(root);
+      const exitKey = await within(topBar()).findByRole("button", {
+        name: "Exit full screen (Esc)",
+      });
+      expect(exitKey).toHaveAttribute("data-active", "true");
+      expect(exitKey).toHaveAttribute("data-tooltip", "Exit full screen (Esc)");
+
+      // Shift+F from the page leaves full screen.
+      fireEvent.keyDown(document.body, { key: "F", shiftKey: true });
+      await waitFor(() => expect(exit).toHaveBeenCalledTimes(1));
+      expect(
+        await within(topBar()).findByRole("button", {
+          name: "Full screen (Shift+F)",
+        }),
+      ).not.toHaveAttribute("data-active");
+
+      // Typing, modifiers and auto-repeat never toggle it.
+      const field = document.createElement("input");
+      document.body.append(field);
+      field.focus();
+      fireEvent.keyDown(field, { key: "F", shiftKey: true });
+      field.remove();
+      const editor = document.createElement("div");
+      editor.className = "cm-editor";
+      const line = document.createElement("span");
+      editor.append(line);
+      document.body.append(editor);
+      fireEvent.keyDown(line, { key: "F", shiftKey: true });
+      editor.remove();
+      fireEvent.keyDown(document.body, {
+        ctrlKey: true,
+        key: "F",
+        shiftKey: true,
+      });
+      fireEvent.keyDown(document.body, {
+        altKey: true,
+        key: "F",
+        shiftKey: true,
+      });
+      fireEvent.keyDown(document.body, {
+        key: "F",
+        repeat: true,
+        shiftKey: true,
+      });
+      fireEvent.keyDown(document.body, { key: "f" });
+      expect(request).toHaveBeenCalledTimes(1);
+
+      fireEvent.keyDown(document.body, { key: "F", shiftKey: true });
+      await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+      await within(topBar()).findByRole("button", {
+        name: "Exit full screen (Esc)",
+      });
+      // The browser's own Esc exit is mirrored through fullscreenchange.
+      fullscreenElement = null;
+      fireEvent(document, new Event("fullscreenchange"));
+      expect(
+        await within(topBar()).findByRole("button", {
+          name: "Full screen (Shift+F)",
+        }),
+      ).toBeInTheDocument();
+
+      expect(view.container.querySelector(".media-p405-grid > li")).toBe(
+        mediaTile,
+      );
+      expect(Array.from(view.container.querySelectorAll("video"))).toEqual(
+        videos,
+      );
+      expect(toolLifecycle.mounts).toBe(1);
+
+      // Leaving the room undoes the full screen the room turned on.
+      fireEvent.keyDown(document.body, { key: "F", shiftKey: true });
+      await waitFor(() => expect(request).toHaveBeenCalledTimes(3));
+      await waitFor(() => expect(fullscreenElement).toBe(root));
+      view.unmount();
+      expect(exit).toHaveBeenCalledTimes(2);
+    });
+
+    it("falls back to a pseudo full screen without the Fullscreen API or after a refusal", async () => {
+      installFullscreenAPI({ enabled: false });
+      const view = renderShell({ tools: [whiteboardTool()] });
+      const shell = view.container.querySelector(".media-p405-shell")!;
+
+      // Works directly from the camera room before opening any tool.
+      fireEvent.click(
+        within(topBar()).getByRole("button", { name: "Full screen (Shift+F)" }),
+      );
+      expect(shell).toHaveAttribute("data-pseudo-fullscreen", "true");
+      const exitKey = within(topBar()).getByRole("button", {
+        name: "Exit full screen (Esc)",
+      });
+      expect(exitKey).toHaveAttribute("data-active", "true");
+      // An unhandled Escape leaves the pseudo full screen.
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(shell).not.toHaveAttribute("data-pseudo-fullscreen");
+
+      chooseTool("Whiteboard");
+      fireEvent.keyDown(document.body, { key: "F", shiftKey: true });
+      expect(shell).toHaveAttribute("data-pseudo-fullscreen", "true");
+      fireEvent.click(within(topBar()).getByRole("button", { name: "Close" }));
+      const lonelyKey = within(topBar()).getByRole("button", {
+        name: "Exit full screen (Esc)",
+      });
+      fireEvent.click(lonelyKey);
+      expect(shell).not.toHaveAttribute("data-pseudo-fullscreen");
+      expect(
+        within(topBar()).getByRole("button", {
+          name: "Full screen (Shift+F)",
+        }),
+      ).toBeInTheDocument();
+      view.unmount();
+
+      // A refused request (permissions policy, no user activation) degrades
+      // to the pseudo mode instead of an unhandled rejection.
+      const refused = installFullscreenAPI({ enabled: true, rejects: true });
+      const second = renderShell({ tools: [whiteboardTool()] });
+      fireEvent.click(
+        within(topBar()).getByRole("button", { name: "Full screen (Shift+F)" }),
+      );
+      await waitFor(() =>
+        expect(
+          second.container.querySelector(".media-p405-shell"),
+        ).toHaveAttribute("data-pseudo-fullscreen", "true"),
+      );
+      expect(refused.request).toHaveBeenCalledTimes(1);
+      second.unmount();
+      expect(refused.exit).not.toHaveBeenCalled();
+    });
+
+    it("expands the stage over the camera column without remounting a video", () => {
+      const view = renderShell({ tools: [whiteboardTool()] });
+      const classroom = view.container.querySelector(".media-p405-classroom")!;
+      const mediaStage = view.container.querySelector(".media-p405-stage");
+      const mediaTile = view.container.querySelector(".media-p405-grid > li");
+      chooseTool("Whiteboard");
+      const videos = Array.from(view.container.querySelectorAll("video"));
+      expect(videos.length).toBeGreaterThan(0);
+
+      fireEvent.click(
+        within(topBar()).getByRole("button", { name: "Expand the stage" }),
+      );
+      expect(classroom).toHaveClass(
+        "media-p405-classroom--tool-stage",
+        "media-p405-classroom--stage-focus",
+      );
+      const showKey = within(topBar()).getByRole("button", {
+        name: "Show the video strip",
+      });
+      expect(showKey).toHaveAttribute("data-active", "true");
+      expect(showKey).toHaveAttribute("data-tooltip", "Show the video strip");
+      // Same nodes: the strip is hidden by CSS, never unmounted.
+      expect(view.container.querySelector(".media-p405-stage")).toBe(
+        mediaStage,
+      );
+      expect(view.container.querySelector(".media-p405-grid > li")).toBe(
+        mediaTile,
+      );
+      expect(Array.from(view.container.querySelectorAll("video"))).toEqual(
+        videos,
+      );
+      expect(videos.every((video) => video.isConnected)).toBe(true);
+      expect(screen.getByText("Lazy whiteboard content")).toBeInTheDocument();
+
+      fireEvent.click(showKey);
+      expect(classroom).not.toHaveClass("media-p405-classroom--stage-focus");
+      expect(Array.from(view.container.querySelectorAll("video"))).toEqual(
+        videos,
+      );
+
+      // Closing the tool resets the choice for the next one.
+      fireEvent.click(
+        within(topBar()).getByRole("button", { name: "Expand the stage" }),
+      );
+      fireEvent.click(within(topBar()).getByRole("button", { name: "Close" }));
+      expect(classroom).not.toHaveClass("media-p405-classroom--stage-focus");
+      chooseTool("Whiteboard");
+      expect(
+        within(topBar()).getByRole("button", { name: "Expand the stage" }),
+      ).not.toHaveAttribute("data-active");
+      expect(toolLifecycle.mounts).toBe(2);
+
+      // Below 960px the camera strip is a bottom row: no key, no class.
+      Object.defineProperty(globalThis, "innerWidth", {
+        configurable: true,
+        value: 800,
+      });
+      fireEvent(window, new Event("resize"));
+      expect(
+        within(topBar()).queryByRole("button", { name: "Expand the stage" }),
+      ).toBeNull();
+      expect(classroom).not.toHaveClass("media-p405-classroom--stage-focus");
+    });
+
+    it("shows the roster sync notice as a slim status pill", () => {
+      renderShell({ signals: createSignalControls({ loading: true }) });
+      const notice = screen.getByText("Syncing the classroom roster...");
+      expect(notice).toHaveAttribute("role", "status");
+      expect(notice).toHaveClass(
+        "media-p405-notice",
+        "media-p405-notice--sync",
+      );
+    });
+  });
+
   describe("ROOM-MEET-DOCK-04 room tooltip", () => {
     const roomTooltip = () => screen.getByTestId("room-tooltip");
     const hover = (element: HTMLElement, pointerType = "mouse") =>
