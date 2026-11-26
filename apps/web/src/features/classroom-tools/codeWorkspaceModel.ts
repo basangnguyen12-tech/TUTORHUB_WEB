@@ -292,12 +292,14 @@ export function forkWorkspaceSnapshot(
   files: readonly ClassroomCodeWorkspaceFile[],
   activeIndex: number,
   stdin: string,
+  /** ROOM-TOOLS-CODE-03B: 256 KB for the durable server draft. */
+  maxTotalBytes = CODE_MAX_TOTAL_BYTES,
 ): CodeForkResult {
   const safeStdin = utf8Bytes(stdin) <= CODE_MAX_STDIN_BYTES ? stdin : "";
   const active = Math.min(Math.max(0, activeIndex), files.length - 1);
   if (
     files.length <= CODE_MAX_FILES &&
-    workspaceBytes(files) <= CODE_MAX_TOTAL_BYTES
+    workspaceBytes(files) <= maxTotalBytes
   ) {
     return {
       copied: files.length,
@@ -313,14 +315,14 @@ export function forkWorkspaceSnapshot(
   const included = new Set<number>();
   let used = 0;
   const activeFile = files[active];
-  if (activeFile && utf8Bytes(activeFile.content) <= CODE_MAX_TOTAL_BYTES) {
+  if (activeFile && utf8Bytes(activeFile.content) <= maxTotalBytes) {
     included.add(active);
     used = utf8Bytes(activeFile.content);
   }
   files.forEach((file, index) => {
     if (included.has(index) || included.size >= CODE_MAX_FILES) return;
     const bytes = utf8Bytes(file.content);
-    if (used + bytes > CODE_MAX_TOTAL_BYTES) return;
+    if (used + bytes > maxTotalBytes) return;
     included.add(index);
     used += bytes;
   });

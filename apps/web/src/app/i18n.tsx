@@ -3496,6 +3496,151 @@ const messages = {
     "classroomTools.snippets.insertCurrent": "Chèn vào tệp hiện tại",
     "classroomTools.snippets.inserted": "Đã chèn “{title}”.",
     "classroomTools.snippets.count": "{count} snippet",
+    "classroomTools.library.sources": "Nguồn snippet",
+    "classroomTools.library.sourceBuiltin": "Mẫu có sẵn",
+    "classroomTools.library.sourcePersonal": "Của tôi",
+    "classroomTools.library.sourceClass": "Của lớp",
+    "classroomTools.library.saveOpen": "Lưu vào Kho",
+    "classroomTools.library.saveMenu": "Lưu vào Kho Snippet…",
+    "classroomTools.library.saveTitle": "Lưu vào Kho Snippet",
+    "classroomTools.library.editTitle": "Sửa snippet",
+    "classroomTools.library.fieldTitle": "Tiêu đề",
+    "classroomTools.library.fieldDescription": "Mô tả ngắn (tùy chọn)",
+    "classroomTools.library.fieldScope": "Phạm vi",
+    "classroomTools.library.scopePersonal": "Cá nhân",
+    "classroomTools.library.scopeClass": "Chia sẻ cho lớp",
+    "classroomTools.library.sourceFile":
+      "Nội dung: toàn bộ tệp {name} ({size}).",
+    "classroomTools.library.sourceSelection":
+      "Nội dung: đoạn đang chọn trong {name} ({size}).",
+    "classroomTools.library.sourceNone": "Hãy mở một tệp để lưu vào Kho.",
+    "classroomTools.library.sourceEmpty":
+      "Tệp đang mở trống — chưa có gì để lưu.",
+    "classroomTools.library.replaceContent": "Thay nội dung bằng mã đang mở",
+    "classroomTools.library.titleRequired": "Hãy nhập tiêu đề (1–120 ký tự).",
+    "classroomTools.library.saveSubmit": "Lưu vào Kho",
+    "classroomTools.library.saveChanges": "Lưu thay đổi",
+    "classroomTools.library.saving": "Đang lưu…",
+    "classroomTools.library.saved": "Đã lưu “{title}” vào Kho Snippet.",
+    "classroomTools.library.openNew": "Mở thành tệp mới",
+    "classroomTools.library.insertCurrent": "Chèn vào tệp đang mở",
+    "classroomTools.library.loadingDetail": "Đang tải…",
+    "classroomTools.library.detailError":
+      "Không tải được nội dung snippet. Hãy thử lại.",
+    "classroomTools.library.edit": "Sửa",
+    "classroomTools.library.editLabel": "Sửa snippet “{title}”",
+    "classroomTools.library.delete": "Xóa",
+    "classroomTools.library.deleteLabel": "Xóa snippet “{title}”",
+    "classroomTools.library.deleteConfirm":
+      "Xóa “{title}”? Không thể hoàn tác.",
+    "classroomTools.library.deleted": "Đã xóa “{title}” khỏi Kho Snippet.",
+    "classroomTools.library.loadMore": "Tải thêm",
+    "classroomTools.library.meta": "{author} · {file} · {size}",
+    "classroomTools.library.emptyPersonal":
+      "Bạn chưa lưu snippet nào. Bấm “Lưu vào Kho” để lưu mã đang mở.",
+    "classroomTools.library.emptyClass": "Lớp chưa có snippet chung.",
+    "classroomTools.library.loadError": "Không tải được Kho Snippet.",
+    "classroomTools.library.forbidden": "Bạn không có quyền xem kho này.",
+    "classroomTools.library.featureOff":
+      "Kho Snippet bền vững đang tắt cho workspace này.",
+    "classroomTools.library.errorSnippetQuota":
+      "Bạn đã đạt giới hạn số snippet. Hãy xóa bớt snippet cũ rồi lưu lại.",
+    "classroomTools.library.errorStorageQuota":
+      "Workspace đã hết dung lượng lưu mã. Hãy xóa bớt snippet hoặc bản nháp.",
+    "classroomTools.library.errorConflict":
+      "Snippet vừa được sửa ở nơi khác. Hãy mở lại rồi thử lại.",
+    "classroomTools.library.errorForbidden":
+      "Bạn không có quyền thực hiện thao tác này với snippet của lớp.",
+    "classroomTools.library.errorNotFound": "Snippet không còn tồn tại.",
+    "classroomTools.library.errorInvalid":
+      "Kiểm tra lại tiêu đề (1–120 ký tự), mô tả (tối đa 280 ký tự) và nội dung.",
+    "classroomTools.library.errorTooLarge": "Nội dung vượt quá 64 KB.",
+    "classroomTools.library.errorFailed": "Chưa lưu được. Hãy thử lại.",
+    "classroomTools.scratchpad.loading": "Đang tải bản nháp…",
+    "classroomTools.scratchpad.saving": "Đang lưu…",
+    "classroomTools.scratchpad.saved": "Đã lưu trên máy chủ",
+    "classroomTools.scratchpad.unsaved": "Có thay đổi chưa lưu",
+    "classroomTools.scratchpad.notSaved": "Chưa lưu lên máy chủ",
+    "classroomTools.scratchpad.conflictShort": "Có xung đột bản nháp",
+    "classroomTools.scratchpad.loadedFromServer":
+      "Đã mở bản nháp đã lưu trên máy chủ.",
+    "classroomTools.scratchpad.conflict":
+      "Bản nháp đã được cập nhật từ tab/thiết bị khác. Tự động lưu đang tạm dừng.",
+    "classroomTools.scratchpad.loadServer": "Tải bản trên máy chủ",
+    "classroomTools.scratchpad.overwrite": "Ghi đè bằng bản đang gõ",
+    "classroomTools.scratchpad.errorTooLarge":
+      "Bản nháp vượt 256 KB nên chưa lưu được lên máy chủ. Chữ đang gõ vẫn còn nguyên.",
+    "classroomTools.scratchpad.errorQuota":
+      "Workspace đã hết dung lượng lưu mã nên chưa lưu được bản nháp. Chữ đang gõ vẫn còn nguyên.",
+    "classroomTools.scratchpad.errorUnavailable":
+      "Bản nháp trên máy chủ không dùng được trong phòng này. Mã vẫn được giữ trên thiết bị.",
+    "classroomTools.scratchpad.errorFailed":
+      "Chưa lưu được bản nháp lên máy chủ. Chữ đang gõ vẫn còn nguyên.",
+    "classroomTools.scratchpad.share": "Gửi bài cho GV",
+    "classroomTools.scratchpad.shared": "Đã gửi GV · Ngừng chia sẻ",
+    "classroomTools.scratchpad.sharedOn":
+      "Đã gửi bài cho giáo viên. Giáo viên có thể xem (chỉ đọc) cho đến khi bạn ngừng chia sẻ.",
+    "classroomTools.scratchpad.sharedOff":
+      "Đã ngừng chia sẻ bài làm với giáo viên.",
+    "classroomTools.scratchpad.shareConflict":
+      "Hãy giải quyết xung đột bản nháp trước khi gửi bài.",
+    "classroomTools.scratchpad.shareUnsaved":
+      "Chưa lưu được bản nháp nên chưa gửi bài cho giáo viên.",
+    "classroomTools.scratchpad.shareFailed":
+      "Chưa thay đổi được việc chia sẻ. Hãy thử lại.",
+    "classroomTools.shared.button": "Bài học sinh",
+    "classroomTools.shared.buttonCount": "Bài học sinh ({count})",
+    "classroomTools.shared.title": "Bài học sinh",
+    "classroomTools.shared.close": "Đóng Bài học sinh",
+    "classroomTools.shared.refresh": "Làm mới",
+    "classroomTools.shared.hint":
+      "Chỉ hiện bài học sinh chủ động gửi. Xem chỉ đọc — mã không bao giờ tự chạy.",
+    "classroomTools.shared.loading": "Đang tải bài học sinh…",
+    "classroomTools.shared.empty": "Chưa có học sinh nào gửi bài.",
+    "classroomTools.shared.count": "{count} bài đang chia sẻ",
+    "classroomTools.shared.loadError": "Không tải được danh sách bài.",
+    "classroomTools.shared.forbidden":
+      "Chỉ đội ngũ giảng dạy của phòng mới xem được bài học sinh.",
+    "classroomTools.shared.itemMeta":
+      "{files} tệp · {language} · {size} · {time}",
+    "classroomTools.shared.loadingDetail": "Đang tải bài làm…",
+    "classroomTools.shared.detailError": "Không tải được bài làm.",
+    "classroomTools.shared.revoked": "Học sinh đã ngừng chia sẻ bài làm này.",
+    "classroomTools.shared.back": "Danh sách",
+    "classroomTools.shared.detailTitle": "Bài của {name}",
+    "classroomTools.shared.readOnly": "Chỉ đọc",
+    "classroomTools.shared.files": "Tệp của học sinh",
+    "classroomTools.shared.fileLabel": "Tệp {name} của {student} (chỉ đọc)",
+    "classroomTools.shared.stdin": "Dữ liệu vào (stdin)",
+    "classroomTools.shared.openCopy": "Mở bản sao vào Nháp của tôi",
+    "classroomTools.shared.comment": "Gửi nhận xét vào Trò chuyện",
+    "classroomTools.shared.commentOpened":
+      "Đã mở Trò chuyện để nhận xét cho {name}.",
+    "classroomTools.shared.copied":
+      "Đã mở bản sao bài của {name} trong Nháp của tôi. Mã chưa được chạy.",
+    "classroomTools.shared.copiedPartial":
+      "Bài của {name} lớn hơn giới hạn nên đã chép {copied}/{total} tệp vào Nháp của tôi. Mã chưa được chạy.",
+    "classroomTools.portable.export": "Xuất gói dự án (.json)",
+    "classroomTools.portable.import": "Nhập gói dự án (.json)",
+    "classroomTools.portable.exported": "Đã xuất {name}.",
+    "classroomTools.portable.exportFailed": "Chưa xuất được gói dự án.",
+    "classroomTools.portable.imported":
+      "Đã nhập {count} tệp vào Nháp của tôi. Mã chưa được chạy.",
+    "classroomTools.portable.importedPartial":
+      "Dự án lớn hơn giới hạn của Nháp của tôi nên đã nhập {copied}/{total} tệp (tệp đang mở trước). Mã chưa được chạy.",
+    "classroomTools.portable.errorChecksum":
+      "Gói dự án đã bị sửa đổi (sai mã kiểm tra checksum) nên đã bị từ chối.",
+    "classroomTools.portable.errorUnsafe":
+      "Gói dự án chứa khóa không an toàn nên đã bị từ chối.",
+    "classroomTools.portable.errorFormat":
+      "Đây không phải gói dự án TutorHub (tutorhub.code.workspace.v1).",
+    "classroomTools.portable.errorTooLarge":
+      "Gói dự án vượt giới hạn (tối đa 512 KB, 8 tệp, 64 KB mỗi tệp).",
+    "classroomTools.portable.errorCrypto":
+      "Trình duyệt này không kiểm tra được gói dự án.",
+    "classroomTools.portable.errorRead": "Không đọc được tệp đã chọn.",
+    "classroomTools.portable.errorInvalid":
+      "Gói dự án không hợp lệ nên đã bị từ chối.",
     "media.chat.codeCardLabel": "Đoạn mã {language}",
     "media.chat.codeCopy": "Sao chép mã",
     "media.chat.codeCopied": "Đã sao chép mã.",
@@ -7018,6 +7163,154 @@ const messages = {
     "classroomTools.snippets.insertCurrent": "Insert into current file",
     "classroomTools.snippets.inserted": "Inserted “{title}”.",
     "classroomTools.snippets.count": "{count} snippets",
+    "classroomTools.library.sources": "Snippet sources",
+    "classroomTools.library.sourceBuiltin": "Built-in",
+    "classroomTools.library.sourcePersonal": "Mine",
+    "classroomTools.library.sourceClass": "Class",
+    "classroomTools.library.saveOpen": "Save to library",
+    "classroomTools.library.saveMenu": "Save to snippet library…",
+    "classroomTools.library.saveTitle": "Save to snippet library",
+    "classroomTools.library.editTitle": "Edit snippet",
+    "classroomTools.library.fieldTitle": "Title",
+    "classroomTools.library.fieldDescription": "Short description (optional)",
+    "classroomTools.library.fieldScope": "Visibility",
+    "classroomTools.library.scopePersonal": "Personal",
+    "classroomTools.library.scopeClass": "Share with the class",
+    "classroomTools.library.sourceFile":
+      "Content: the whole file {name} ({size}).",
+    "classroomTools.library.sourceSelection":
+      "Content: the selection in {name} ({size}).",
+    "classroomTools.library.sourceNone": "Open a file to save it.",
+    "classroomTools.library.sourceEmpty":
+      "The open file is empty — nothing to save yet.",
+    "classroomTools.library.replaceContent":
+      "Replace content with the open code",
+    "classroomTools.library.titleRequired": "Enter a title (1–120 characters).",
+    "classroomTools.library.saveSubmit": "Save to library",
+    "classroomTools.library.saveChanges": "Save changes",
+    "classroomTools.library.saving": "Saving…",
+    "classroomTools.library.saved": "Saved “{title}” to the snippet library.",
+    "classroomTools.library.openNew": "Open as new file",
+    "classroomTools.library.insertCurrent": "Insert into open file",
+    "classroomTools.library.loadingDetail": "Loading…",
+    "classroomTools.library.detailError":
+      "Couldn't load the snippet. Try again.",
+    "classroomTools.library.edit": "Edit",
+    "classroomTools.library.editLabel": "Edit snippet “{title}”",
+    "classroomTools.library.delete": "Delete",
+    "classroomTools.library.deleteLabel": "Delete snippet “{title}”",
+    "classroomTools.library.deleteConfirm":
+      "Delete “{title}”? This can't be undone.",
+    "classroomTools.library.deleted":
+      "Deleted “{title}” from the snippet library.",
+    "classroomTools.library.loadMore": "Load more",
+    "classroomTools.library.meta": "{author} · {file} · {size}",
+    "classroomTools.library.emptyPersonal":
+      "No saved snippets yet. Choose “Save to library” to keep the open code.",
+    "classroomTools.library.emptyClass":
+      "The class has no shared snippets yet.",
+    "classroomTools.library.loadError": "Couldn't load the snippet library.",
+    "classroomTools.library.forbidden":
+      "You don't have access to this library.",
+    "classroomTools.library.featureOff":
+      "The durable snippet library is turned off for this workspace.",
+    "classroomTools.library.errorSnippetQuota":
+      "You reached the snippet limit. Delete an old snippet, then save again.",
+    "classroomTools.library.errorStorageQuota":
+      "The workspace is out of code storage. Delete some snippets or drafts.",
+    "classroomTools.library.errorConflict":
+      "The snippet was changed elsewhere. Reopen it and try again.",
+    "classroomTools.library.errorForbidden":
+      "You can't do this with class snippets.",
+    "classroomTools.library.errorNotFound": "The snippet no longer exists.",
+    "classroomTools.library.errorInvalid":
+      "Check the title (1–120 characters), description (up to 280) and content.",
+    "classroomTools.library.errorTooLarge": "The content is larger than 64 KB.",
+    "classroomTools.library.errorFailed": "Couldn't save. Try again.",
+    "classroomTools.scratchpad.loading": "Loading your draft…",
+    "classroomTools.scratchpad.saving": "Saving…",
+    "classroomTools.scratchpad.saved": "Saved on the server",
+    "classroomTools.scratchpad.unsaved": "Unsaved changes",
+    "classroomTools.scratchpad.notSaved": "Not saved on the server",
+    "classroomTools.scratchpad.conflictShort": "Draft conflict",
+    "classroomTools.scratchpad.loadedFromServer":
+      "Opened your draft saved on the server.",
+    "classroomTools.scratchpad.conflict":
+      "Your draft was updated from another tab or device. Autosave is paused.",
+    "classroomTools.scratchpad.loadServer": "Load the server copy",
+    "classroomTools.scratchpad.overwrite": "Overwrite with what I'm typing",
+    "classroomTools.scratchpad.errorTooLarge":
+      "The draft is over 256 KB, so it wasn't saved on the server. Your text is still here.",
+    "classroomTools.scratchpad.errorQuota":
+      "The workspace is out of code storage, so the draft wasn't saved. Your text is still here.",
+    "classroomTools.scratchpad.errorUnavailable":
+      "Server drafts aren't available in this room. Your code stays on this device.",
+    "classroomTools.scratchpad.errorFailed":
+      "Couldn't save the draft on the server. Your text is still here.",
+    "classroomTools.scratchpad.share": "Send to teacher",
+    "classroomTools.scratchpad.shared": "Sent to teacher · Stop sharing",
+    "classroomTools.scratchpad.sharedOn":
+      "Sent to your teacher. Teachers can view it (read-only) until you stop sharing.",
+    "classroomTools.scratchpad.sharedOff":
+      "Stopped sharing your work with teachers.",
+    "classroomTools.scratchpad.shareConflict":
+      "Resolve the draft conflict before sending your work.",
+    "classroomTools.scratchpad.shareUnsaved":
+      "The draft couldn't be saved, so it wasn't sent to your teacher.",
+    "classroomTools.scratchpad.shareFailed":
+      "Couldn't change sharing. Try again.",
+    "classroomTools.shared.button": "Student work",
+    "classroomTools.shared.buttonCount": "Student work ({count})",
+    "classroomTools.shared.title": "Student work",
+    "classroomTools.shared.close": "Close student work",
+    "classroomTools.shared.refresh": "Refresh",
+    "classroomTools.shared.hint":
+      "Only work students chose to send appears here. Read-only — code never runs by itself.",
+    "classroomTools.shared.loading": "Loading student work…",
+    "classroomTools.shared.empty": "No student has sent work yet.",
+    "classroomTools.shared.count": "{count} shared",
+    "classroomTools.shared.loadError": "Couldn't load the list.",
+    "classroomTools.shared.forbidden":
+      "Only the room's teaching staff can view student work.",
+    "classroomTools.shared.itemMeta":
+      "{files} files · {language} · {size} · {time}",
+    "classroomTools.shared.loadingDetail": "Loading the work…",
+    "classroomTools.shared.detailError": "Couldn't load the work.",
+    "classroomTools.shared.revoked": "The student stopped sharing this work.",
+    "classroomTools.shared.back": "List",
+    "classroomTools.shared.detailTitle": "{name}'s work",
+    "classroomTools.shared.readOnly": "Read-only",
+    "classroomTools.shared.files": "Student files",
+    "classroomTools.shared.fileLabel": "{student}'s file {name} (read-only)",
+    "classroomTools.shared.stdin": "Input (stdin)",
+    "classroomTools.shared.openCopy": "Open a copy in My draft",
+    "classroomTools.shared.comment": "Comment in chat",
+    "classroomTools.shared.commentOpened": "Opened chat to comment for {name}.",
+    "classroomTools.shared.copied":
+      "Opened a copy of {name}'s work in My draft. It has not been run.",
+    "classroomTools.shared.copiedPartial":
+      "{name}'s work is over the limit, so {copied} of {total} files were copied into My draft. It has not been run.",
+    "classroomTools.portable.export": "Export project (.json)",
+    "classroomTools.portable.import": "Import project (.json)",
+    "classroomTools.portable.exported": "Exported {name}.",
+    "classroomTools.portable.exportFailed": "Couldn't export the project.",
+    "classroomTools.portable.imported":
+      "Imported {count} files into My draft. Nothing has been run.",
+    "classroomTools.portable.importedPartial":
+      "The project is over My draft's limit, so {copied} of {total} files were imported (open file first). Nothing has been run.",
+    "classroomTools.portable.errorChecksum":
+      "The project file was modified (checksum mismatch) and was refused.",
+    "classroomTools.portable.errorUnsafe":
+      "The project file contains unsafe keys and was refused.",
+    "classroomTools.portable.errorFormat":
+      "This isn't a TutorHub project file (tutorhub.code.workspace.v1).",
+    "classroomTools.portable.errorTooLarge":
+      "The project is over the limits (512 KB, 8 files, 64 KB per file).",
+    "classroomTools.portable.errorCrypto":
+      "This browser can't verify project files.",
+    "classroomTools.portable.errorRead": "Couldn't read the chosen file.",
+    "classroomTools.portable.errorInvalid":
+      "The project file is invalid and was refused.",
     "media.chat.codeCardLabel": "{language} code",
     "media.chat.codeCopy": "Copy code",
     "media.chat.codeCopied": "Code copied.",

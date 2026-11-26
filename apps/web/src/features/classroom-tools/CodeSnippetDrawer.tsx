@@ -1,5 +1,7 @@
-import { FilePlus, TextCursorInput, X } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@tutorhub/ui";
+import { BookmarkPlus, FilePlus, TextCursorInput, X } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -9,11 +11,17 @@ import {
 } from "react";
 import { useI18n } from "../../app/i18n";
 import {
+  CodeSnippetForm,
+  ServerSnippetList,
+  type CodeSnippetSaveSource,
+  type ServerSnippetEditTarget,
+} from "./CodeLibraryPanels";
+import {
   CODE_LANGUAGE_IDS,
   CODE_LANGUAGES,
+  type CodeFileLanguage,
   type CodeLanguageID,
 } from "./codeLanguages";
-import type { CodeSnippet } from "./snippetLibrary";
 
 type SnippetModule = typeof import("./snippetLibrary");
 
@@ -27,6 +35,39 @@ function loadSnippets(): Promise<SnippetModule> {
   return snippetModule;
 }
 
+/** A snippet ready to become a file or to be inserted (never run). */
+export interface InsertableCode {
+  readonly content: string;
+  readonly language: CodeFileLanguage;
+  readonly name: string;
+  readonly title: string;
+}
+
+export type { CodeSnippetSaveSource };
+
+/**
+ * ROOM-TOOLS-CODE-03B: the durable library (`code_snippet_library`). Without
+ * it the drawer is the Slice 1 built-in library exactly.
+ */
+export interface CodeSnippetLibraryOptions {
+  readonly classID: string | null;
+  /** Display only: the server still decides who may manage class snippets. */
+  readonly isStaff: boolean;
+  /** Open straight on the "Save to library" form. */
+  readonly initialView?: "browse" | "save";
+  readonly onSaved: (title: string) => void;
+  /** The open file, or its selection, at the moment the form opens. */
+  readonly readSource: () => CodeSnippetSaveSource | null;
+  readonly tenantID: string;
+}
+
+type DrawerSource = "builtin" | "personal" | "class";
+
+type DrawerView =
+  | { readonly kind: "browse" }
+  | { readonly kind: "save" }
+  | { readonly kind: "edit"; readonly target: ServerSnippetEditTarget };
+
 /**
  * ROOM-TOOLS-CODE-01 "Kho Snippet": a slide-over inside the Code card (it
  * never covers the camera strip or the chat inspector). Search is
@@ -36,6 +77,7 @@ function loadSnippets(): Promise<SnippetModule> {
 export function CodeSnippetDrawer({
   canInsertIntoCurrent,
   canInsertNew = true,
+  library,
   onClose,
   onInsertCurrent,
   onInsertNew,
@@ -43,9 +85,216 @@ export function CodeSnippetDrawer({
   canInsertIntoCurrent: boolean;
   /** `false` in a read-only shared workspace (ROOM-TOOLS-CODE-02B). */
   canInsertNew?: boolean;
+  library?: CodeSnippetLibraryOptions;
   onClose: () => void;
-  onInsertCurrent: (snippet: CodeSnippet) => void;
-  onInsertNew: (snippet: CodeSnippet) => void;
+  onInsertCurrent: (code: InsertableCode) => void;
+  onInsertNew: (code: InsertableCode) => void;
+}) {
+  const { t } = useI18n();
+  const id = useId();
+  const [source, setSource] = useState<DrawerSource>("builtin");
+  const [view, setView] = useState<DrawerView>(() =>
+    library?.initialView === "save" ? { kind: "save" } : { kind: "browse" },
+  );
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  const focusClaimed = useRef(false);
+  const classID = library?.classID ?? null;
+  const claimFocus = useCallback(() => {
+    if (focusClaimed.current) return false;
+    focusClaimed.current = true;
+    return true;
+  }, []);
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Escape") return;
+    if (
+      event.target instanceof HTMLInputElement &&
+      event.target.type === "search" &&
+      event.target.value
+    ) {
+      return; // Escape first clears a filled search box (browser default).
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (view.kind !== "browse" && library?.initialView !== "save") {
+      backToBrowse();
+      return;
+    }
+    onClose();
+  };
+
+  const backToBrowse = (next?: DrawerSource) => {
+    setView({ kind: "browse" });
+    if (next) setSource(next);
+    globalThis.setTimeout(() => saveButtonRef.current?.focus(), 0);
+  };
+
+  const builtin = (
+    <BuiltinSnippetBrowser
+      claimFocus={claimFocus}
+      canInsertIntoCurrent={canInsertIntoCurrent}
+      canInsertNew={canInsertNew}
+      onInsertCurrent={onInsertCurrent}
+      onInsertNew={onInsertNew}
+    />
+  );
+
+  return (
+    <aside
+      aria-labelledby={`${id}-title`}
+      className="classroom-code-snippets"
+      data-library={library ? "true" : undefined}
+      onKeyDown={handleKeyDown}
+    >
+      <header className="classroom-code-snippets__header">
+        <h3 className="classroom-code-snippets__title" id={`${id}-title`}>
+          {t("classroomTools.snippets.title")}
+        </h3>
+        <span className="classroom-code-snippets__header-actions">
+          {library && view.kind === "browse" ? (
+            <button
+              className="classroom-code-text-button"
+              onClick={() => setView({ kind: "save" })}
+              ref={saveButtonRef}
+              type="button"
+            >
+              <BookmarkPlus aria-hidden="true" />
+              {t("classroomTools.library.saveOpen")}
+            </button>
+          ) : null}
+          <button
+            aria-label={t("classroomTools.snippets.close")}
+            className="classroom-code-icon-button"
+            data-tooltip={t("classroomTools.snippets.close")}
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" />
+          </button>
+        </span>
+      </header>
+      {!library ? (
+        builtin
+      ) : view.kind === "save" ? (
+        <CodeSnippetForm
+          classID={classID}
+          isStaff={library.isStaff}
+          mode={{ kind: "create" }}
+          onCancel={() =>
+            library.initialView === "save" ? onClose() : backToBrowse()
+          }
+          onDone={(saved) => {
+            library.onSaved(saved.title);
+            backToBrowse(saved.visibility === "class" ? "class" : "personal");
+          }}
+          readSource={library.readSource}
+          tenantID={library.tenantID}
+        />
+      ) : view.kind === "edit" ? (
+        <CodeSnippetForm
+          classID={classID}
+          isStaff={library.isStaff}
+          mode={{ kind: "edit", target: view.target }}
+          onCancel={() => backToBrowse()}
+          onDone={(saved) => {
+            library.onSaved(saved.title);
+            backToBrowse();
+          }}
+          readSource={library.readSource}
+          tenantID={library.tenantID}
+        />
+      ) : (
+        <Tabs
+          className="classroom-code-snippets__tabs"
+          onValueChange={(value) => {
+            if (value === "builtin" || value === "personal") setSource(value);
+            else if (value === "class" && classID !== null) setSource(value);
+          }}
+          value={source === "class" && classID === null ? "builtin" : source}
+        >
+          <TabsList
+            aria-label={t("classroomTools.library.sources")}
+            className="classroom-code-snippets__tablist"
+          >
+            <TabsTrigger
+              className="classroom-code-snippets__tab"
+              value="builtin"
+            >
+              {t("classroomTools.library.sourceBuiltin")}
+            </TabsTrigger>
+            <TabsTrigger
+              className="classroom-code-snippets__tab"
+              value="personal"
+            >
+              {t("classroomTools.library.sourcePersonal")}
+            </TabsTrigger>
+            {classID !== null ? (
+              <TabsTrigger
+                className="classroom-code-snippets__tab"
+                value="class"
+              >
+                {t("classroomTools.library.sourceClass")}
+              </TabsTrigger>
+            ) : null}
+          </TabsList>
+          <TabsContent
+            className="classroom-code-snippets__panel"
+            value="builtin"
+          >
+            {builtin}
+          </TabsContent>
+          <TabsContent
+            className="classroom-code-snippets__panel"
+            value="personal"
+          >
+            <ServerSnippetList
+              canInsertIntoCurrent={canInsertIntoCurrent}
+              canInsertNew={canInsertNew}
+              classID={null}
+              onEdit={(target) => setView({ kind: "edit", target })}
+              onInsertCurrent={onInsertCurrent}
+              onInsertNew={onInsertNew}
+              scope="personal"
+              tenantID={library.tenantID}
+            />
+          </TabsContent>
+          {classID !== null ? (
+            <TabsContent
+              className="classroom-code-snippets__panel"
+              value="class"
+            >
+              <ServerSnippetList
+                canInsertIntoCurrent={canInsertIntoCurrent}
+                canInsertNew={canInsertNew}
+                classID={classID}
+                onEdit={(target) => setView({ kind: "edit", target })}
+                onInsertCurrent={onInsertCurrent}
+                onInsertNew={onInsertNew}
+                scope="class"
+                tenantID={library.tenantID}
+              />
+            </TabsContent>
+          ) : null}
+        </Tabs>
+      )}
+    </aside>
+  );
+}
+
+/** The Slice 1 pedagogy library, bundled as its own lazy chunk. */
+function BuiltinSnippetBrowser({
+  claimFocus,
+  canInsertIntoCurrent,
+  canInsertNew,
+  onInsertCurrent,
+  onInsertNew,
+}: {
+  /** True once: the first mount takes focus, later tab switches do not. */
+  claimFocus: () => boolean;
+  canInsertIntoCurrent: boolean;
+  canInsertNew: boolean;
+  onInsertCurrent: (code: InsertableCode) => void;
+  onInsertNew: (code: InsertableCode) => void;
 }) {
   const { language: uiLanguage, t } = useI18n();
   const id = useId();
@@ -72,44 +321,16 @@ export function CodeSnippetDrawer({
   }, [attempt]);
 
   useEffect(() => {
-    searchRef.current?.focus();
-  }, []);
+    if (claimFocus()) searchRef.current?.focus();
+  }, [claimFocus]);
 
   const results = useMemo(
     () => (library ? library.searchCodeSnippets(query, filter) : []),
     [filter, library, query],
   );
 
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Escape") return;
-    if (event.target instanceof HTMLInputElement && event.target.value) {
-      return; // Escape first clears a filled search box (browser default).
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    onClose();
-  };
-
   return (
-    <aside
-      aria-labelledby={`${id}-title`}
-      className="classroom-code-snippets"
-      onKeyDown={handleKeyDown}
-    >
-      <header className="classroom-code-snippets__header">
-        <h3 className="classroom-code-snippets__title" id={`${id}-title`}>
-          {t("classroomTools.snippets.title")}
-        </h3>
-        <button
-          aria-label={t("classroomTools.snippets.close")}
-          className="classroom-code-icon-button"
-          data-tooltip={t("classroomTools.snippets.close")}
-          onClick={onClose}
-          type="button"
-        >
-          <X aria-hidden="true" />
-        </button>
-      </header>
+    <>
       <label className="visually-hidden" htmlFor={`${id}-search`}>
         {t("classroomTools.snippets.search")}
       </label>
@@ -178,6 +399,12 @@ export function CodeSnippetDrawer({
               ? snippet.description.vi
               : snippet.description.en;
           const titleID = `${id}-${snippet.id}`;
+          const code: InsertableCode = {
+            content: snippet.code,
+            language: snippet.language,
+            name: snippet.fileName,
+            title,
+          };
           return (
             <li className="classroom-code-snippet" key={snippet.id}>
               <article aria-labelledby={titleID}>
@@ -203,7 +430,7 @@ export function CodeSnippetDrawer({
                     aria-describedby={titleID}
                     className="classroom-code-text-button"
                     disabled={!canInsertNew}
-                    onClick={() => onInsertNew(snippet)}
+                    onClick={() => onInsertNew(code)}
                     type="button"
                   >
                     <FilePlus aria-hidden="true" />
@@ -213,7 +440,7 @@ export function CodeSnippetDrawer({
                     aria-describedby={titleID}
                     className="classroom-code-text-button"
                     disabled={!canInsertIntoCurrent}
-                    onClick={() => onInsertCurrent(snippet)}
+                    onClick={() => onInsertCurrent(code)}
                     type="button"
                   >
                     <TextCursorInput aria-hidden="true" />
@@ -225,6 +452,6 @@ export function CodeSnippetDrawer({
           );
         })}
       </ul>
-    </aside>
+    </>
   );
 }

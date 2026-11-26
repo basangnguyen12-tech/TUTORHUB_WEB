@@ -83,6 +83,9 @@ export function MediaSpaceRoomPage() {
     <MediaSpaceRoomSession
       displayName={session.currentUser?.user.display_name ?? ""}
       key={scopeKey}
+      organizationAdmin={
+        session.currentUser?.active_tenant?.role === "org_admin"
+      }
       roomInstanceId={roomInstanceId}
       spaceId={spaceId}
       tenantId={tenantId}
@@ -94,6 +97,7 @@ export function MediaSpaceRoomPage() {
 
 function MediaSpaceRoomSession({
   displayName,
+  organizationAdmin,
   roomInstanceId,
   spaceId,
   tenantId,
@@ -101,6 +105,8 @@ function MediaSpaceRoomSession({
   workspaceName,
 }: {
   displayName: string;
+  /** ROOM-TOOLS-CODE-03B: display hint only; the server enforces rights. */
+  organizationAdmin: boolean;
   roomInstanceId: string | undefined;
   spaceId: string | undefined;
   tenantId: string;
@@ -140,6 +146,12 @@ function MediaSpaceRoomSession({
     codeToolEnabled === true &&
     tenantCapabilities.data?.features.classroom_code_collaboration.enabled ===
       true;
+  // ROOM-TOOLS-CODE-03B: durable snippets, the server draft and "Gửi bài cho
+  // GV" need both the Code tool and `code_snippet_library`.
+  const codeLibraryEnabled =
+    codeToolEnabled === true &&
+    tenantCapabilities.data?.features.code_snippet_library.enabled === true;
+  const codeClassID = mediaSpaceClassID(mediaSpace.data?.source);
   const [handoff, setHandoff] = useState(() => {
     if (!spaceId || !roomInstanceId || !tenantId || !userId) {
       clearMediaRoomEscrow();
@@ -343,6 +355,19 @@ function MediaSpaceRoomSession({
       snapshotServerTime + elapsedClientTime,
     );
   }, [signalClock, signalQuery.data, signalQuery.dataUpdatedAt]);
+  // ROOM-TOOLS-CODE-03B: teaching-staff UI ("Bài học sinh", class snippets)
+  // for the room's host / co-host / TA, an org admin or an admissions manager.
+  // Display only — the server answers 404/403 to anyone else.
+  const selfInstanceRole = signalProjection?.roster.find(
+    (participant) =>
+      participant.participant_key === signalProjection.self_participant_key,
+  )?.instance_role;
+  const isCodeStaff =
+    selfInstanceRole === "host" ||
+    selfInstanceRole === "co_host" ||
+    selfInstanceRole === "teaching_assistant" ||
+    organizationAdmin ||
+    viewerOperations.canManageAdmissions;
 
   const reportDiagnostic = useCallback(
     (
@@ -667,10 +692,13 @@ function MediaSpaceRoomSession({
           <ClassroomCodeTool
             actorID={userId}
             chatCanPost={chatCanPost}
+            classID={codeClassID}
             codeRoster={codeRoster}
             collaborationEnabled={codeCollaborationEnabled}
             displayName={displayName}
             enabled={codeToolEnabled}
+            isStaff={isCodeStaff}
+            libraryEnabled={codeLibraryEnabled}
             mediaSpaceID={spaceId}
             onSendToChat={sendCodeToChat}
             session={codeSession}
@@ -716,6 +744,24 @@ function MediaSpaceRoomSession({
 function credentialExpired(expiresAt: string): boolean {
   const parsed = Date.parse(expiresAt);
   return !Number.isFinite(parsed) || parsed <= Date.now();
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/**
+ * ROOM-TOOLS-CODE-03B: the class behind a class room, when the server source
+ * projects one (`class_id`); a study meeting or a source without it has none
+ * (the "Của lớp" snippets stay hidden and the server stays the authority).
+ */
+function mediaSpaceClassID(source: unknown): string | null {
+  if (typeof source !== "object" || source === null) return null;
+  const record = source as Record<string, unknown>;
+  if (record.kind === "study_meeting") return null;
+  const classID = record.class_id;
+  return typeof classID === "string" && UUID_PATTERN.test(classID)
+    ? classID
+    : null;
 }
 
 function mediaP404ViewerOperations(value: unknown): {

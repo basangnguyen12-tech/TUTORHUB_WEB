@@ -26,6 +26,11 @@ export interface ClassroomCodeToolProps {
   /** Whether the viewer may post in room chat right now (ADR-0042). */
   readonly chatCanPost: boolean;
   /**
+   * ROOM-TOOLS-CODE-03B: the class behind the room, when the server projects
+   * one — enables the "Của lớp" snippets. `null` for study meetings.
+   */
+  readonly classID?: string | null;
+  /**
    * ROOM-TOOLS-CODE-02B: the server roster (participant keys, sequences and
    * names) used to colour shared-workspace cursors with the 8-tone palette.
    */
@@ -43,6 +48,17 @@ export interface ClassroomCodeToolProps {
    * while tenant capabilities load; `false` renders the feature-off state.
    */
   readonly enabled?: boolean;
+  /**
+   * ROOM-TOOLS-CODE-03B: shows teaching-staff UI ("Bài học sinh", class
+   * snippets). Display only — the server enforces every right (404/403).
+   */
+  readonly isStaff?: boolean;
+  /**
+   * ROOM-TOOLS-CODE-03B: `classroom_code_tool` and `code_snippet_library` are
+   * both on — durable snippets, the server draft and "Gửi bài cho GV". Off
+   * (the default) keeps Slice 1/2 exactly: no library or scratchpad calls.
+   */
+  readonly libraryEnabled?: boolean;
   readonly mediaSpaceID: string;
   readonly onSendToChat?: (text: string) => void;
   readonly session: ClassroomCodeSession;

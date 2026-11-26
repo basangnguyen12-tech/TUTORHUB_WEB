@@ -5094,6 +5094,11 @@ export type components = {
       readonly next_cursor: string | null;
     };
     readonly ClassSessionMediaSpaceSource: {
+      /**
+       * Format: uuid
+       * @description Owning class identifier projected by the server for class-backed media spaces.
+       */
+      readonly class_id?: string;
       /** Format: uuid */
       readonly class_session_id: string;
       /**
@@ -5103,6 +5108,11 @@ export type components = {
       readonly kind: "class_session";
     };
     readonly ClassSessionOccurrenceMediaSpaceSource: {
+      /**
+       * Format: uuid
+       * @description Owning class identifier projected by the server for recurring class-backed media spaces.
+       */
+      readonly class_id?: string;
       /**
        * @description discriminator enum property added by openapi-typescript
        * @enum {string}

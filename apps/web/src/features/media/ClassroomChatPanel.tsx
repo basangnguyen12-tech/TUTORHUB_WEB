@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -42,6 +43,7 @@ import {
   type RefObject,
 } from "react";
 import { useI18n, type TranslationKey } from "../../app/i18n";
+import type { ChatCodeToken } from "../classroom-tools/chatCodeHighlight";
 import { splitChatCodeBlocks } from "../classroom-tools/codeFence";
 import {
   CODE_LANGUAGES,
@@ -1400,6 +1402,78 @@ function ChatBubble({
   );
 }
 
+/**
+ * ROOM-TOOLS-CODE-03B: syntax colours load on demand. The chat chunk only
+ * holds this `import()` and a small token cache; the tokenizer and each
+ * language parser are separate chunks, fetched once a highlightable card is
+ * on screen. Until then (or if loading fails) the card shows plain text in
+ * the same `<pre><code>`, so the layout never shifts.
+ */
+const CHAT_HIGHLIGHT_MAX_CHARACTERS = 4_000;
+const CHAT_HIGHLIGHT_CACHE_LIMIT = 64;
+const chatHighlightCache = new Map<string, readonly ChatCodeToken[]>();
+let chatHighlightModule: Promise<
+  typeof import("../classroom-tools/chatCodeHighlight")
+> | null = null;
+
+function loadChatHighlight() {
+  chatHighlightModule ??= import("../classroom-tools/chatCodeHighlight").catch(
+    (error: unknown) => {
+      chatHighlightModule = null;
+      throw error;
+    },
+  );
+  return chatHighlightModule;
+}
+
+function rememberChatHighlight(key: string, tokens: readonly ChatCodeToken[]) {
+  chatHighlightCache.delete(key);
+  chatHighlightCache.set(key, tokens);
+  if (chatHighlightCache.size > CHAT_HIGHLIGHT_CACHE_LIMIT) {
+    const oldest = chatHighlightCache.keys().next().value;
+    if (oldest !== undefined) chatHighlightCache.delete(oldest);
+  }
+}
+
+function useChatCodeTokens(
+  code: string,
+  language: CodeFileLanguage | null,
+): readonly ChatCodeToken[] | null {
+  const key =
+    language !== null &&
+    code.length > 0 &&
+    code.length <= CHAT_HIGHLIGHT_MAX_CHARACTERS
+      ? `${language}\u0000${code}`
+      : null;
+  const [loaded, setLoaded] = useState<{
+    readonly key: string;
+    readonly tokens: readonly ChatCodeToken[];
+  } | null>(null);
+  useEffect(() => {
+    if (key === null || language === null || chatHighlightCache.has(key)) {
+      return undefined;
+    }
+    let active = true;
+    loadChatHighlight()
+      .then((module) => module.highlightChatCode(code, language))
+      .then(
+        (tokens) => {
+          if (!tokens) return;
+          rememberChatHighlight(key, tokens);
+          if (active) setLoaded({ key, tokens });
+        },
+        () => undefined, // Plain text stays: colour is an enhancement.
+      );
+    return () => {
+      active = false;
+    };
+  }, [code, key, language]);
+  if (key === null) return null;
+  return (
+    chatHighlightCache.get(key) ?? (loaded?.key === key ? loaded.tokens : null)
+  );
+}
+
 function ChatCodeCard({
   code,
   language,
@@ -1415,6 +1489,7 @@ function ChatCodeCard({
 }) {
   const { t } = useI18n();
   const labelID = useId();
+  const tokens = useChatCodeTokens(code, language);
   const languageLabel = language
     ? CODE_LANGUAGES[language].label
     : tag.trim() || t("media.chat.codeUnknownLanguage");
@@ -1454,7 +1529,23 @@ function ChatCodeCard({
         className="classroom-chat__code-body"
         tabIndex={0}
       >
-        <code>{code}</code>
+        <code data-highlighted={tokens ? "true" : undefined}>
+          {tokens
+            ? tokens.map((piece, index) =>
+                piece.token ? (
+                  <span
+                    className="classroom-chat__token"
+                    data-token={piece.token}
+                    key={index}
+                  >
+                    {piece.text}
+                  </span>
+                ) : (
+                  <Fragment key={index}>{piece.text}</Fragment>
+                ),
+              )
+            : code}
+        </code>
       </pre>
     </figure>
   );

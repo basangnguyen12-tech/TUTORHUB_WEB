@@ -695,10 +695,13 @@ function renderedCodeTool():
   | {
       autoOpenKey?: string | null;
       props?: {
+        classID?: string | null;
         codeRoster?: unknown;
         collaborationEnabled?: boolean;
         displayName?: string;
         enabled?: boolean;
+        isStaff?: boolean;
+        libraryEnabled?: boolean;
       };
     }
   | undefined {
@@ -708,10 +711,13 @@ function renderedCodeTool():
           autoOpenKey?: string | null;
           content?: {
             props?: {
+              classID?: string | null;
               codeRoster?: unknown;
               collaborationEnabled?: boolean;
               displayName?: string;
               enabled?: boolean;
+              isStaff?: boolean;
+              libraryEnabled?: boolean;
             };
           };
           id: string;
@@ -1199,6 +1205,106 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     expect(renderedCodeTool()?.autoOpenKey).toBeNull();
     expect(renderedCodeTool()?.props?.collaborationEnabled).toBe(true);
   });
+
+  it("wires the durable Code library, the class and the staff hint from server projections only (ROOM-TOOLS-CODE-03B)", async () => {
+    const classID = "2a6f4d0b-0f27-4c3e-9a40-6c7d3c1d5e21";
+    const capabilities = tenantCapabilitiesWithCodeTool(true);
+    apiMocks.getTenantCapabilities.mockResolvedValue({
+      ...capabilities,
+      features: {
+        ...capabilities.features,
+        code_snippet_library: { configured_enabled: true, enabled: true },
+      },
+    });
+    apiMocks.resolveWhiteboard.mockResolvedValue(
+      whiteboardProjection({ status: "suspended" }),
+    );
+    apiMocks.getMediaSpace.mockResolvedValue({
+      ...mediaSpace,
+      source: {
+        ...mediaSpace.source,
+        class_id: classID,
+      } as unknown as MediaSpace["source"],
+    });
+    const attendee = await apiMocks.listParticipants();
+    apiMocks.listParticipants.mockResolvedValue({
+      ...attendee,
+      participants: attendee.participants.map(
+        (participant: Record<string, unknown>) => ({
+          ...participant,
+          instance_role: "teaching_assistant",
+        }),
+      ),
+    });
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    await waitFor(() =>
+      expect(renderedCodeTool()?.props?.libraryEnabled).toBe(true),
+    );
+    // Before the server roster arrives, a student account is not staff.
+    expect(renderedCodeTool()?.props).toMatchObject({
+      classID,
+      isStaff: false,
+      libraryEnabled: true,
+    });
+
+    act(() => emitRoomEvent("connected"));
+    await waitFor(() => expect(renderedCodeTool()?.props?.isStaff).toBe(true));
+    expect(renderedCodeTool()?.props?.classID).toBe(classID);
+  });
+
+  it.each([
+    {
+      label: "the library switch off",
+      library: false,
+      source: { kind: "class_session", class_session_id: sessionID },
+    },
+    {
+      label: "a study meeting",
+      library: true,
+      source: {
+        class_id: "2a6f4d0b-0f27-4c3e-9a40-6c7d3c1d5e21",
+        kind: "study_meeting",
+        study_meeting_id: sessionID,
+      },
+    },
+  ])(
+    "keeps the class snippets and the library closed for $label",
+    async ({ library, source }) => {
+      const capabilities = tenantCapabilitiesWithCodeTool(true);
+      apiMocks.getTenantCapabilities.mockResolvedValue({
+        ...capabilities,
+        features: {
+          ...capabilities.features,
+          code_snippet_library: {
+            configured_enabled: library,
+            enabled: library,
+          },
+        },
+      });
+      apiMocks.resolveWhiteboard.mockResolvedValue(
+        whiteboardProjection({ status: "suspended" }),
+      );
+      apiMocks.getMediaSpace.mockResolvedValue({
+        ...mediaSpace,
+        source: source as unknown as MediaSpace["source"],
+      });
+      putCanonicalRoomEscrow();
+      renderCanonicalRoom();
+
+      await screen.findByRole("heading", { name: "TutorHub classroom" });
+      await waitFor(() => expect(renderedCodeToolEnabled()).toBe(true));
+      act(() => emitRoomEvent("connected"));
+      await waitFor(() => expect(apiMocks.listParticipants).toHaveBeenCalled());
+      expect(renderedCodeTool()?.props).toMatchObject({
+        classID: null,
+        isStaff: false,
+        libraryEnabled: library,
+      });
+    },
+  );
 
   it("renders the Enter Meeting studio with only the reference surfaces", async () => {
     renderPrejoin(fakeMediaDevices(fakeStream().stream), {

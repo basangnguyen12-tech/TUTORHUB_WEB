@@ -53,6 +53,7 @@ var (
 // accepted only in CreateSourceInput and is never persisted or returned.
 type SourceReference struct {
 	Kind           SourceKind `json:"kind"`
+	ClassID        *uuid.UUID `json:"class_id,omitempty"`
 	ClassSessionID *uuid.UUID `json:"class_session_id,omitempty"`
 	SeriesID       *uuid.UUID `json:"series_id,omitempty"`
 	OccurrenceKey  string     `json:"occurrence_key,omitempty"`

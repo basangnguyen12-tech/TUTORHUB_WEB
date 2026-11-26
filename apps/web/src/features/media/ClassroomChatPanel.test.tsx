@@ -886,6 +886,93 @@ describe("ClassroomChatPanel", () => {
       expect(alertSpy).not.toHaveBeenCalled();
     });
 
+    /** Every child is a text node or a `<span>` holding only text nodes. */
+    function onlyTextSpans(body: HTMLElement): boolean {
+      return Array.from(body.childNodes).every(
+        (node) =>
+          node.nodeType === Node.TEXT_NODE ||
+          (node instanceof HTMLSpanElement &&
+            Array.from(node.childNodes).every(
+              (child) => child.nodeType === Node.TEXT_NODE,
+            )),
+      );
+    }
+
+    it("colours a python card lazily with text-node spans and keeps Copy exact (ROOM-TOOLS-CODE-03B)", async () => {
+      const code = "# tính tổng\nfor i in range(3):\n    print('xin chào', i)";
+      renderPanel({
+        messages: [message(`\`\`\`python\n${code}\n\`\`\``)],
+        onOpenInCode: vi.fn(),
+      });
+      const card = screen.getByRole("figure", { name: "Đoạn mã Python" });
+      const body = card.querySelector("pre code") as HTMLElement;
+      // Plain text first, in the same element (no layout swap).
+      expect(body.textContent).toBe(code);
+      await waitFor(() =>
+        expect(body).toHaveAttribute("data-highlighted", "true"),
+      );
+      expect(body.textContent).toBe(code);
+      expect(onlyTextSpans(body)).toBe(true);
+      const keywords = Array.from(
+        body.querySelectorAll('span[data-token="keyword"]'),
+      ).map((span) => span.textContent);
+      expect(keywords).toEqual(expect.arrayContaining(["for", "in"]));
+      expect(body.querySelector('span[data-token="string"]')?.textContent).toBe(
+        "'xin chào'",
+      );
+      expect(
+        body.querySelector('span[data-token="comment"]')?.textContent,
+      ).toBe("# tính tổng");
+
+      fireEvent.click(
+        within(card).getByRole("button", { name: "Sao chép mã" }),
+      );
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(code));
+    });
+
+    it("keeps a highlighted HTML payload inert", async () => {
+      const alertSpy = vi.fn();
+      vi.stubGlobal("alert", alertSpy);
+      const payload =
+        '<img src=x onerror=alert(1)><script>alert(2)</script><a href="javascript:alert(3)">x</a>';
+      const { view } = renderPanel({
+        messages: [message(`\`\`\`html\n${payload}\n\`\`\``)],
+      });
+      const body = view.container.querySelector(
+        ".classroom-chat__code pre code",
+      ) as HTMLElement;
+      await waitFor(() =>
+        expect(body).toHaveAttribute("data-highlighted", "true"),
+      );
+      expect(body.textContent).toBe(payload);
+      expect(onlyTextSpans(body)).toBe(true);
+      expect(body.querySelector('span[data-token="tag"]')).not.toBeNull();
+      expect(
+        view.container.querySelector("img, script, a[href^='javascript']"),
+      ).toBeNull();
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
+
+    it("leaves unknown languages and long blocks as plain text", async () => {
+      const long = "x = 1\n".repeat(800);
+      const { view } = renderPanel({
+        messages: [
+          message("```text\nchỉ là chữ\n```"),
+          message(`\`\`\`python\n${long}\`\`\``),
+        ],
+      });
+      // Give a lazy load every chance to (wrongly) happen.
+      await act(async () => {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, 50));
+      });
+      for (const body of view.container.querySelectorAll(
+        ".classroom-chat__code pre code",
+      )) {
+        expect(body).not.toHaveAttribute("data-highlighted");
+        expect(body.querySelector("span")).toBeNull();
+      }
+    });
+
     it("prefills the composer from the Code tool without sending or touching the host lock", async () => {
       const fence = "```python\nprint(1)\n```";
       const store = createClassroomChatComposerStore();

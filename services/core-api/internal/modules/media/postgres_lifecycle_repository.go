@@ -1351,7 +1351,7 @@ WHERE tenant_id = $1 AND created_by = $2 AND create_idempotency_key = $3`,
 	if err != nil {
 		return spaceRow{}, nil, err
 	}
-	row.Source = sourceFromSQL(sourceKind, classSessionID, seriesID, occurrence, studyMeetingID)
+	row.Source = sourceFromSQL(sourceKind, classID, classSessionID, seriesID, occurrence, studyMeetingID)
 	return row, fingerprint, nil
 }
 
@@ -1368,19 +1368,24 @@ func scanSpace(row interface{ Scan(...any) error }) (spaceRow, error) {
 	if err != nil {
 		return spaceRow{}, err
 	}
-	value.Source = sourceFromSQL(kind, classSessionID, seriesID, occurrence, studyMeetingID)
+	value.Source = sourceFromSQL(kind, classID, classSessionID, seriesID, occurrence, studyMeetingID)
 	value.CreatedAt, value.UpdatedAt = value.CreatedAt.UTC(), value.UpdatedAt.UTC()
 	return value, nil
 }
 
 func sourceFromSQL(
 	kind SourceKind,
+	classID uuid.NullUUID,
 	classSessionID uuid.NullUUID,
 	seriesID uuid.NullUUID,
 	occurrence sql.NullString,
 	studyMeetingID uuid.NullUUID,
 ) SourceReference {
 	source := SourceReference{Kind: kind}
+	if classID.Valid {
+		value := classID.UUID
+		source.ClassID = &value
+	}
 	if classSessionID.Valid {
 		value := classSessionID.UUID
 		source.ClassSessionID = &value

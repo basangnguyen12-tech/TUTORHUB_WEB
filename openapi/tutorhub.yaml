@@ -17304,6 +17304,10 @@ components:
         kind:
           type: string
           const: class_session
+        class_id:
+          type: string
+          format: uuid
+          description: Owning class identifier projected by the server for class-backed media spaces.
         class_session_id:
           type: string
           format: uuid
@@ -17315,6 +17319,10 @@ components:
         kind:
           type: string
           const: class_session_occurrence
+        class_id:
+          type: string
+          format: uuid
+          description: Owning class identifier projected by the server for recurring class-backed media spaces.
         series_id:
           type: string
           format: uuid

@@ -14,9 +14,12 @@ import {
   MenuTrigger,
 } from "@tutorhub/ui";
 import {
+  BookmarkPlus,
   BookOpen,
   CopyPlus,
   FileDown,
+  FileJson,
+  FileUp,
   MessageSquareCode,
   MoreHorizontal,
   Pause,
@@ -24,6 +27,7 @@ import {
   Play,
   Plus,
   RotateCcw,
+  Send,
   Square,
   X,
 } from "lucide-react";
@@ -37,6 +41,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -44,6 +49,7 @@ import {
 import { createPortal } from "react-dom";
 import type { LanguageSupport } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCodeWorkspaceTool } from "../../app/codeWorkspaces";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 import {
@@ -92,7 +98,24 @@ import type {
   ClassroomCodeWorkspaceFile,
   ClassroomCodeWorkspaceSnapshot,
 } from "./codeSession";
-import { CodeSnippetDrawer } from "./CodeSnippetDrawer";
+import {
+  CodeSharedWorkButton,
+  CodeSharedWorkDrawer,
+  type SharedWorkCopy,
+} from "./CodeSharedWorkDrawer";
+import {
+  CodeSnippetDrawer,
+  type CodeSnippetSaveSource,
+  type InsertableCode,
+} from "./CodeSnippetDrawer";
+import { exportCodeProject, importCodeProject } from "./codePortable";
+import {
+  scratchpadSyncFor,
+  useCodeScratchpadSync,
+  type ScratchpadShareError,
+  type ScratchpadSyncError,
+  type ScratchpadSyncState,
+} from "./codeScratchpadSync";
 import {
   CODE_MAX_FILES,
   CODE_MAX_TOTAL_BYTES,
@@ -121,7 +144,6 @@ import {
   pythonRuntime,
   sqlRuntime,
 } from "./sandbox/runtimeAssets";
-import type { CodeSnippet } from "./snippetLibrary";
 import type { ClassroomToolActions } from "./toolActions";
 
 /**
@@ -155,6 +177,14 @@ interface CodeWorkspaceViewProps extends CodeWorkspaceProps {
   /** Focus the editor once mounted (after "Tạo bản nháp từ mẫu"). */
   readonly focusOnMount?: boolean;
   readonly live?: LiveWorkspaceBinding;
+  /**
+   * ROOM-TOOLS-CODE-03B: from "Chung lớp", an imported project or a copy of a
+   * student's shared work opens in "Nháp của tôi" (the mode switches).
+   */
+  readonly onLoadIntoMine?: (
+    snapshot: ClassroomCodeWorkspaceSnapshot,
+    notice: string,
+  ) => void;
 }
 
 interface WorkspaceFile {
@@ -350,14 +380,70 @@ function downloadText(name: string, content: string, mimeType: string) {
   globalThis.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+/* ROOM-TOOLS-CODE-03B: server draft status line, error bar and share errors. */
+function syncErrorKey(error: ScratchpadSyncError): TranslationKey {
+  switch (error) {
+    case "too_large":
+      return "classroomTools.scratchpad.errorTooLarge";
+    case "storage_quota":
+      return "classroomTools.scratchpad.errorQuota";
+    case "unavailable":
+      return "classroomTools.scratchpad.errorUnavailable";
+    default:
+      return "classroomTools.scratchpad.errorFailed";
+  }
+}
+
+function syncStatusKey(state: ScratchpadSyncState): TranslationKey | null {
+  switch (state.status) {
+    case "loading":
+      return "classroomTools.scratchpad.loading";
+    case "saving":
+      return "classroomTools.scratchpad.saving";
+    case "saved":
+      return state.dirty
+        ? "classroomTools.scratchpad.unsaved"
+        : "classroomTools.scratchpad.saved";
+    case "conflict":
+      return "classroomTools.scratchpad.conflictShort";
+    case "error":
+      return "classroomTools.scratchpad.notSaved";
+    default:
+      return state.dirty ? "classroomTools.scratchpad.unsaved" : null;
+  }
+}
+
+function shareErrorKey(error: ScratchpadShareError | null): TranslationKey {
+  switch (error) {
+    case "conflict":
+      return "classroomTools.scratchpad.shareConflict";
+    case "empty":
+    case "unsaved":
+      return "classroomTools.scratchpad.shareUnsaved";
+    default:
+      return "classroomTools.scratchpad.shareFailed";
+  }
+}
+
+/** The project title for an export: the open file's name without extension. */
+function projectTitle(name: string | undefined): string {
+  if (!name) return "TutorHub Code";
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
 function CodeWorkspace({
   actorID,
   chatCanPost,
   chatMaxCharacters,
+  classID = null,
   focusOnMount = false,
   headerSlot,
+  isStaff = false,
+  libraryEnabled = false,
   live,
   mediaSpaceID,
+  onLoadIntoMine,
   onSendToChat,
   session,
   tenantID,
@@ -378,6 +464,20 @@ function CodeWorkspace({
   // being swapped) is read-only: focus, selection, copy, search and Run stay.
   const readOnly = live ? live.readOnly : false;
   const liveRef = useRef(live);
+  // ROOM-TOOLS-CODE-03B (`code_snippet_library`): the durable library and the
+  // server-synced "Nháp của tôi" (256 KB like the server). Off, this is the
+  // Slice 1/2 workspace exactly: 64 KB, local 8-hour draft, no library calls.
+  const library = libraryEnabled === true;
+  const personalMaxBytes = library
+    ? LIVE_CODE_MAX_TOTAL_BYTES
+    : CODE_MAX_TOTAL_BYTES;
+  const personalMaxLabel = `${personalMaxBytes / 1024} KB`;
+  const { state: syncState, sync } = useCodeScratchpadSync(
+    session,
+    tenantID,
+    mediaSpaceID,
+    library && live === undefined,
+  );
 
   const [initial] = useState(() =>
     live
@@ -395,6 +495,8 @@ function CodeWorkspace({
     null,
   );
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [snippetsView, setSnippetsView] = useState<"browse" | "save">("browse");
+  const [sharedOpen, setSharedOpen] = useState(false);
   const [tabFocusMode, setTabFocusMode] = useState(false);
   const [compactView, setCompactView] = useState<"editor" | "output">("editor");
   const [outputSize, setOutputSize] = useState(OUTPUT_DEFAULT);
@@ -455,6 +557,8 @@ function CodeWorkspace({
   const revisionTimer = useRef<number | null>(null);
   const skipMenuFocusRestore = useRef(false);
   const snippetsButtonRef = useRef<HTMLButtonElement>(null);
+  const sharedButtonRef = useRef<HTMLButtonElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
   const commandsRef = useRef<EditorCommands>(NO_COMMANDS);
   const [usedBytes, setUsedBytes] = useState(() => {
@@ -592,14 +696,15 @@ function CodeWorkspace({
             labelledBy: labelID,
             language: resolvedLanguages.get(file.language) ?? [],
             languageCompartment: compartment,
-            maxBytes: () => CODE_MAX_TOTAL_BYTES - otherFilesBytes(file.id),
+            maxBytes: () => personalMaxBytes - otherFilesBytes(file.id),
             onChange: (content) => {
               contentsRef.current.set(file.id, content);
               scheduleRevision();
+              sync?.markDirty();
             },
             onLimit: () =>
               announce(
-                t("classroomTools.code.sizeLimit", { max: "64 KB" }),
+                t("classroomTools.code.sizeLimit", { max: personalMaxLabel }),
                 "error",
               ),
           });
@@ -616,8 +721,11 @@ function CodeWorkspace({
       helpID,
       labelID,
       otherFilesBytes,
+      personalMaxBytes,
+      personalMaxLabel,
       readOnlyCompartment,
       scheduleRevision,
+      sync,
       t,
     ],
   );
@@ -710,22 +818,81 @@ function CodeWorkspace({
     [currentContent],
   );
 
+  const readSnapshot = useCallback(
+    (): ClassroomCodeWorkspaceSnapshot => ({
+      activeIndex: Math.max(
+        0,
+        filesRef.current.findIndex((file) => file.id === activeIDRef.current),
+      ),
+      files: snapshotFiles(),
+      stdin: stdinRef.current,
+    }),
+    [snapshotFiles],
+  );
+
   const persist = useCallback(() => {
     // The shared workspace keeps no local draft; "Tạo bản nháp từ mẫu" forks.
     if (liveRef.current) return false;
-    const workspaceFiles = snapshotFiles();
-    const activeIndex = Math.max(
-      0,
-      filesRef.current.findIndex((file) => file.id === activeIDRef.current),
-    );
-    const snapshot: ClassroomCodeWorkspaceSnapshot = {
-      activeIndex,
-      files: workspaceFiles,
-      stdin: stdinRef.current,
-    };
+    const snapshot = readSnapshot();
     session.saveSnapshot(snapshot);
     return writeCodeDraft(scope, snapshot);
-  }, [scope, session, snapshotFiles]);
+  }, [readSnapshot, scope, session]);
+
+  /**
+   * ROOM-TOOLS-CODE-03B: swaps every file at once (server copy, conflict
+   * reload, import, a student's work). Fresh file ids force new EditorStates,
+   * so no undo history crosses from one project to another.
+   */
+  const replaceWorkspace = useCallback(
+    (snapshot: ClassroomCodeWorkspaceSnapshot) => {
+      if (liveRef.current || snapshot.files.length === 0) return;
+      const contents = new Map<string, string>();
+      const next = snapshot.files.map((file) => {
+        const fileID = `file-${nextFileNumber.current}`;
+        nextFileNumber.current += 1;
+        contents.set(fileID, file.content);
+        return { id: fileID, language: file.language, name: file.name };
+      });
+      contentsRef.current = contents;
+      statesRef.current.clear();
+      shownFileRef.current = null;
+      filesRef.current = next;
+      const active = next[snapshot.activeIndex]?.id ?? next[0]?.id ?? null;
+      activeIDRef.current = active;
+      stdinRef.current = snapshot.stdin;
+      setRenaming(null);
+      setClosing(null);
+      setFiles(next);
+      setActiveID(active);
+      setStdin(snapshot.stdin);
+      session.saveSnapshot(snapshot);
+      scheduleRevision();
+    },
+    [scheduleRevision, session],
+  );
+
+  // The server draft controller reads and replaces this workspace through a
+  // ref, so it always sees the latest callbacks.
+  const syncBindingRef = useRef<{
+    readonly apply: (snapshot: ClassroomCodeWorkspaceSnapshot) => void;
+    readonly read: () => ClassroomCodeWorkspaceSnapshot;
+  } | null>(null);
+  useLayoutEffect(() => {
+    syncBindingRef.current = {
+      apply: (snapshot) => {
+        replaceWorkspace(snapshot);
+        announce(t("classroomTools.scratchpad.loadedFromServer"));
+      },
+      read: readSnapshot,
+    };
+  });
+  useEffect(() => {
+    if (!sync) return undefined;
+    return sync.attach({
+      apply: (snapshot) => syncBindingRef.current?.apply(snapshot),
+      read: () => syncBindingRef.current?.read() ?? null,
+    });
+  }, [sync]);
 
   // Debounced bounded draft (ADR-0029): after edits, file and stdin changes.
   useEffect(() => {
@@ -1057,8 +1224,11 @@ function CodeWorkspace({
       }
       let used = 0;
       for (const item of current) used += utf8Bytes(currentContent(item.id));
-      if (used + utf8Bytes(file.content) > CODE_MAX_TOTAL_BYTES) {
-        announce(t("classroomTools.code.sizeLimit", { max: "64 KB" }), "error");
+      if (used + utf8Bytes(file.content) > personalMaxBytes) {
+        announce(
+          t("classroomTools.code.sizeLimit", { max: personalMaxLabel }),
+          "error",
+        );
         return false;
       }
       const name = uniqueFileName(
@@ -1075,10 +1245,19 @@ function CodeWorkspace({
       setFiles(next);
       setActiveID(fileID);
       scheduleRevision();
+      sync?.markDirty();
       announce(t(announceKey, { name }));
       return true;
     },
-    [announce, currentContent, scheduleRevision, t],
+    [
+      announce,
+      currentContent,
+      personalMaxBytes,
+      personalMaxLabel,
+      scheduleRevision,
+      sync,
+      t,
+    ],
   );
 
   const takeIncoming = useEffectEvent((blocks: ClassroomCodeIncomingFile[]) => {
@@ -1515,8 +1694,10 @@ function CodeWorkspace({
     announce(t("classroomTools.code.restored", { name: file.name }));
   };
 
-  const openSnippets = () => {
+  const openSnippets = (view: "browse" | "save" = "browse") => {
     skipMenuFocusRestore.current = true;
+    setSharedOpen(false);
+    setSnippetsView(view);
     setSnippetsOpen(true);
   };
 
@@ -1525,12 +1706,12 @@ function CodeWorkspace({
     globalThis.setTimeout(() => snippetsButtonRef.current?.focus(), 0);
   };
 
-  const insertSnippetAsFile = (snippet: CodeSnippet) => {
+  const insertSnippetAsFile = (snippet: InsertableCode) => {
     if (
       addFile({
-        content: snippet.code,
+        content: snippet.content,
         language: snippet.language,
-        name: snippet.fileName,
+        name: snippet.name,
       })
     ) {
       setSnippetsOpen(false);
@@ -1538,24 +1719,169 @@ function CodeWorkspace({
     }
   };
 
-  const insertSnippetHere = (snippet: CodeSnippet) => {
+  const insertSnippetHere = (snippet: InsertableCode) => {
     const view = viewRef.current;
     if (!view || !activeIDRef.current || readOnlyRef.current) return;
     const { from, to } = view.state.selection.main;
     const before = view.state.doc.toString();
     view.dispatch({
-      changes: { from, insert: snippet.code, to },
-      selection: { anchor: from + snippet.code.length },
+      changes: { from, insert: snippet.content, to },
+      selection: { anchor: from + snippet.content.length },
       scrollIntoView: true,
     });
-    if (view.state.doc.toString() === before) return; // refused (64 KB)
+    if (view.state.doc.toString() === before) return; // refused (size cap)
     setSnippetsOpen(false);
-    announce(
-      t("classroomTools.snippets.inserted", {
-        title: uiLanguage === "vi" ? snippet.title.vi : snippet.title.en,
-      }),
-    );
+    announce(t("classroomTools.snippets.inserted", { title: snippet.title }));
     globalThis.setTimeout(() => view.focus(), 0);
+  };
+
+  /** "Lưu vào Kho": the open file, or just its selection. */
+  const readSaveSource = (): CodeSnippetSaveSource | null => {
+    const file = filesRef.current.find(
+      (item) => item.id === activeIDRef.current,
+    );
+    if (!file) return null;
+    const view = viewRef.current;
+    if (view && shownFileRef.current === file.id) {
+      const selection = view.state.selection.main;
+      if (!selection.empty) {
+        return {
+          content: view.state.sliceDoc(selection.from, selection.to),
+          fileName: file.name,
+          fromSelection: true,
+          language: file.language,
+        };
+      }
+    }
+    return {
+      content: currentContent(file.id),
+      fileName: file.name,
+      fromSelection: false,
+      language: file.language,
+    };
+  };
+
+  /**
+   * ROOM-TOOLS-CODE-03B: an imported project or a teacher's copy of shared
+   * work becomes "Nháp của tôi" — in place here, or through a mode switch
+   * from "Chung lớp". It is an edit: the server draft saves it. Never run.
+   */
+  const loadIntoMine = (
+    snapshot: ClassroomCodeWorkspaceSnapshot,
+    notice: string,
+  ) => {
+    if (liveRef.current) {
+      onLoadIntoMine?.(snapshot, notice);
+      return;
+    }
+    replaceWorkspace(snapshot);
+    writeCodeDraft(scope, snapshot);
+    sync?.markDirty(snapshot);
+    announce(notice);
+    globalThis.setTimeout(() => viewRef.current?.focus(), 0);
+  };
+
+  const toggleSharedWork = () => {
+    if (sharedOpen) {
+      closeSharedWork();
+      return;
+    }
+    setSnippetsOpen(false);
+    setSharedOpen(true);
+  };
+
+  const closeSharedWork = () => {
+    setSharedOpen(false);
+    globalThis.setTimeout(() => sharedButtonRef.current?.focus(), 0);
+  };
+
+  const openSharedCopy = (copy: SharedWorkCopy) => {
+    const result = forkWorkspaceSnapshot(
+      copy.files,
+      copy.activeIndex,
+      copy.stdin,
+      personalMaxBytes,
+    );
+    setSharedOpen(false);
+    loadIntoMine(
+      result.snapshot,
+      result.partial
+        ? t("classroomTools.shared.copiedPartial", {
+            copied: result.copied,
+            name: copy.authorName,
+            total: result.total,
+          })
+        : t("classroomTools.shared.copied", { name: copy.authorName }),
+    );
+  };
+
+  const canComment = Boolean(onSendToChat && toolActions && chatCanPost);
+  const commentOnWork = (authorName: string) => {
+    if (!onSendToChat || !toolActions) return;
+    onSendToChat(`@${authorName} `);
+    toolActions.openChat();
+    announce(t("classroomTools.shared.commentOpened", { name: authorName }));
+  };
+
+  const toggleShare = async () => {
+    if (!sync || !syncState) return;
+    const next = !syncState.shared;
+    const done = await sync.setShared(next);
+    if (done) {
+      announce(
+        t(
+          next
+            ? "classroomTools.scratchpad.sharedOn"
+            : "classroomTools.scratchpad.sharedOff",
+        ),
+      );
+    } else {
+      announce(t(shareErrorKey(sync.getState().shareError)), "error");
+    }
+  };
+
+  const exportProject = async () => {
+    const snapshot = readSnapshot();
+    if (snapshot.files.length === 0) return;
+    try {
+      const exported = await exportCodeProject(
+        snapshot,
+        projectTitle(snapshot.files[snapshot.activeIndex]?.name),
+      );
+      downloadText(exported.fileName, exported.json, "application/json");
+      announce(
+        t("classroomTools.portable.exported", { name: exported.fileName }),
+      );
+    } catch {
+      announce(t("classroomTools.portable.exportFailed"), "error");
+    }
+  };
+
+  const importProject = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0] ?? null;
+    input.value = "";
+    if (!file || readOnlyRef.current) return;
+    const result = await importCodeProject(file);
+    if (!result.ok) {
+      announce(t(result.reason), "error");
+      return;
+    }
+    const fork = forkWorkspaceSnapshot(
+      result.snapshot.files,
+      result.snapshot.activeIndex,
+      result.snapshot.stdin,
+      personalMaxBytes,
+    );
+    loadIntoMine(
+      fork.snapshot,
+      fork.partial
+        ? t("classroomTools.portable.importedPartial", {
+            copied: fork.copied,
+            total: fork.total,
+          })
+        : t("classroomTools.portable.imported", { count: fork.copied }),
+    );
   };
 
   const startRename = (file: WorkspaceFile) => {
@@ -1602,6 +1928,7 @@ function CodeWorkspace({
     filesRef.current = next;
     setFiles(next);
     setRenaming(null);
+    sync?.markDirty();
     if (language !== file.language) ensureLanguage(file.id, language);
     globalThis.setTimeout(
       () => document.getElementById(`${id}-file-${file.id}`)?.focus(),
@@ -1630,6 +1957,7 @@ function CodeWorkspace({
     if (shownFileRef.current === file.id) shownFileRef.current = null;
     filesRef.current = next;
     setFiles(next);
+    sync?.markDirty();
     if (activeIDRef.current === file.id) {
       const neighbour = next[Math.min(index, next.length - 1)] ?? null;
       setActiveID(neighbour?.id ?? null);
@@ -1729,6 +2057,7 @@ function CodeWorkspace({
   const runLabel = running
     ? t("classroomTools.code.stopShortcut")
     : t("classroomTools.code.runShortcut");
+  const syncStatus = syncState ? syncStatusKey(syncState) : null;
 
   const controls = (
     <div className="classroom-code-topbar">
@@ -1840,13 +2169,36 @@ function CodeWorkspace({
             <MessageSquareCode aria-hidden="true" />
             {t("classroomTools.code.sendToChat")}
           </MenuItem>
-          <MenuItem onSelect={openSnippets}>
+          <MenuItem onSelect={() => openSnippets()}>
             <BookOpen aria-hidden="true" />
             {t("classroomTools.code.snippets")}
           </MenuItem>
+          {library ? (
+            <MenuItem
+              disabled={!activeFile}
+              onSelect={() => openSnippets("save")}
+            >
+              <BookmarkPlus aria-hidden="true" />
+              {t("classroomTools.library.saveMenu")}
+            </MenuItem>
+          ) : null}
           <MenuItem disabled={!activeFile} onSelect={download}>
             <FileDown aria-hidden="true" />
             {t("classroomTools.code.download")}
+          </MenuItem>
+          <MenuItem
+            disabled={files.length === 0}
+            onSelect={() => void exportProject()}
+          >
+            <FileJson aria-hidden="true" />
+            {t("classroomTools.portable.export")}
+          </MenuItem>
+          <MenuItem
+            disabled={readOnly}
+            onSelect={() => importInputRef.current?.click()}
+          >
+            <FileUp aria-hidden="true" />
+            {t("classroomTools.portable.import")}
           </MenuItem>
           <MenuItem
             disabled={!activeFile || readOnly}
@@ -1908,6 +2260,65 @@ function CodeWorkspace({
           onFork={forkToDraft}
           onToggleFollowing={toggleFollowing}
         />
+      ) : null}
+
+      {sync && syncState?.status === "conflict" ? (
+        <div
+          aria-labelledby={`${id}-sync-message`}
+          className="classroom-code-sync-bar"
+          data-tone="conflict"
+          role="group"
+        >
+          <p
+            className="classroom-code-sync-bar__message"
+            id={`${id}-sync-message`}
+            role="alert"
+          >
+            {t("classroomTools.scratchpad.conflict")}
+          </p>
+          <span className="classroom-code-sync-bar__actions">
+            <button
+              className="classroom-code-text-button"
+              onClick={() => void sync.reloadFromServer()}
+              type="button"
+            >
+              {t("classroomTools.scratchpad.loadServer")}
+            </button>
+            <button
+              className="classroom-code-text-button classroom-code-text-button--primary"
+              onClick={() => void sync.overwriteServer()}
+              type="button"
+            >
+              {t("classroomTools.scratchpad.overwrite")}
+            </button>
+          </span>
+        </div>
+      ) : sync && syncState?.status === "error" && syncState.error ? (
+        <div
+          aria-labelledby={`${id}-sync-message`}
+          className="classroom-code-sync-bar"
+          data-tone="error"
+          role="group"
+        >
+          <p
+            className="classroom-code-sync-bar__message"
+            id={`${id}-sync-message`}
+            role="alert"
+          >
+            {t(syncErrorKey(syncState.error))}
+          </p>
+          {syncState.error === "failed" ? (
+            <span className="classroom-code-sync-bar__actions">
+              <button
+                className="classroom-code-text-button"
+                onClick={() => void sync.retry()}
+                type="button"
+              >
+                {t("state.retry")}
+              </button>
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       <div
@@ -2097,12 +2508,55 @@ function CodeWorkspace({
           </Menu>
         )}
         <span aria-hidden="true" className="classroom-code-files__spacer" />
+        {sync && syncState && !isStaff ? (
+          <button
+            aria-pressed={syncState.shared}
+            className="classroom-code-share-toggle"
+            data-shared={syncState.shared || undefined}
+            disabled={
+              syncState.sharing ||
+              (!syncState.loaded && syncState.status === "loading")
+            }
+            onClick={() => void toggleShare()}
+            type="button"
+          >
+            {syncState.shared ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="classroom-code-share-toggle__dot"
+                />
+                {t("classroomTools.scratchpad.shared")}
+              </>
+            ) : (
+              <>
+                <Send aria-hidden="true" />
+                {t("classroomTools.scratchpad.share")}
+              </>
+            )}
+          </button>
+        ) : null}
+        {library && isStaff ? (
+          <CodeSharedWorkButton
+            expanded={sharedOpen}
+            mediaSpaceID={mediaSpaceID}
+            onToggle={toggleSharedWork}
+            ref={sharedButtonRef}
+            tenantID={tenantID}
+          />
+        ) : null}
         <button
           aria-expanded={snippetsOpen}
           className="classroom-code-text-button classroom-code-files__snippets"
-          onClick={() =>
-            snippetsOpen ? closeSnippets() : setSnippetsOpen(true)
-          }
+          onClick={() => {
+            if (snippetsOpen) {
+              closeSnippets();
+              return;
+            }
+            setSharedOpen(false);
+            setSnippetsView("browse");
+            setSnippetsOpen(true);
+          }}
           ref={snippetsButtonRef}
           type="button"
         >
@@ -2181,7 +2635,7 @@ function CodeWorkspace({
             </span>
             <span className="classroom-code__usage">
               {t(
-                live
+                live || library
                   ? "classroomTools.live.usage"
                   : "classroomTools.code.usage",
                 {
@@ -2191,11 +2645,15 @@ function CodeWorkspace({
                   maxFiles: CODE_MAX_FILES,
                 },
               )}
-              {draftStatus === "saved"
-                ? ` · ${t("classroomTools.code.draftSaved")}`
-                : draftStatus === "failed"
-                  ? ` · ${t("classroomTools.code.draftFailed")}`
-                  : ""}
+              {sync && syncState
+                ? syncStatus
+                  ? ` · ${t(syncStatus)}`
+                  : ""
+                : draftStatus === "saved"
+                  ? ` · ${t("classroomTools.code.draftSaved")}`
+                  : draftStatus === "failed"
+                    ? ` · ${t("classroomTools.code.draftFailed")}`
+                    : ""}
             </span>
           </p>
         </div>
@@ -2243,7 +2701,10 @@ function CodeWorkspace({
               setPreviewMessage("classroomTools.code.previewStopped");
               announce(t("classroomTools.code.previewStopped"));
             }}
-            onStdinChange={setStdin}
+            onStdinChange={(value) => {
+              setStdin(value);
+              sync?.markDirty();
+            }}
             onTabChange={setOutputTab}
             onToggleCollapsed={() => setOutputCollapsed((value) => !value)}
             preview={preview}
@@ -2258,12 +2719,47 @@ function CodeWorkspace({
           <CodeSnippetDrawer
             canInsertIntoCurrent={activeFile !== null && !readOnly}
             canInsertNew={!readOnly}
+            key={snippetsView}
+            library={
+              library
+                ? {
+                    classID,
+                    initialView: snippetsView,
+                    isStaff,
+                    onSaved: (title) =>
+                      announce(t("classroomTools.library.saved", { title })),
+                    readSource: readSaveSource,
+                    tenantID,
+                  }
+                : undefined
+            }
             onClose={closeSnippets}
             onInsertCurrent={insertSnippetHere}
             onInsertNew={insertSnippetAsFile}
           />
         )}
+        {library && isStaff && sharedOpen ? (
+          <CodeSharedWorkDrawer
+            canComment={canComment}
+            mediaSpaceID={mediaSpaceID}
+            onClose={closeSharedWork}
+            onComment={commentOnWork}
+            onOpenCopy={openSharedCopy}
+            tenantID={tenantID}
+          />
+        ) : null}
       </div>
+
+      {/* Opened from the ⋯ menu; `hidden` keeps it out of tab order and AT. */}
+      <input
+        accept=".json,application/json"
+        className="classroom-code__import"
+        data-testid="code-project-import"
+        hidden
+        onChange={(event) => void importProject(event)}
+        ref={importInputRef}
+        type="file"
+      />
 
       <div
         aria-hidden="true"
@@ -2477,22 +2973,38 @@ function CollaborativeCodeWorkspace(props: CodeWorkspaceProps) {
     setMode(next);
   };
 
-  const handleFork = useCallback(
-    (result: CodeForkResult) => {
-      session.saveSnapshot(result.snapshot);
-      writeCodeDraft(scope, result.snapshot);
+  const queryClient = useQueryClient();
+  const libraryEnabled = props.libraryEnabled === true;
+  // A fork, an import or a copy of a student's work lands in "Nháp của tôi" as
+  // an unsaved edit, so the server draft keeps it rather than replacing it.
+  const loadIntoMine = useCallback(
+    (snapshot: ClassroomCodeWorkspaceSnapshot, text: string) => {
+      session.saveSnapshot(snapshot);
+      writeCodeDraft(scope, snapshot);
+      if (libraryEnabled) {
+        scratchpadSyncFor(session, tenantID, mediaSpaceID, {
+          queryClient,
+        }).markDirty(snapshot);
+      }
       setFocusMine(true);
       setMode("mine");
-      setNotice(
+      setNotice(text);
+    },
+    [libraryEnabled, mediaSpaceID, queryClient, scope, session, tenantID],
+  );
+
+  const handleFork = useCallback(
+    (result: CodeForkResult) =>
+      loadIntoMine(
+        result.snapshot,
         result.partial
           ? t("classroomTools.live.forkedPartial", {
               copied: result.copied,
               total: result.total,
             })
           : t("classroomTools.live.forked"),
-      );
-    },
-    [scope, session, t],
+      ),
+    [loadIntoMine, t],
   );
 
   const seedSnapshot = useCallback(
@@ -2586,6 +3098,7 @@ function CollaborativeCodeWorkspace(props: CodeWorkspaceProps) {
               headerSlot={innerSlot}
               key="class"
               live={live}
+              onLoadIntoMine={loadIntoMine}
             />
           )}
           roster={props.codeRoster ?? null}
