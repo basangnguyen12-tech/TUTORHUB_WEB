@@ -796,7 +796,7 @@ Nhóm công cụ và phase:
 | Chat/People   | Giao tiếp và quản lý người tham gia | Data + media event           | 4     |
 | Whiteboard    | Vẽ và cộng tác                      | Collaboration                | 5     |
 | Quiz nhanh    | Câu hỏi tức thời                    | Data + ephemeral result      | 5     |
-| Files         | Chia sẻ tài liệu                    | B2 + data                    | 3/5   |
+| Files         | Chia sẻ, trình chiếu & chữa PDF/ảnh | B2 + client render + collab  | 3/5   |
 | YouTube/Video | Co-watch có sync control            | Collaboration                | 5     |
 | Math          | Công thức và input toán             | Client/collaboration         | 5     |
 | Diagram       | Mermaid/diagram editor              | Client/collaboration         | 5     |
