@@ -2773,6 +2773,45 @@ describe("ClassroomMediaShell", () => {
       );
     });
 
+    it("calls onStageClose only when the Documents stage is closed, not when replaced (ROOM-TOOLS-FILES-01B)", async () => {
+      const onStageClose = vi.fn();
+      renderShell({
+        tools: [
+          ...tools(),
+          {
+            content: <p>Documents viewer</p>,
+            icon: <span aria-hidden="true">D</span>,
+            id: "files" as const,
+            label: "Documents",
+            onStageClose,
+            title: "Documents tool",
+          },
+        ],
+      });
+      const trigger = toolsTrigger();
+      chooseTool("Documents");
+      expect(
+        screen.getByRole("region", { name: "Documents tool" }),
+      ).toHaveAttribute("id", "media-p506-stage-files");
+      // Switching to another tool keeps the Documents memory.
+      chooseTool("Code");
+      expect(onStageClose).not.toHaveBeenCalled();
+      chooseTool("Documents");
+      const header = document.querySelector<HTMLElement>(
+        "header.media-p405-header",
+      )!;
+      fireEvent.click(within(header).getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(onStageClose).toHaveBeenCalledTimes(1);
+      // Choosing the open tile again also closes the stage.
+      chooseTool("Documents");
+      chooseTool("Documents");
+      expect(onStageClose).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByRole("region", { name: "Documents tool" }),
+      ).not.toBeInTheDocument();
+    });
+
     it("lets hosted content open a tool or the chat through the room actions", async () => {
       function ChatProbe() {
         const actions = useContext(ClassroomToolActionsContext);

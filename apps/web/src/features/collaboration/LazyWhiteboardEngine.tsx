@@ -1,6 +1,9 @@
 import { Excalidraw } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
-import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import type {
+  BinaryFiles,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
 import {
   createBrowserCollaborationSession,
@@ -16,7 +19,7 @@ import type {
   WhiteboardDocument,
 } from "@tutorhub/api-client";
 import { Button } from "@tutorhub/ui";
-import { FileText } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -43,6 +46,11 @@ import {
   type WhiteboardPaperBackdropHandle,
 } from "./WhiteboardPaperBackdrop";
 import { WhiteboardPaperPicker } from "./WhiteboardPaperPicker";
+import {
+  planDocumentSnippetInsertion,
+  type WhiteboardSnippetBridge,
+  type WhiteboardSnippetOutcome,
+} from "./whiteboardSnippetBridge";
 
 /**
  * Excalidraw draws on a transparent canvas above the TutorHub paper backdrop;
@@ -59,6 +67,7 @@ export default function LazyWhiteboardEngine({
   classroom = false,
   document,
   onRecoveryRequired,
+  snippetBridge,
   tenantID,
   toolbarSlot = null,
 }: {
@@ -68,6 +77,8 @@ export default function LazyWhiteboardEngine({
   classroom?: boolean;
   document: WhiteboardDocument;
   onRecoveryRequired?: () => void;
+  /** ROOM-TOOLS-FILES-01B: document snippets waiting for this board. */
+  snippetBridge?: WhiteboardSnippetBridge;
   tenantID: string;
   toolbarSlot?: HTMLElement | null;
 }) {
@@ -187,6 +198,7 @@ export default function LazyWhiteboardEngine({
       classroom={classroom}
       connectionStatus={connectionStatus}
       readOnly={session.capability === "view"}
+      snippetBridge={snippetBridge}
       toolbarSlot={toolbarSlot}
     />
   );
@@ -218,12 +230,20 @@ export function CanonicalExcalidrawCanvas({
   classroom = false,
   connectionStatus,
   readOnly,
+  snippetBridge,
   toolbarSlot = null,
 }: {
   authority: WhiteboardCanvasAuthority;
   classroom?: boolean;
   connectionStatus: CollaborationConnectionStatus;
   readOnly: boolean;
+  /**
+   * ROOM-TOOLS-FILES-01B / ADR-0045 §1 "Đưa trang / Cắt vùng sang Bảng
+   * trắng": once this live canvas exists the pending document snippet is
+   * inserted as a locked image + source caption (12 per board at most); a
+   * `view` capability refuses it with a notice.
+   */
+  snippetBridge?: WhiteboardSnippetBridge;
   toolbarSlot?: HTMLElement | null;
 }) {
   const { t } = useI18n();
@@ -247,6 +267,80 @@ export function CanonicalExcalidrawCanvas({
   const darkSurface = isDarkPaperSurface(paper.mode, paper.dark);
   // Excalidraw's default ink (#1e1e1e) targets light paper.
   const inkSurfaceDarkRef = useRef(false);
+  const [snippetNotice, setSnippetNotice] =
+    useState<WhiteboardSnippetOutcome | null>(null);
+
+  // ROOM-TOOLS-FILES-01B: insert a pending document snippet once this live
+  // board (and its Excalidraw API) exists. The authority writes only the new
+  // file and the two new elements; the runtime stays the last line of
+  // defence for its 64 KiB update ceiling.
+  useEffect(() => {
+    if (!snippetBridge || api === null) return undefined;
+    let frame = 0;
+    const insert = () => {
+      frame = 0;
+      const pending = snippetBridge.take();
+      if (!pending) return;
+      if (readOnly) {
+        snippetBridge.report(pending.id, "readOnly");
+        setSnippetNotice("readOnly");
+        return;
+      }
+      const appState = api.getAppState() as {
+        height?: number;
+        scrollX: number;
+        scrollY: number;
+        width?: number;
+        zoom: { value: number };
+      };
+      const zoom = appState.zoom.value > 0 ? appState.zoom.value : 1;
+      const width = (appState.width || 1200) / zoom;
+      const height = (appState.height || 800) / zoom;
+      const caption =
+        pending.pageNumber === null
+          ? t("whiteboard.snippet.captionImage", { name: pending.sourceName })
+          : t("whiteboard.snippet.caption", {
+              name: pending.sourceName,
+              page: pending.pageNumber,
+            });
+      let outcome: WhiteboardSnippetOutcome;
+      try {
+        const scene = authority.getScene();
+        const plan = planDocumentSnippetInsertion(
+          scene,
+          pending,
+          {
+            centerX: width / 2 - appState.scrollX,
+            centerY: height / 2 - appState.scrollY,
+            height,
+            width,
+          },
+          { caption },
+        );
+        if (plan.kind === "ok") {
+          authority.replaceScene(plan.scene);
+          outcome = "inserted";
+        } else {
+          outcome = plan.kind;
+        }
+      } catch {
+        outcome = "failed";
+      }
+      snippetBridge.report(pending.id, outcome);
+      setSnippetNotice(outcome);
+    };
+    const schedule = () => {
+      if (frame === 0 && snippetBridge.peek()) {
+        frame = requestAnimationFrame(insert);
+      }
+    };
+    schedule();
+    const unsubscribe = snippetBridge.subscribe(schedule);
+    return () => {
+      unsubscribe();
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [api, authority, readOnly, snippetBridge, t]);
 
   // Paper follows the canonical page for every role, including students who
   // never write: a teacher's change arrives through the same subscription.
@@ -349,11 +443,9 @@ export function CanonicalExcalidrawCanvas({
         return;
       }
       applyingRemoteRef.current = true;
-      api.addFiles(
-        Object.values(projection.files) as unknown as Parameters<
-          ExcalidrawImperativeAPI["addFiles"]
-        >[0],
-      );
+      // Update scene elements BEFORE addFiles: Excalidraw's addFiles scans
+      // scene.getNonDeletedElements() inside addNewImagesToImageCache(), so
+      // calling addFiles first leaves newly inserted image elements uncached.
       api.updateScene({
         appState: {
           viewBackgroundColor: EXCALIDRAW_TRANSPARENT_BACKGROUND,
@@ -361,6 +453,11 @@ export function CanonicalExcalidrawCanvas({
         elements:
           projection.elements as unknown as readonly ExcalidrawElement[],
       });
+      api.addFiles(
+        Object.values(projection.files) as unknown as Parameters<
+          ExcalidrawImperativeAPI["addFiles"]
+        >[0],
+      );
       api.history.clear();
       setSemanticRevision((value) => value + 1);
       requestAnimationFrame(() => {
@@ -474,6 +571,7 @@ export function CanonicalExcalidrawCanvas({
             },
             elements:
               initialProjection.elements as unknown as readonly ExcalidrawElement[],
+            files: initialProjection.files as unknown as BinaryFiles,
             scrollToContent: true,
           }}
           isCollaborating
@@ -516,6 +614,27 @@ export function CanonicalExcalidrawCanvas({
           viewModeEnabled={readOnly}
         />
       </div>
+      {snippetNotice ? (
+        <div
+          className={`whiteboard-snippet-notice${
+            snippetNotice === "inserted"
+              ? ""
+              : " whiteboard-snippet-notice--error"
+          }`}
+          data-snippet-outcome={snippetNotice}
+          role={snippetNotice === "inserted" ? "status" : "alert"}
+        >
+          <p>{t(`whiteboard.snippet.${snippetNotice}`)}</p>
+          <button
+            aria-label={t("whiteboard.snippet.dismiss")}
+            className="whiteboard-snippet-notice__dismiss"
+            onClick={() => setSnippetNotice(null)}
+            type="button"
+          >
+            <X aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
       <WhiteboardSemanticFallback
         canvasRef={canvasRef}
         descriptionID={semanticDescriptionID}

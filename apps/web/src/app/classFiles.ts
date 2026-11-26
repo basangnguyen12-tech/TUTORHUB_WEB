@@ -19,10 +19,10 @@ import {
 import { useRef, useState } from "react";
 
 const classFilePageSize = 20;
-const multipartThresholdBytes = 10_000_000;
-const multipartPartBytes = 8_000_000;
+export const multipartThresholdBytes = 10_000_000;
+export const multipartPartBytes = 8_000_000;
 
-function getApiBaseUrl() {
+export function getApiBaseUrl() {
   return import.meta.env.VITE_API_BASE_URL ?? "/api";
 }
 
@@ -157,7 +157,7 @@ export function putFileWithProgress(
   });
 }
 
-function putMultipartPartWithProgress(
+export function putMultipartPartWithProgress(
   capability: {
     url: string;
     required_headers: Record<string, string>;

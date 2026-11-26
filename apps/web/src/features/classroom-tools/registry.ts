@@ -5,11 +5,11 @@ import type { TranslationKey } from "../../app/i18n";
  *
  * The manifest is tiny static metadata that lives in the room chunk; each
  * tool's implementation stays behind its own `React.lazy` boundary
- * (`LazyWhiteboardEngine`, `LazyCodeWorkspace`), so the client entry chunk
- * grows by 0 bytes. Only tools the room page actually registers (implemented
+ * (`LazyWhiteboardEngine`, `LazyCodeWorkspace`, `LazyDocumentViewer`), so
+ * the client entry chunk grows by 0 bytes. Only tools the room page actually registers (implemented
  * and permitted) appear in the Dock's Classroom tools popover.
  */
-export const CLASSROOM_TOOL_IDS = ["whiteboard", "code"] as const;
+export const CLASSROOM_TOOL_IDS = ["whiteboard", "code", "files"] as const;
 
 export type ClassroomToolID = (typeof CLASSROOM_TOOL_IDS)[number];
 
@@ -47,6 +47,13 @@ export const CLASSROOM_TOOL_MANIFEST: Readonly<
     descriptionKey: "classroomTools.codeDescription",
     id: "code",
     order: 20,
+  },
+  // ROOM-TOOLS-FILES-01B / ADR-0045 §1: the Documents ("Tài liệu") tool.
+  files: {
+    category: "present",
+    descriptionKey: "classroomTools.filesDescription",
+    id: "files",
+    order: 30,
   },
 };
 

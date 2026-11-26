@@ -2,7 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /(?:p4-0[5-7]-.*|room-tools-code-0[1-3])\.spec\.ts/,
+  testMatch:
+    /(?:p4-0[5-7]-.*|room-tools-code-0[1-3]|room-tools-files-0[1-3])\.spec\.ts/,
   outputDir: "test-results/playwright-media-fixture",
   fullyParallel: false,
   workers: 1,

@@ -3650,6 +3650,196 @@ const messages = {
     "media.chat.codeOpened":
       "Đã mở đoạn mã trong công cụ Code. Mã chưa được chạy.",
     "media.chat.codeUnknownLanguage": "Mã",
+    // ROOM-TOOLS-FILES-01B: classroom Documents tool (ADR-0045 Slice 1).
+    "classroomTools.filesLabel": "Tài liệu",
+    "classroomTools.filesTitle": "Công cụ Tài liệu",
+    "classroomTools.filesDescription":
+      "Mở PDF/ảnh của lớp, tìm kiếm và đưa đề sang Bảng trắng.",
+    "classroomTools.files.loading": "Đang tải công cụ Tài liệu…",
+    "classroomTools.files.loadErrorTitle": "Không tải được công cụ Tài liệu",
+    "classroomTools.files.loadErrorDescription":
+      "Kiểm tra kết nối rồi thử lại.",
+    "classroomTools.files.featureOff": "Công cụ Tài liệu đang tắt",
+    "classroomTools.files.featureOffDescription":
+      "Quản trị viên tổ chức chưa bật Tài liệu hoặc tải tệp lên cho lớp học.",
+    "classroomTools.files.forbiddenTitle": "Không thể mở Tài liệu",
+    "classroomTools.files.forbiddenDescription":
+      "Bạn cần ở trong phòng học để xem tài liệu của phòng.",
+    "classroomTools.files.cancel": "Hủy",
+    "classroomTools.files.library.title": "Kho tài liệu",
+    "classroomTools.files.library.subtitle":
+      "Tài liệu của lớp và tệp riêng của phòng học này.",
+    "classroomTools.files.library.close": "Đóng kho tài liệu",
+    "classroomTools.files.library.loading": "Đang tải kho tài liệu…",
+    "classroomTools.files.library.error": "Không tải được kho tài liệu.",
+    "classroomTools.files.library.forbidden":
+      "Bạn không có quyền xem tài liệu của phòng này.",
+    "classroomTools.files.library.emptyTitle": "Chưa có tài liệu nào",
+    "classroomTools.files.library.emptyUploader":
+      "Tải lên PDF hoặc ảnh đề bài để cả lớp cùng xem.",
+    "classroomTools.files.library.emptyViewer":
+      "Giáo viên chưa chia sẻ tài liệu nào trong phòng này.",
+    "classroomTools.files.library.listLabel": "Danh sách tài liệu",
+    "classroomTools.files.library.loadMore": "Tải thêm",
+    "classroomTools.files.library.sourceClass": "Tệp của lớp",
+    "classroomTools.files.library.sourceRoom": "Tệp phòng học",
+    "classroomTools.files.library.kindPdf": "PDF",
+    "classroomTools.files.library.kindPdfPages": "PDF · {count} trang",
+    "classroomTools.files.library.kindImage": "Ảnh",
+    "classroomTools.files.library.activeContent": "Có nội dung chủ động",
+    "classroomTools.files.library.open": "Mở",
+    "classroomTools.files.library.openNamed": "Mở {name}",
+    "classroomTools.files.library.download": "Tải bản gốc",
+    "classroomTools.files.library.downloadNamed": "Tải bản gốc {name}",
+    "classroomTools.files.library.downloadFailed":
+      "Không tải được bản gốc. Hãy thử lại.",
+    "classroomTools.files.library.downloadForbidden":
+      "Bạn không được phép tải bản gốc của tệp này.",
+    "classroomTools.files.library.allowStudentDownload":
+      "Cho phép HS tải bản gốc",
+    "classroomTools.files.library.deleteNamed": "Xóa {name} khỏi phòng",
+    "classroomTools.files.library.deleteConfirm": "Xóa tài liệu khỏi phòng?",
+    "classroomTools.files.library.deleteConfirmLabel": "Xác nhận xóa {name}",
+    "classroomTools.files.library.deleteAction": "Xóa khỏi phòng",
+    "classroomTools.files.library.conflict":
+      "Tài liệu vừa thay đổi. Danh sách đã được làm mới, hãy thử lại.",
+    "classroomTools.files.library.updateFailed":
+      "Không lưu được thay đổi. Hãy thử lại.",
+    "classroomTools.files.status.pending": "Đang chờ tải lên…",
+    "classroomTools.files.status.processing": "Đang kiểm tra tệp…",
+    "classroomTools.files.status.rejected": "Tệp bị từ chối:",
+    "classroomTools.files.rejected.checksum_mismatch":
+      "nội dung không khớp mã kiểm tra, hãy tải lại.",
+    "classroomTools.files.rejected.media_type_mismatch":
+      "định dạng thật không khớp đuôi tệp.",
+    "classroomTools.files.rejected.file_too_large_for_viewer":
+      "tệp quá lớn (PDF tối đa 50 MiB, ảnh 10 MiB).",
+    "classroomTools.files.rejected.pdf_encrypted":
+      "PDF có mật khẩu, hãy gỡ mật khẩu rồi tải lại.",
+    "classroomTools.files.rejected.pdf_too_many_pages":
+      "PDF vượt 300 trang, hãy tách nhỏ.",
+    "classroomTools.files.rejected.pdf_invalid":
+      "PDF bị hỏng hoặc không hợp lệ.",
+    "classroomTools.files.rejected.image_dimensions_exceeded":
+      "ảnh vượt 50 megapixel.",
+    "classroomTools.files.rejected.image_invalid":
+      "ảnh bị hỏng hoặc không hợp lệ.",
+    "classroomTools.files.rejected.unknown": "tệp không hợp lệ.",
+    "classroomTools.files.upload.open": "Tải tài liệu lên",
+    "classroomTools.files.upload.hint":
+      "Kéo-thả PDF (≤ 50 MiB) hoặc ảnh PNG/JPEG/WebP (≤ 10 MiB) vào đây",
+    "classroomTools.files.upload.choose": "Chọn tệp",
+    "classroomTools.files.upload.scopeLegend": "Lưu tài liệu ở",
+    "classroomTools.files.upload.scopeRoom": "Chỉ phòng này (30 ngày)",
+    "classroomTools.files.upload.scopeClass": "Lưu vào Kho lớp",
+    "classroomTools.files.upload.allowStudentDownload":
+      "Cho phép học sinh tải bản gốc",
+    "classroomTools.files.upload.problemType":
+      "Chỉ nhận PDF, PNG, JPEG hoặc WebP.",
+    "classroomTools.files.upload.problemEmpty": "Tệp trống.",
+    "classroomTools.files.upload.problemPdfTooLarge": "PDF vượt 50 MiB.",
+    "classroomTools.files.upload.problemImageTooLarge": "Ảnh vượt 10 MiB.",
+    "classroomTools.files.upload.progressLabel": "Tiến trình tải lên",
+    "classroomTools.files.upload.phaseIdle": "",
+    "classroomTools.files.upload.phaseChecksum": "Đang tính mã kiểm tra…",
+    "classroomTools.files.upload.phaseReserving": "Đang chuẩn bị tải lên…",
+    "classroomTools.files.upload.phaseUploading": "Đang tải lên",
+    "classroomTools.files.upload.phaseFinalizing": "Đang hoàn tất…",
+    "classroomTools.files.upload.phaseComplete":
+      "Đã tải lên. Hệ thống đang kiểm tra tệp.",
+    "classroomTools.files.upload.failed": "Tải lên thất bại. Hãy thử lại.",
+    "classroomTools.files.upload.forbidden":
+      "Bạn không có quyền tải tài liệu vào phòng này.",
+    "classroomTools.files.upload.rateLimited":
+      "Bạn tải lên quá nhanh. Hãy đợi một lát.",
+    "classroomTools.files.viewer.preparing": "Đang chuẩn bị tài liệu…",
+    "classroomTools.files.viewer.downloading": "Đang tải tài liệu {percent}%",
+    "classroomTools.files.viewer.downloadProgress": "Tiến trình tải tài liệu",
+    "classroomTools.files.viewer.opening": "Đang mở tài liệu…",
+    "classroomTools.files.viewer.forbidden":
+      "Không mở được tài liệu này (không có quyền hoặc đã bị xóa).",
+    "classroomTools.files.viewer.tooLarge":
+      "Tệp lớn hơn 30 MiB chưa xem được trong phòng ở giai đoạn này.",
+    "classroomTools.files.viewer.integrity":
+      "Tài liệu tải về không khớp mã kiểm tra nên đã bị loại bỏ.",
+    "classroomTools.files.viewer.loadError": "Không tải được tài liệu.",
+    "classroomTools.files.viewer.parseError": "Không đọc được tài liệu này.",
+    "classroomTools.files.viewer.pageError": "Không hiển thị được trang này.",
+    "classroomTools.files.viewer.region":
+      "Trình xem tài liệu: {name}, trang {page} trên {count}",
+    "classroomTools.files.viewer.regionImage": "Trình xem ảnh: {name}",
+    "classroomTools.files.viewer.page": "Trang {page}",
+    "classroomTools.files.viewer.pageInput": "Trang (1–{count})",
+    "classroomTools.files.viewer.libraryKey": "{name} — mở Kho tài liệu",
+    "classroomTools.files.viewer.zoomGroup": "Thu phóng",
+    "classroomTools.files.viewer.zoomIn": "Phóng to",
+    "classroomTools.files.viewer.zoomOut": "Thu nhỏ",
+    "classroomTools.files.viewer.zoomValue": "Mức thu phóng {percent}%",
+    "classroomTools.files.viewer.fitMode": "Chế độ hiển thị",
+    "classroomTools.files.viewer.fitWidth": "Vừa chiều ngang",
+    "classroomTools.files.viewer.fitPage": "Vừa trang",
+    "classroomTools.files.viewer.fitCustom": "Tùy chỉnh",
+    "classroomTools.files.viewer.more": "Thêm tùy chọn",
+    "classroomTools.files.viewer.thumbnails": "Trang thu nhỏ",
+    "classroomTools.files.viewer.showThumbnails": "Hiện trang thu nhỏ",
+    "classroomTools.files.viewer.hideThumbnails": "Ẩn trang thu nhỏ",
+    "classroomTools.files.search.open": "Tìm trong tài liệu",
+    "classroomTools.files.search.label": "Tìm trong tài liệu",
+    "classroomTools.files.search.placeholder": "Tìm chữ trong tài liệu…",
+    "classroomTools.files.search.ignoreDiacritics": "Bỏ qua dấu",
+    "classroomTools.files.search.previous": "Kết quả trước",
+    "classroomTools.files.search.next": "Kết quả sau",
+    "classroomTools.files.search.close": "Đóng tìm kiếm",
+    "classroomTools.files.search.scanning": "Đang tìm… {scanned}/{count} trang",
+    "classroomTools.files.search.none": "Không tìm thấy kết quả.",
+    "classroomTools.files.search.results": "{count} kết quả trên {pages} trang",
+    "classroomTools.files.search.scanned":
+      "Tài liệu dạng ảnh quét: không có chữ để tìm hoặc đọc bằng trình đọc màn hình.",
+    "classroomTools.files.links.internal": "Đi tới trang {page}",
+    "classroomTools.files.links.external": "Liên kết ngoài: {host}",
+    "classroomTools.files.links.mailto": "Gửi thư tới {address}",
+    "classroomTools.files.links.confirmTitle": "Mở liên kết ngoài?",
+    "classroomTools.files.links.confirmBody":
+      "Liên kết trong tài liệu sẽ mở trang web sau ở thẻ mới:",
+    "classroomTools.files.links.confirmOpen": "Mở liên kết",
+    "classroomTools.files.links.confirmMailTitle": "Mở ứng dụng thư?",
+    "classroomTools.files.links.confirmMailBody":
+      "Liên kết trong tài liệu sẽ soạn thư tới:",
+    "classroomTools.files.links.confirmMail": "Soạn thư",
+    "classroomTools.files.activeContent.title": "Tệp có nội dung chủ động",
+    "classroomTools.files.activeContent.body":
+      "“{name}” khai báo JavaScript, hành động tự chạy, biểu mẫu XFA hoặc tệp đính kèm. Trình xem TutorHub không bao giờ chạy chúng, nhưng phần mềm PDF trên máy bạn có thể chạy.",
+    "classroomTools.files.activeContent.advice":
+      "Chỉ tải nếu bạn tin nguồn tệp, và mở bằng trình đọc PDF đã tắt JavaScript.",
+    "classroomTools.files.activeContent.confirm": "Vẫn tải bản gốc",
+    "classroomTools.files.snippet.menu": "Đưa sang Bảng trắng",
+    "classroomTools.files.snippet.sendPage": "Đưa nguyên trang hiện tại",
+    "classroomTools.files.snippet.crop": "Kéo chọn vùng cắt",
+    "classroomTools.files.snippet.cropLabel": "Vùng cắt sang Bảng trắng",
+    "classroomTools.files.snippet.cropHint":
+      "Kéo để chọn vùng. Mũi tên để di chuyển, Shift + mũi tên để đổi kích thước, Enter để xác nhận, Esc để hủy.",
+    "classroomTools.files.snippet.cropConfirm": "Đưa vùng này sang Bảng trắng",
+    "classroomTools.files.snippet.working": "Đang chuẩn bị ảnh cho Bảng trắng…",
+    "classroomTools.files.snippet.tooLarge":
+      "Vùng này vẫn lớn hơn 40 KiB sau 8 lần nén. Hãy chọn vùng nhỏ hơn.",
+    "classroomTools.files.snippet.readOnly":
+      "Bạn chỉ có quyền xem Bảng trắng nên không thể đưa ảnh sang.",
+    "classroomTools.files.snippet.failed":
+      "Không tạo được ảnh từ trang này. Hãy thử lại.",
+    "classroomTools.files.snippet.dismiss": "Đóng thông báo",
+    "whiteboard.snippet.caption": "Trích từ {name} — trang {page}",
+    "whiteboard.snippet.captionImage": "Trích từ {name}",
+    "whiteboard.snippet.pending":
+      "Ảnh trích từ tài liệu đang chờ: sẽ chèn khi Bảng trắng sẵn sàng.",
+    "whiteboard.snippet.inserted":
+      "Đã chèn ảnh trích từ tài liệu vào Bảng trắng.",
+    "whiteboard.snippet.limit":
+      "Bảng trắng đã đạt giới hạn 12 ảnh trích từ tài liệu. Hãy xóa bớt hoặc mở bảng mới.",
+    "whiteboard.snippet.readOnly":
+      "Bạn không có quyền sửa Bảng trắng nên ảnh trích chưa được chèn.",
+    "whiteboard.snippet.tooLarge": "Ảnh trích vượt 40 KiB nên không được chèn.",
+    "whiteboard.snippet.failed": "Không chèn được ảnh trích. Hãy thử lại.",
+    "whiteboard.snippet.dismiss": "Đóng thông báo",
   },
   en: {
     "privateAlpha.loading": "Loading Private Alpha enrollment",
@@ -7322,6 +7512,208 @@ const messages = {
     "media.chat.codeOpened":
       "Opened the code in the Code tool. It has not been run.",
     "media.chat.codeUnknownLanguage": "Code",
+    // ROOM-TOOLS-FILES-01B: classroom Documents tool (ADR-0045 Slice 1).
+    "classroomTools.filesLabel": "Documents",
+    "classroomTools.filesTitle": "Documents tool",
+    "classroomTools.filesDescription":
+      "Open class PDFs and images, search them and send problems to the whiteboard.",
+    "classroomTools.files.loading": "Loading the Documents tool…",
+    "classroomTools.files.loadErrorTitle": "Couldn't load the Documents tool",
+    "classroomTools.files.loadErrorDescription":
+      "Check your connection and try again.",
+    "classroomTools.files.featureOff": "The Documents tool is off",
+    "classroomTools.files.featureOffDescription":
+      "Your organization hasn't enabled Documents or class file uploads.",
+    "classroomTools.files.forbiddenTitle": "Documents unavailable",
+    "classroomTools.files.forbiddenDescription":
+      "You need to be in the room to see its documents.",
+    "classroomTools.files.cancel": "Cancel",
+    "classroomTools.files.library.title": "Document library",
+    "classroomTools.files.library.subtitle":
+      "Class documents and files shared in this room.",
+    "classroomTools.files.library.close": "Close the document library",
+    "classroomTools.files.library.loading": "Loading the document library…",
+    "classroomTools.files.library.error": "Couldn't load the document library.",
+    "classroomTools.files.library.forbidden":
+      "You don't have access to this room's documents.",
+    "classroomTools.files.library.emptyTitle": "No documents yet",
+    "classroomTools.files.library.emptyUploader":
+      "Upload a PDF or a worksheet image so the class can follow along.",
+    "classroomTools.files.library.emptyViewer":
+      "The teacher hasn't shared any documents in this room yet.",
+    "classroomTools.files.library.listLabel": "Documents",
+    "classroomTools.files.library.loadMore": "Load more",
+    "classroomTools.files.library.sourceClass": "Class file",
+    "classroomTools.files.library.sourceRoom": "Room file",
+    "classroomTools.files.library.kindPdf": "PDF",
+    "classroomTools.files.library.kindPdfPages": "PDF · {count} pages",
+    "classroomTools.files.library.kindImage": "Image",
+    "classroomTools.files.library.activeContent": "Active content",
+    "classroomTools.files.library.open": "Open",
+    "classroomTools.files.library.openNamed": "Open {name}",
+    "classroomTools.files.library.download": "Download original",
+    "classroomTools.files.library.downloadNamed":
+      "Download the original {name}",
+    "classroomTools.files.library.downloadFailed":
+      "Couldn't download the original. Try again.",
+    "classroomTools.files.library.downloadForbidden":
+      "You aren't allowed to download this file.",
+    "classroomTools.files.library.allowStudentDownload":
+      "Students may download the original",
+    "classroomTools.files.library.deleteNamed": "Remove {name} from the room",
+    "classroomTools.files.library.deleteConfirm":
+      "Remove this document from the room?",
+    "classroomTools.files.library.deleteConfirmLabel":
+      "Confirm removing {name}",
+    "classroomTools.files.library.deleteAction": "Remove from room",
+    "classroomTools.files.library.conflict":
+      "The document just changed. The list was refreshed; try again.",
+    "classroomTools.files.library.updateFailed":
+      "Couldn't save the change. Try again.",
+    "classroomTools.files.status.pending": "Waiting for the upload…",
+    "classroomTools.files.status.processing": "Checking the file…",
+    "classroomTools.files.status.rejected": "File rejected:",
+    "classroomTools.files.rejected.checksum_mismatch":
+      "the content doesn't match its checksum; upload it again.",
+    "classroomTools.files.rejected.media_type_mismatch":
+      "the real format doesn't match the file type.",
+    "classroomTools.files.rejected.file_too_large_for_viewer":
+      "the file is too large (PDF up to 50 MiB, images 10 MiB).",
+    "classroomTools.files.rejected.pdf_encrypted":
+      "the PDF is password-protected; remove the password and upload again.",
+    "classroomTools.files.rejected.pdf_too_many_pages":
+      "the PDF has more than 300 pages; split it.",
+    "classroomTools.files.rejected.pdf_invalid":
+      "the PDF is damaged or invalid.",
+    "classroomTools.files.rejected.image_dimensions_exceeded":
+      "the image is over 50 megapixels.",
+    "classroomTools.files.rejected.image_invalid":
+      "the image is damaged or invalid.",
+    "classroomTools.files.rejected.unknown": "the file is invalid.",
+    "classroomTools.files.upload.open": "Upload a document",
+    "classroomTools.files.upload.hint":
+      "Drop a PDF (≤ 50 MiB) or a PNG/JPEG/WebP image (≤ 10 MiB) here",
+    "classroomTools.files.upload.choose": "Choose a file",
+    "classroomTools.files.upload.scopeLegend": "Save the document in",
+    "classroomTools.files.upload.scopeRoom": "This room only (30 days)",
+    "classroomTools.files.upload.scopeClass": "The class library",
+    "classroomTools.files.upload.allowStudentDownload":
+      "Students may download the original",
+    "classroomTools.files.upload.problemType":
+      "Only PDF, PNG, JPEG or WebP files are accepted.",
+    "classroomTools.files.upload.problemEmpty": "The file is empty.",
+    "classroomTools.files.upload.problemPdfTooLarge": "The PDF is over 50 MiB.",
+    "classroomTools.files.upload.problemImageTooLarge":
+      "The image is over 10 MiB.",
+    "classroomTools.files.upload.progressLabel": "Upload progress",
+    "classroomTools.files.upload.phaseIdle": "",
+    "classroomTools.files.upload.phaseChecksum": "Computing the checksum…",
+    "classroomTools.files.upload.phaseReserving": "Preparing the upload…",
+    "classroomTools.files.upload.phaseUploading": "Uploading",
+    "classroomTools.files.upload.phaseFinalizing": "Finishing…",
+    "classroomTools.files.upload.phaseComplete":
+      "Uploaded. The file is being checked.",
+    "classroomTools.files.upload.failed": "The upload failed. Try again.",
+    "classroomTools.files.upload.forbidden":
+      "You can't upload documents to this room.",
+    "classroomTools.files.upload.rateLimited":
+      "You're uploading too fast. Wait a moment.",
+    "classroomTools.files.viewer.preparing": "Preparing the document…",
+    "classroomTools.files.viewer.downloading":
+      "Loading the document {percent}%",
+    "classroomTools.files.viewer.downloadProgress":
+      "Document download progress",
+    "classroomTools.files.viewer.opening": "Opening the document…",
+    "classroomTools.files.viewer.forbidden":
+      "This document can't be opened (no access, or it was removed).",
+    "classroomTools.files.viewer.tooLarge":
+      "Files over 30 MiB can't be viewed in the room yet.",
+    "classroomTools.files.viewer.integrity":
+      "The downloaded document didn't match its checksum and was discarded.",
+    "classroomTools.files.viewer.loadError": "Couldn't load the document.",
+    "classroomTools.files.viewer.parseError": "This document can't be read.",
+    "classroomTools.files.viewer.pageError": "This page couldn't be displayed.",
+    "classroomTools.files.viewer.region":
+      "Document viewer: {name}, page {page} of {count}",
+    "classroomTools.files.viewer.regionImage": "Image viewer: {name}",
+    "classroomTools.files.viewer.page": "Page {page}",
+    "classroomTools.files.viewer.pageInput": "Page (1–{count})",
+    "classroomTools.files.viewer.libraryKey":
+      "{name} — open the document library",
+    "classroomTools.files.viewer.zoomGroup": "Zoom",
+    "classroomTools.files.viewer.zoomIn": "Zoom in",
+    "classroomTools.files.viewer.zoomOut": "Zoom out",
+    "classroomTools.files.viewer.zoomValue": "Zoom {percent}%",
+    "classroomTools.files.viewer.fitMode": "Display mode",
+    "classroomTools.files.viewer.fitWidth": "Fit width",
+    "classroomTools.files.viewer.fitPage": "Fit page",
+    "classroomTools.files.viewer.fitCustom": "Custom",
+    "classroomTools.files.viewer.more": "More options",
+    "classroomTools.files.viewer.thumbnails": "Page thumbnails",
+    "classroomTools.files.viewer.showThumbnails": "Show thumbnails",
+    "classroomTools.files.viewer.hideThumbnails": "Hide thumbnails",
+    "classroomTools.files.search.open": "Search the document",
+    "classroomTools.files.search.label": "Search the document",
+    "classroomTools.files.search.placeholder": "Find text in the document…",
+    "classroomTools.files.search.ignoreDiacritics": "Ignore accents",
+    "classroomTools.files.search.previous": "Previous result",
+    "classroomTools.files.search.next": "Next result",
+    "classroomTools.files.search.close": "Close search",
+    "classroomTools.files.search.scanning":
+      "Searching… {scanned}/{count} pages",
+    "classroomTools.files.search.none": "No results.",
+    "classroomTools.files.search.results": "{count} results on {pages} pages",
+    "classroomTools.files.search.scanned":
+      "Scanned document: there is no text to search or read with a screen reader.",
+    "classroomTools.files.links.internal": "Go to page {page}",
+    "classroomTools.files.links.external": "External link: {host}",
+    "classroomTools.files.links.mailto": "Email {address}",
+    "classroomTools.files.links.confirmTitle": "Open an external link?",
+    "classroomTools.files.links.confirmBody":
+      "A link in the document will open this website in a new tab:",
+    "classroomTools.files.links.confirmOpen": "Open link",
+    "classroomTools.files.links.confirmMailTitle": "Open your email app?",
+    "classroomTools.files.links.confirmMailBody":
+      "A link in the document will start an email to:",
+    "classroomTools.files.links.confirmMail": "Write email",
+    "classroomTools.files.activeContent.title": "This file has active content",
+    "classroomTools.files.activeContent.body":
+      "“{name}” declares JavaScript, automatic actions, XFA forms or attachments. The TutorHub viewer never runs them, but the PDF app on your device might.",
+    "classroomTools.files.activeContent.advice":
+      "Only download it if you trust its source, and open it in a PDF reader with JavaScript turned off.",
+    "classroomTools.files.activeContent.confirm": "Download anyway",
+    "classroomTools.files.snippet.menu": "Send to whiteboard",
+    "classroomTools.files.snippet.sendPage": "Send the current page",
+    "classroomTools.files.snippet.crop": "Select a region",
+    "classroomTools.files.snippet.cropLabel":
+      "Region to send to the whiteboard",
+    "classroomTools.files.snippet.cropHint":
+      "Drag to select a region. Arrow keys move it, Shift + arrows resize it, Enter confirms, Esc cancels.",
+    "classroomTools.files.snippet.cropConfirm":
+      "Send this region to the whiteboard",
+    "classroomTools.files.snippet.working":
+      "Preparing the image for the whiteboard…",
+    "classroomTools.files.snippet.tooLarge":
+      "This region is still over 40 KiB after 8 compression steps. Select a smaller region.",
+    "classroomTools.files.snippet.readOnly":
+      "You can only view the whiteboard, so the image can't be sent.",
+    "classroomTools.files.snippet.failed":
+      "Couldn't create an image from this page. Try again.",
+    "classroomTools.files.snippet.dismiss": "Dismiss",
+    "whiteboard.snippet.caption": "From {name} — page {page}",
+    "whiteboard.snippet.captionImage": "From {name}",
+    "whiteboard.snippet.pending":
+      "A document snippet is waiting: it will be added when the whiteboard is ready.",
+    "whiteboard.snippet.inserted":
+      "Added the document snippet to the whiteboard.",
+    "whiteboard.snippet.limit":
+      "This whiteboard already has 12 document snippets. Remove some or open a new board.",
+    "whiteboard.snippet.readOnly":
+      "You can't edit this whiteboard, so the snippet wasn't added.",
+    "whiteboard.snippet.tooLarge":
+      "The snippet is over 40 KiB and wasn't added.",
+    "whiteboard.snippet.failed": "Couldn't add the snippet. Try again.",
+    "whiteboard.snippet.dismiss": "Dismiss",
   },
 } as const satisfies Record<Language, Record<string, string>>;
 

@@ -450,6 +450,13 @@ export interface ClassroomToolDefinition {
   readonly id: ClassroomToolID;
   /** Short name on the Classroom tools tile (e.g. "Bảng trắng", "Code"). */
   readonly label: string;
+  /**
+   * ROOM-TOOLS-FILES-01B: called when the person closes this tool's stage
+   * (the Top Bar Close key, or choosing its open tile again) — not when
+   * another tool replaces it — so a tool can release memory it keeps for
+   * quick switching (the Documents tool drops its in-RAM file bytes).
+   */
+  readonly onStageClose?: () => void;
   /** Stage heading and region name. */
   readonly title: string;
 }
@@ -458,14 +465,17 @@ export interface ClassroomToolDefinition {
 const TOOLS_CONTROL_ID = "media-p506-control-tools";
 
 /**
- * Escape pressed inside the tools popover or the Code tool belongs to them
- * (closing the popover, CodeMirror's Escape-then-Tab exit), never to the
+ * Escape pressed inside the tools popover, the Code tool or the Documents
+ * tool belongs to them (closing the popover, CodeMirror's Escape-then-Tab
+ * exit, the document search / crop / library drawer), never to the
  * non-modal right-hand inspector that Radix would otherwise dismiss.
  */
 function escapeBelongsToToolSurface(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
-    target.closest(".media-p506-tools-popover, .media-p506-tool-code") !== null
+    target.closest(
+      ".media-p506-tools-popover, .media-p506-tool-code, .media-p506-tool-files",
+    ) !== null
   );
 }
 
@@ -1428,6 +1438,7 @@ export function ClassroomMediaShell({
     setToolsPopoverOpen(false);
     setAutoOpenedToolID(null);
     if (openToolID === toolID) {
+      activeTool?.onStageClose?.();
       setOpenToolID(null);
       scheduleElementFocus(TOOLS_CONTROL_ID);
       return;
@@ -1438,6 +1449,7 @@ export function ClassroomMediaShell({
 
   const closeActiveTool = () => {
     if (!activeTool) return;
+    activeTool.onStageClose?.();
     setAutoOpenedToolID(null);
     setOpenToolID(null);
     scheduleElementFocus(TOOLS_CONTROL_ID);

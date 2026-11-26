@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,6 +15,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
 import { ClassroomHeaderSlotContext } from "../media/ClassroomMediaShell";
 import { ClassroomWhiteboardTool } from "./ClassroomWhiteboardTool";
+import {
+  createWhiteboardSnippetBridge,
+  type WhiteboardSnippetBridge,
+} from "./whiteboardSnippetBridge";
 
 const whiteboardMocks = vi.hoisted(() => ({
   prepare: vi.fn(),
@@ -32,15 +37,18 @@ vi.mock("./LazyWhiteboardEngine", () => ({
     capability,
     classroom,
     onRecoveryRequired,
+    snippetBridge,
     toolbarSlot,
   }: {
     capability: string;
     classroom?: boolean;
     onRecoveryRequired: () => void;
+    snippetBridge?: unknown;
     toolbarSlot?: HTMLElement | null;
   }) => (
     <div>
       <p>Canonical engine capability: {capability}</p>
+      <p>Engine snippet bridge: {snippetBridge ? "yes" : "no"}</p>
       <p>
         Engine classroom: {classroom ? "yes" : "no"}; paper slot:{" "}
         {toolbarSlot?.classList.contains("whiteboard-topbar-paper")
@@ -217,6 +225,48 @@ describe("ClassroomWhiteboardTool", () => {
     view.rerender(toolElement());
     expect(
       screen.getByRole("button", { name: "Prepare whiteboard" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says a document snippet is waiting until the board is live, then hands the bridge to the engine (ROOM-TOOLS-FILES-01B)", async () => {
+    const bridge = createWhiteboardSnippetBridge();
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document: null },
+      isError: false,
+      isPending: false,
+    });
+    const view = renderTool({ snippetBridge: bridge });
+    expect(
+      screen.queryByText(/A document snippet is waiting/),
+    ).not.toBeInTheDocument();
+    act(() =>
+      bridge.push({
+        byteLength: 3,
+        createdAt: 1,
+        dataURL: "data:image/webp;base64,QUJD",
+        height: 1,
+        id: "pending-1",
+        mimeType: "image/webp",
+        pageNumber: 1,
+        sourceName: "De.pdf",
+        width: 1,
+      }),
+    );
+    expect(
+      screen.getByText(
+        "A document snippet is waiting: it will be added when the whiteboard is ready.",
+      ),
+    ).toBeInTheDocument();
+
+    whiteboardMocks.tool.mockReturnValue({
+      data: { can_create: false, document },
+      isError: false,
+      isPending: false,
+      refetch: vi.fn(),
+    });
+    view.rerender(toolElement({ snippetBridge: bridge }));
+    expect(
+      await screen.findByText("Engine snippet bridge: yes"),
     ).toBeInTheDocument();
   });
 
@@ -663,11 +713,19 @@ function classroomToolElement(
   );
 }
 
-function renderTool(options: { autoStart?: boolean } = {}) {
+function renderTool(
+  options: {
+    autoStart?: boolean;
+    snippetBridge?: WhiteboardSnippetBridge;
+  } = {},
+) {
   return render(toolElement(options));
 }
 
-function toolElement({ autoStart }: { autoStart?: boolean } = {}) {
+function toolElement({
+  autoStart,
+  snippetBridge,
+}: { autoStart?: boolean; snippetBridge?: WhiteboardSnippetBridge } = {}) {
   return (
     <I18nProvider initialLanguage="en">
       <ClassroomWhiteboardTool
@@ -675,6 +733,7 @@ function toolElement({ autoStart }: { autoStart?: boolean } = {}) {
         autoStart={autoStart}
         enabled
         mediaSpaceID="0e0f92c4-347c-4022-b4d1-c81208a972e3"
+        snippetBridge={snippetBridge}
         tenantID="2a388dc1-e3a5-4888-8d65-d9bd57fd4fc7"
       />
     </I18nProvider>

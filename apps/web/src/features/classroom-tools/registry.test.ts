@@ -18,6 +18,21 @@ describe("ROOM-TOOLS-CODE-01 classroom tools registry", () => {
       "code",
     ]);
     expect(groupClassroomTools([])).toEqual([]);
+    // ROOM-TOOLS-FILES-01B: Documents joins the present group after Code.
+    expect(
+      groupClassroomTools([
+        { id: "files" },
+        { id: "code" },
+        { id: "whiteboard" },
+      ])[0]?.tools.map((tool) => tool.id),
+    ).toEqual(["whiteboard", "code", "files"]);
+    expect(CLASSROOM_TOOL_MANIFEST.files).toEqual({
+      category: "present",
+      descriptionKey: "classroomTools.filesDescription",
+      id: "files",
+      order: 30,
+    });
+    expect(isClassroomToolID("files")).toBe(true);
     expect(CLASSROOM_TOOL_MANIFEST.code.descriptionKey).toBe(
       "classroomTools.codeDescription",
     );

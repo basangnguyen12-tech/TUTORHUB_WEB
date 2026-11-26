@@ -824,3 +824,138 @@ describe("LazyWhiteboardEngine", () => {
     slot.remove();
   });
 });
+
+describe("ROOM-TOOLS-FILES-01B document snippets on the live canvas", () => {
+  const pixel =
+    "data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA";
+
+  function snippet(id: string) {
+    return {
+      byteLength: 42,
+      createdAt: 1,
+      dataURL: pixel,
+      height: 300,
+      id,
+      mimeType: "image/webp" as const,
+      pageNumber: 3,
+      sourceName: "Đề KT.pdf",
+      width: 400,
+    };
+  }
+
+  afterEach(() => cleanup());
+
+  async function nextFrame() {
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+  }
+
+  it("inserts a pending snippet as a locked image with a source caption", async () => {
+    const { createWhiteboardSnippetBridge } =
+      await import("./whiteboardSnippetBridge");
+    engineMocks.api = createFakeExcalidrawAPI();
+    const memory = createMemoryAuthority();
+    const bridge = createWhiteboardSnippetBridge();
+    bridge.push(snippet("first"));
+    render(
+      <I18nProvider initialLanguage="vi">
+        <CanonicalExcalidrawCanvas
+          authority={memory.authority}
+          connectionStatus="connected"
+          readOnly={false}
+          snippetBridge={bridge}
+        />
+      </I18nProvider>,
+    );
+    await nextFrame();
+
+    const scene = memory.authority.getScene();
+    const image = scene.elements.find((element) => element.type === "image");
+    const caption = scene.elements.find((element) => element.type === "text");
+    expect(image).toMatchObject({ fileId: "doc-snip-first", locked: true });
+    expect(caption).toMatchObject({
+      locked: true,
+      text: "Trích từ Đề KT.pdf — trang 3",
+    });
+    expect(scene.files["doc-snip-first"]).toMatchObject({
+      dataURL: pixel,
+      mimeType: "image/webp",
+    });
+    expect(bridge.peek()).toBeNull();
+    expect(bridge.lastReport()).toEqual({
+      outcome: "inserted",
+      snippetID: "first",
+    });
+    expect(
+      screen.getByText("Đã chèn ảnh trích từ tài liệu vào Bảng trắng."),
+    ).toBeInTheDocument();
+  });
+
+  it("refuses snippets on a view-only board and at the 12-snippet limit", async () => {
+    const { createWhiteboardSnippetBridge } =
+      await import("./whiteboardSnippetBridge");
+    engineMocks.api = createFakeExcalidrawAPI();
+    const memory = createMemoryAuthority();
+    const bridge = createWhiteboardSnippetBridge();
+    bridge.push(snippet("viewer"));
+    const view = render(
+      <I18nProvider initialLanguage="en">
+        <CanonicalExcalidrawCanvas
+          authority={memory.authority}
+          connectionStatus="connected"
+          readOnly
+          snippetBridge={bridge}
+        />
+      </I18nProvider>,
+    );
+    await nextFrame();
+    expect(memory.authority.replaceScene).not.toHaveBeenCalled();
+    expect(bridge.lastReport()?.outcome).toBe("readOnly");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "You can't edit this whiteboard, so the snippet wasn't added.",
+    );
+    view.unmount();
+
+    // A board that already holds 12 document snippets refuses a 13th.
+    const full = createMemoryAuthority();
+    for (let index = 0; index < 12; index += 1) {
+      bridge.push(snippet(`s${index}`));
+      engineMocks.api = createFakeExcalidrawAPI();
+      const mounted = render(
+        <I18nProvider initialLanguage="en">
+          <CanonicalExcalidrawCanvas
+            authority={full.authority}
+            connectionStatus="connected"
+            readOnly={false}
+            snippetBridge={bridge}
+          />
+        </I18nProvider>,
+      );
+      await nextFrame();
+      mounted.unmount();
+    }
+    expect(
+      full.authority
+        .getScene()
+        .elements.filter((element) => element.type === "image"),
+    ).toHaveLength(12);
+    bridge.push(snippet("thirteenth"));
+    engineMocks.api = createFakeExcalidrawAPI();
+    render(
+      <I18nProvider initialLanguage="en">
+        <CanonicalExcalidrawCanvas
+          authority={full.authority}
+          connectionStatus="connected"
+          readOnly={false}
+          snippetBridge={bridge}
+        />
+      </I18nProvider>,
+    );
+    await nextFrame();
+    expect(bridge.lastReport()?.outcome).toBe("limit");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This whiteboard already has 12 document snippets.",
+    );
+  });
+});

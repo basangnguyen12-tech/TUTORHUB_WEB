@@ -163,8 +163,36 @@ export function clearCodeDraftStorage(
   }
 }
 
+/**
+ * ROOM-TOOLS-FILES-01B (ADR-0045 §3): in-memory private data owned by lazily
+ * loaded tools (the classroom Documents tool keeps PDF bytes in RAM only).
+ * A tool registers a wipe callback here, so sign-out releases that memory
+ * without this module importing the tool.
+ */
+const privateSessionMemoryCleanups = new Set<() => void>();
+
+export function registerPrivateSessionMemoryCleanup(
+  cleanup: () => void,
+): () => void {
+  privateSessionMemoryCleanups.add(cleanup);
+  return () => {
+    privateSessionMemoryCleanups.delete(cleanup);
+  };
+}
+
+function clearPrivateSessionMemory() {
+  for (const cleanup of [...privateSessionMemoryCleanups]) {
+    try {
+      cleanup();
+    } catch {
+      // A failing tool must not keep other private data alive.
+    }
+  }
+}
+
 export async function clearPrivateSessionCache(queryClient: QueryClient) {
   advancePrincipalGeneration(queryClient);
+  clearPrivateSessionMemory();
   clearClientDrafts();
   clearMediaRoomEscrow();
   clearChatEmojiRecentStorage();

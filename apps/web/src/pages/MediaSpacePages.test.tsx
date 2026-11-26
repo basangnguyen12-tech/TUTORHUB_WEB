@@ -581,6 +581,43 @@ function renderedCodeToolEnabled(): boolean | undefined {
     ?.enabled;
 }
 
+function renderedFilesTool() {
+  const shellProps = liveKitMocks.shellRender.mock.lastCall?.[0] as
+    | {
+        tools?: Array<{
+          content?: {
+            props?: {
+              enabled?: boolean;
+              session?: { clear: () => void; readView: () => unknown };
+              snippetBridge?: unknown;
+              whiteboardEnabled?: boolean;
+            };
+          };
+          id: string;
+          onStageClose?: () => void;
+        }>;
+      }
+    | undefined;
+  const tools = shellProps?.tools ?? [];
+  return {
+    files: tools.find((tool) => tool.id === "files"),
+    whiteboard: tools.find((tool) => tool.id === "whiteboard") as
+      { content?: { props?: { snippetBridge?: unknown } } } | undefined,
+  };
+}
+
+function tenantCapabilitiesWithFilesTool(files: boolean, uploads: boolean) {
+  const capabilities = tenantCapabilitiesWithWhiteboard(true);
+  return {
+    ...capabilities,
+    features: {
+      ...capabilities.features,
+      classroom_files_tool: { configured_enabled: files, enabled: files },
+      file_uploads: { configured_enabled: uploads, enabled: uploads },
+    },
+  };
+}
+
 function tenantCapabilitiesWithCodeTool(enabled: boolean) {
   const capabilities = tenantCapabilitiesWithWhiteboard(true);
   return {
@@ -945,10 +982,15 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
         }
       | undefined;
     const tools = shellProps?.tools ?? [];
-    expect(tools.map((tool) => tool.id)).toEqual(["whiteboard", "code"]);
+    expect(tools.map((tool) => tool.id)).toEqual([
+      "whiteboard",
+      "code",
+      "files",
+    ]);
     expect(tools.map(({ label, title }) => ({ label, title }))).toEqual([
       { label: "Whiteboard", title: "Classroom whiteboard" },
       { label: "Code", title: "Code tool" },
+      { label: "Documents", title: "Documents tool" },
     ]);
     for (const tool of tools) expect(tool.icon).toBeTruthy();
 
@@ -964,6 +1006,51 @@ describe("MediaSpacePreJoinPage P4-03 boundaries", () => {
     // One per-room-session Code memory shared with chat "Open in Code".
     expect(code?.session).toBeTruthy();
     expect(shellProps?.chat?.props?.codeSession).toBe(code?.session);
+  });
+
+  it.each([
+    { files: true, uploads: true, expected: true },
+    { files: true, uploads: false, expected: false },
+    { files: false, uploads: true, expected: false },
+  ])(
+    "binds the Documents tool to classroom_files_tool && file_uploads ($files, $uploads) (ROOM-TOOLS-FILES-01B)",
+    async ({ expected, files, uploads }) => {
+      apiMocks.getTenantCapabilities.mockResolvedValue(
+        tenantCapabilitiesWithFilesTool(files, uploads),
+      );
+      putCanonicalRoomEscrow();
+      renderCanonicalRoom();
+
+      await screen.findByRole("heading", { name: "TutorHub classroom" });
+      await waitFor(() => expect(renderedWhiteboardEnabled()).toBe(true));
+      const { files: tool, whiteboard } = renderedFilesTool();
+      expect(tool?.content?.props?.enabled).toBe(expected);
+      expect(tool?.content?.props?.whiteboardEnabled).toBe(true);
+      // One room bridge shared by "Đưa sang Bảng trắng" and the board.
+      expect(tool?.content?.props?.snippetBridge).toBeTruthy();
+      expect(whiteboard?.content?.props?.snippetBridge).toBe(
+        tool?.content?.props?.snippetBridge,
+      );
+      expect(typeof tool?.onStageClose).toBe("function");
+    },
+  );
+
+  it("keeps the Documents tool fail-closed while capabilities load or fail (ROOM-TOOLS-FILES-01B)", async () => {
+    const pending =
+      createDeferred<ReturnType<typeof tenantCapabilitiesWithFilesTool>>();
+    apiMocks.getTenantCapabilities.mockReturnValue(pending.promise);
+    putCanonicalRoomEscrow();
+    renderCanonicalRoom();
+    await screen.findByRole("heading", { name: "TutorHub classroom" });
+    expect(renderedFilesTool().files?.content?.props?.enabled).toBeUndefined();
+    await act(async () => {
+      // A 4xx answer is not retried: the tool must fail closed at once.
+      pending.reject(new APIRequestError(403));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(renderedFilesTool().files?.content?.props?.enabled).toBe(false),
+    );
   });
 
   it("binds the Code tool to the classroom_code_tool kill-switch (ROOM-TOOLS-CODE-02A)", async () => {

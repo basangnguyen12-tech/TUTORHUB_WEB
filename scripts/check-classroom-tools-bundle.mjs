@@ -15,12 +15,33 @@ import { pathToFileURL } from "node:url";
  *   closure). Runtime assets under `/sandbox-runtime/` (Pyodide, sql.js) and
  *   dynamically imported language packs / snippets are reported separately.
  * - Every sandbox runtime file stays below the static hosting file limit.
+ *
+ * ROOM-TOOLS-FILES-01B / ADR-0045 §3 adds the Documents tool:
+ *
+ * - exactly one `LazyDocumentViewer-*` chunk (pdf.js core + the viewer),
+ *   never statically imported by the entry or the classroom room page, and
+ *   its incremental static closure stays within a gzip budget;
+ * - the self-hosted `/pdf-runtime/` worker and NOTICE exist and every runtime
+ *   file stays below the static hosting file limit;
+ * - PDF scripting is never shipped: no file anywhere under `dist/` may be
+ *   named like `pdf.sandbox*` or `quickjs-eval*`, and no JavaScript asset may
+ *   reference them.
  */
 export const CLASSROOM_TOOLS_BUNDLE_BUDGETS = Object.freeze({
   codeWorkspaceIncrementalGzipBytes: 260 * 1024,
+  documentViewerIncrementalGzipBytes: 240 * 1024,
   entryRawBytes: 768 * 1024,
+  pdfRuntimeFileBytes: 10 * 1024 * 1024,
   sandboxRuntimeFileBytes: 10 * 1024 * 1024,
 });
+
+const PDF_RUNTIME_REQUIRED_FILES = Object.freeze([
+  "pdf.worker.min.mjs",
+  "NOTICE.txt",
+]);
+const PDF_SCRIPTING_FILE_PATTERN = /pdf\.sandbox|quickjs-eval/i;
+const PDF_SCRIPTING_REFERENCE_PATTERN =
+  /pdf\.sandbox(?:\.min)?\.m?js|quickjs-eval/;
 
 const SANDBOX_RUNTIME_FILES = Object.freeze([
   "pyodide.mjs",
@@ -47,6 +68,7 @@ export async function scanClassroomToolsBundle(directory) {
     return matches.length === 1 ? matches[0] : null;
   };
   const codeName = single("LazyCodeWorkspace-");
+  const documentName = single("LazyDocumentViewer-");
   const whiteboardName = single("LazyWhiteboardEngine-");
   const roomName = single("MediaSpaceRoomPage-");
   const issues = [];
@@ -56,6 +78,9 @@ export async function scanClassroomToolsBundle(directory) {
   }
   if (!codeName)
     issues.push("exactly one lazy Code workspace chunk is required");
+  if (!documentName) {
+    issues.push("exactly one lazy document viewer chunk is required");
+  }
   if (!whiteboardName) {
     issues.push("exactly one lazy whiteboard engine chunk is required");
   }
@@ -64,7 +89,7 @@ export async function scanClassroomToolsBundle(directory) {
   if (issues.length > 0) return { issues };
 
   const entryClosure = await staticClosure(assetsDirectory, entryName);
-  for (const name of [codeName, whiteboardName]) {
+  for (const name of [codeName, documentName, whiteboardName]) {
     if (entryClosure.has(name)) {
       issues.push(`initial entry statically imports ${name}`);
     }
@@ -72,6 +97,9 @@ export async function scanClassroomToolsBundle(directory) {
   const roomClosure = await staticClosure(assetsDirectory, roomName);
   if (roomClosure.has(codeName)) {
     issues.push("classroom room page statically imports the Code workspace");
+  }
+  if (roomClosure.has(documentName)) {
+    issues.push("classroom room page statically imports the document viewer");
   }
 
   const codeClosure = await staticClosure(assetsDirectory, codeName);
@@ -123,6 +151,74 @@ export async function scanClassroomToolsBundle(directory) {
     CLASSROOM_TOOLS_BUNDLE_BUDGETS.codeWorkspaceIncrementalGzipBytes,
   );
 
+  const documentClosure = await staticClosure(assetsDirectory, documentName);
+  let documentClosureGzipBytes = 0;
+  let documentIncrementalChunks = 0;
+  let documentIncrementalGzipBytes = 0;
+  let documentIncrementalRawBytes = 0;
+  for (const name of documentClosure) {
+    const bytes = await readFile(resolve(assetsDirectory, name));
+    const gzip = gzipSync(bytes).byteLength;
+    documentClosureGzipBytes += gzip;
+    if (!alreadyLoaded.has(name)) {
+      documentIncrementalChunks += 1;
+      documentIncrementalRawBytes += bytes.byteLength;
+      documentIncrementalGzipBytes += gzip;
+    }
+  }
+  enforceBudget(
+    issues,
+    "document viewer incremental closure gzip",
+    documentIncrementalGzipBytes,
+    CLASSROOM_TOOLS_BUNDLE_BUDGETS.documentViewerIncrementalGzipBytes,
+  );
+
+  const pdfRuntimeDirectory = resolve(directory, "pdf-runtime");
+  const pdfRuntimeFiles = await listFiles(pdfRuntimeDirectory);
+  const pdfRuntime = {
+    files: pdfRuntimeFiles.length,
+    largestFile: null,
+    largestFileBytes: 0,
+    noticeBytes: 0,
+    totalBytes: 0,
+    workerBytes: 0,
+  };
+  for (const name of PDF_RUNTIME_REQUIRED_FILES) {
+    if (!pdfRuntimeFiles.includes(name)) {
+      issues.push(`pdf runtime file is missing: ${name}`);
+    }
+  }
+  for (const name of pdfRuntimeFiles) {
+    const size = (await stat(resolve(pdfRuntimeDirectory, name))).size;
+    pdfRuntime.totalBytes += size;
+    if (size > pdfRuntime.largestFileBytes) {
+      pdfRuntime.largestFile = name;
+      pdfRuntime.largestFileBytes = size;
+    }
+    if (name === "pdf.worker.min.mjs") pdfRuntime.workerBytes = size;
+    if (name === "NOTICE.txt") pdfRuntime.noticeBytes = size;
+    enforceBudget(
+      issues,
+      `pdf runtime ${name}`,
+      size,
+      CLASSROOM_TOOLS_BUNDLE_BUDGETS.pdfRuntimeFileBytes - 1,
+    );
+  }
+
+  // PDF scripting (pdf.js sandbox / QuickJS) must never reach the build.
+  const distributionFiles = await listFiles(directory);
+  for (const name of distributionFiles) {
+    if (PDF_SCRIPTING_FILE_PATTERN.test(name)) {
+      issues.push(`PDF scripting runtime must not be shipped: ${name}`);
+      continue;
+    }
+    if (!/\.m?js$/i.test(name)) continue;
+    const source = await readFile(resolve(directory, name), "utf8");
+    if (PDF_SCRIPTING_REFERENCE_PATTERN.test(source)) {
+      issues.push(`${name} references the PDF scripting runtime`);
+    }
+  }
+
   const sandboxRuntime = {};
   for (const name of SANDBOX_RUNTIME_FILES) {
     const path = resolve(directory, "sandbox-runtime", name);
@@ -152,12 +248,41 @@ export async function scanClassroomToolsBundle(directory) {
     codeIncrementalChunks: incremental.length,
     codeIncrementalGzipBytes,
     codeIncrementalRawBytes,
+    documentChunk: documentName,
+    documentClosureChunks: documentClosure.size,
+    documentClosureGzipBytes,
+    documentIncrementalChunks,
+    documentIncrementalGzipBytes,
+    documentIncrementalRawBytes,
     entryChunk: entryName,
     entryRawBytes,
     issues,
+    pdfRuntime,
     sandboxRuntime,
     whiteboardChunk: whiteboardName,
   };
+}
+
+/** Relative POSIX paths of every file under `directory` ([] if missing). */
+async function listFiles(directory, prefix = "") {
+  let entries;
+  try {
+    entries = await readdir(resolve(directory, prefix), {
+      withFileTypes: true,
+    });
+  } catch {
+    return [];
+  }
+  const files = [];
+  for (const entry of entries) {
+    const name = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...(await listFiles(directory, name)));
+    } else {
+      files.push(name);
+    }
+  }
+  return files.sort();
 }
 
 async function staticClosure(assetsDirectory, rootName) {
@@ -207,6 +332,6 @@ if (isMain) {
     console.error(result.issues.join("\n"));
     process.exitCode = 1;
   } else {
-    console.log("ROOM_TOOLS_CODE_01_BUNDLE", JSON.stringify(result));
+    console.log("ROOM_TOOLS_BUNDLE", JSON.stringify(result));
   }
 }

@@ -16,6 +16,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -27,6 +28,7 @@ import {
   useWhiteboardTool,
 } from "../../app/whiteboards";
 import { WHITEBOARD_PRIVATE_ALPHA_SUPPORT_HREF } from "./whiteboardPrivateAlpha";
+import type { WhiteboardSnippetBridge } from "./whiteboardSnippetBridge";
 
 const LazyWhiteboardEngine = lazy(() => import("./LazyWhiteboardEngine"));
 
@@ -43,14 +45,23 @@ export interface ClassroomWhiteboardToolProps {
   autoStart?: boolean;
   enabled: boolean;
   mediaSpaceID: string;
+  /**
+   * ROOM-TOOLS-FILES-01B: the room bridge for "Đưa sang Bảng trắng". The
+   * live board takes a pending document snippet once it is connected.
+   */
+  snippetBridge?: WhiteboardSnippetBridge;
   tenantID: string;
 }
+
+const NO_SNIPPET_BRIDGE_SUBSCRIBE = () => () => undefined;
+const NO_PENDING_SNIPPET = () => null;
 
 export function ClassroomWhiteboardTool({
   actorID,
   autoStart = false,
   enabled,
   mediaSpaceID,
+  snippetBridge,
   tenantID,
 }: ClassroomWhiteboardToolProps) {
   const { t } = useI18n();
@@ -108,6 +119,7 @@ export function ClassroomWhiteboardTool({
   if (!enabled) {
     return <WhiteboardState message={t("whiteboard.featureOff")} />;
   }
+  const snippetNotice = <SnippetPendingNotice bridge={snippetBridge} />;
   if (tool.isPending) {
     return (
       <WhiteboardState
@@ -142,6 +154,7 @@ export function ClassroomWhiteboardTool({
         message={t("whiteboard.empty")}
         showPrivateAlphaNotice={!autoStart && !classroom}
       >
+        {snippetNotice}
         {resolved.can_create ? (
           <Button
             disabled={prepare.isPending}
@@ -169,6 +182,7 @@ export function ClassroomWhiteboardTool({
       document={document}
       mutationPending={transition.isPending}
       onRecoveryRequired={handleRecoveryRequired}
+      snippetBridge={snippetBridge}
       onTransition={(operation) => {
         // A deliberate pause/finish must never be undone by the one-tap flow;
         // the manual Open/Resume buttons keep working.
@@ -190,6 +204,7 @@ function WhiteboardDocumentView({
   mutationPending,
   onRecoveryRequired,
   onTransition,
+  snippetBridge,
   tenantID,
   transitionError,
 }: {
@@ -203,6 +218,7 @@ function WhiteboardDocumentView({
   mutationPending: boolean;
   onRecoveryRequired: () => void;
   onTransition: (operation: WhiteboardOperation) => void;
+  snippetBridge?: WhiteboardSnippetBridge;
   tenantID: string;
   transitionError: boolean;
 }) {
@@ -217,6 +233,7 @@ function WhiteboardDocumentView({
         onRecoveryRequired={onRecoveryRequired}
         onTransition={onTransition}
         slot={classroomSlot}
+        snippetBridge={snippetBridge}
         tenantID={tenantID}
         transitionError={transitionError}
       />
@@ -313,11 +330,14 @@ function WhiteboardDocumentView({
             document={document}
             key={`${document.id}:${document.current_generation}:${document.revoke_generation}:${capabilities.capability}`}
             onRecoveryRequired={onRecoveryRequired}
+            snippetBridge={snippetBridge}
             tenantID={tenantID}
           />
         </Suspense>
       ) : (
-        <WhiteboardState message={t(`whiteboard.state.${document.status}`)} />
+        <WhiteboardState message={t(`whiteboard.state.${document.status}`)}>
+          <SnippetPendingNotice bridge={snippetBridge} />
+        </WhiteboardState>
       )}
     </section>
   );
@@ -338,6 +358,7 @@ function ClassroomWhiteboardDocumentView({
   onRecoveryRequired,
   onTransition,
   slot,
+  snippetBridge,
   tenantID,
   transitionError,
 }: {
@@ -347,6 +368,7 @@ function ClassroomWhiteboardDocumentView({
   onRecoveryRequired: () => void;
   onTransition: (operation: WhiteboardOperation) => void;
   slot: HTMLElement | null;
+  snippetBridge?: WhiteboardSnippetBridge;
   tenantID: string;
   transitionError: boolean;
 }) {
@@ -432,12 +454,14 @@ function ClassroomWhiteboardDocumentView({
             document={document}
             key={`${document.id}:${document.current_generation}:${document.revoke_generation}:${capabilities.capability}`}
             onRecoveryRequired={onRecoveryRequired}
+            snippetBridge={snippetBridge}
             tenantID={tenantID}
             toolbarSlot={paperSlot}
           />
         </Suspense>
       ) : (
         <WhiteboardState message={t(`whiteboard.state.${document.status}`)}>
+          <SnippetPendingNotice bridge={snippetBridge} />
           {capabilities.can_open ? (
             <Button
               disabled={mutationPending}
@@ -459,6 +483,29 @@ function ClassroomWhiteboardDocumentView({
         </WhiteboardState>
       )}
     </div>
+  );
+}
+
+/**
+ * ROOM-TOOLS-FILES-01B: while the board is not live (being prepared, not yet
+ * opened by the teacher, suspended), say that a document snippet is waiting.
+ */
+function SnippetPendingNotice({
+  bridge,
+}: {
+  bridge: WhiteboardSnippetBridge | undefined;
+}) {
+  const { t } = useI18n();
+  const pending = useSyncExternalStore(
+    bridge ? bridge.subscribe : NO_SNIPPET_BRIDGE_SUBSCRIBE,
+    bridge ? bridge.peek : NO_PENDING_SNIPPET,
+    NO_PENDING_SNIPPET,
+  );
+  if (!pending) return null;
+  return (
+    <p className="whiteboard-tool-snippet-pending" role="status">
+      {t("whiteboard.snippet.pending")}
+    </p>
   );
 }
 

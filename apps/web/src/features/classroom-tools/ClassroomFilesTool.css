@@ -1,0 +1,1272 @@
+/*
+ * ROOM-TOOLS-FILES-01B / ADR-0045 §3: the classroom Documents tool. Loaded
+ * with the lazy viewer chunk (never the entry). Dark Liquid Glass chrome to
+ * match the Code tool; PDF pages keep the author's colours.
+ */
+
+.classroom-files {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+.classroom-files-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:is(
+  .classroom-files button,
+  .classroom-files input,
+  .classroom-files select,
+  .classroom-files label,
+  .classroom-files-topbar button,
+  .classroom-files-topbar input,
+  .classroom-files-topbar select,
+  .classroom-files-crop
+):focus-visible {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: 2px;
+}
+
+/* ---- States -------------------------------------------------------- */
+
+.classroom-files-state {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.classroom-files-state p {
+  max-width: 46ch;
+  margin: 0;
+}
+
+.classroom-files-state .classroom-files-state__title {
+  color: #f3f4f6;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.classroom-files-state__icon {
+  width: 36px;
+  height: 36px;
+  color: #93c5fd;
+}
+
+.classroom-files-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.classroom-files-state__progress {
+  width: min(260px, 80%);
+  height: 6px;
+  accent-color: #60a5fa;
+}
+
+/* ---- Library ------------------------------------------------------- */
+
+.classroom-files-library {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.classroom-files-library--stage {
+  width: min(860px, 100%);
+  box-sizing: border-box;
+  align-self: center;
+}
+
+.classroom-files-drawer {
+  position: absolute;
+  z-index: 4;
+  inset: 0 auto 0 0;
+  display: flex;
+  width: min(420px, 100%);
+  border-right: 1px solid var(--room-rim-strong, rgb(255 255 255 / 15%));
+  /* Opaque: it slides over white PDF pages, text must keep its contrast. */
+  background: linear-gradient(180deg, #20242e 0%, #12151c 100%);
+  box-shadow: 18px 0 40px -18px rgb(0 0 0 / 70%);
+  animation: classroom-files-drawer-in 200ms var(--room-ease-spring, ease);
+}
+
+@keyframes classroom-files-drawer-in {
+  from {
+    transform: translateX(-12px);
+  }
+}
+
+.classroom-files-library__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.classroom-files-library__title {
+  margin: 0;
+  color: #f3f4f6;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.classroom-files-library__title:focus {
+  outline: none;
+}
+
+.classroom-files-library__title:focus-visible {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: 2px;
+}
+
+.classroom-files-library__subtitle {
+  margin: 2px 0 0;
+  color: #a7b0c0;
+  font-size: 12.5px;
+}
+
+.classroom-files-library__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.classroom-files-library__body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.classroom-files-library__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.classroom-files-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 4%);
+}
+
+.classroom-files-row--active {
+  border-color: rgb(96 165 250 / 60%);
+  background: rgb(59 130 246 / 12%);
+}
+
+.classroom-files-row__icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: rgb(147 197 253 / 12%);
+  color: #93c5fd;
+}
+
+.classroom-files-row__icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.classroom-files-row__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.classroom-files-row__title {
+  overflow: hidden;
+  color: #f3f4f6;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.classroom-files-row__title--button {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.classroom-files-row__title--button:hover {
+  text-decoration: underline;
+}
+
+.classroom-files-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #a7b0c0;
+  font-size: 12px;
+}
+
+.classroom-files-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 999px;
+  color: #e5e7eb;
+  font-size: 11.5px;
+}
+
+.classroom-files-badge--class {
+  border-color: rgb(134 239 172 / 40%);
+  color: #bbf7d0;
+}
+
+.classroom-files-badge--media_space {
+  border-color: rgb(147 197 253 / 40%);
+  color: #bfdbfe;
+}
+
+.classroom-files-badge--warning {
+  border-color: rgb(251 191 36 / 50%);
+  color: #fde68a;
+}
+
+.classroom-files-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.classroom-files-row__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.classroom-files-row__status svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.classroom-files-row__status--rejected {
+  color: #fecaca;
+}
+
+.classroom-files-row__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgb(255 255 255 / 18%);
+  border-top-color: #93c5fd;
+  border-radius: 50%;
+  animation: classroom-code-spin 800ms linear infinite;
+}
+
+.classroom-files-row__switch {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 8px;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.classroom-files-row__switch input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #60a5fa;
+}
+
+.classroom-files-row__error,
+.classroom-files-upload__error {
+  margin: 0;
+  color: #fecaca;
+  font-size: 12px;
+}
+
+.classroom-files-upload__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.classroom-files-upload__error p {
+  margin: 0;
+}
+
+.classroom-files-row__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgb(248 113 113 / 40%);
+  border-radius: 10px;
+  background: rgb(127 29 29 / 25%);
+}
+
+.classroom-files-row__confirm p {
+  margin: 0 4px 0 0;
+  color: #fee2e2;
+}
+
+.classroom-files-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---- Upload -------------------------------------------------------- */
+
+.classroom-files-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 12px;
+  background: rgb(0 0 0 / 18%);
+}
+
+.classroom-files-dropzone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 12px;
+  border: 1.5px dashed rgb(147 197 253 / 45%);
+  border-radius: 12px;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.classroom-files-dropzone p {
+  margin: 0;
+}
+
+.classroom-files-dropzone--active {
+  border-color: #93c5fd;
+  background: rgb(59 130 246 / 14%);
+}
+
+.classroom-files-dropzone__icon {
+  width: 20px;
+  height: 20px;
+  color: #93c5fd;
+}
+
+.classroom-files-upload__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.classroom-files-upload__input:focus-visible + .classroom-files-upload__choose {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: 2px;
+}
+
+.classroom-files-upload__choose {
+  display: inline-flex;
+  min-height: 32px;
+  box-sizing: border-box;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid rgb(147 197 253 / 55%);
+  border-radius: 999px;
+  background: rgb(59 130 246 / 22%);
+  color: #f3f4f6;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.classroom-files-upload__choose[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.classroom-files-upload__scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.classroom-files-upload__scope legend {
+  width: 100%;
+  margin-bottom: 4px;
+  color: #e5e7eb;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.classroom-files-upload__scope label {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.classroom-files-upload__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.classroom-files-upload__progress p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.classroom-files-upload__progress progress {
+  width: 100%;
+  height: 6px;
+  accent-color: #60a5fa;
+}
+
+/* ---- Top Bar (portalled beside Close) ------------------------------- */
+
+.classroom-files-topbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.classroom-files-topbar__file {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 220px;
+  height: 28px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 7%);
+  color: #f3f4f6;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.classroom-files-topbar__file svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.classroom-files-topbar__file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.classroom-files-topbar__page {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #cbd5e1;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.classroom-files-topbar__page input {
+  width: 48px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 28%);
+  color: #f3f4f6;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: center;
+  appearance: textfield;
+}
+
+.classroom-files-topbar__page input::-webkit-inner-spin-button,
+.classroom-files-topbar__page input::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.classroom-files-topbar__zoom {
+  display: inline-flex;
+  align-items: center;
+}
+
+.classroom-files-topbar__percent {
+  min-width: 44px;
+  color: #e5e7eb;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.classroom-files-topbar__fit {
+  box-sizing: border-box;
+  max-width: 140px;
+  height: 28px;
+  padding: 0 24px 0 10px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 999px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23e5e7eb' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E")
+      no-repeat right 9px center,
+    rgb(255 255 255 / 7%);
+  color: #f3f4f6;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 12.5px;
+  appearance: none;
+}
+
+.classroom-files-topbar__fit option {
+  background: #1a1f2b;
+  color: #f3f4f6;
+}
+
+.classroom-files-topbar__send.th-button {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+
+.classroom-files-menu {
+  min-width: 220px;
+}
+
+/* ---- Viewer -------------------------------------------------------- */
+
+.classroom-files-viewer {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.classroom-files-viewer__toolbar {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+
+.classroom-files-viewer__body {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.classroom-files-viewer__region {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  background: #0f131b;
+}
+
+.classroom-files-pages:focus {
+  outline: none;
+}
+
+.classroom-files-pages:focus-visible {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: -2px;
+}
+
+.classroom-files-pages {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* Room for the last page to scroll to the top of the stage. */
+.classroom-files-pages::after {
+  display: block;
+  height: 45%;
+  min-height: 120px;
+  flex: none;
+  content: "";
+}
+
+.classroom-files-page {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 40%),
+    0 10px 30px -12px rgb(0 0 0 / 60%);
+}
+
+.classroom-files-page__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.classroom-files-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.classroom-files-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.classroom-files-page__error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgb(15 19 27 / 82%);
+  color: #f3f4f6;
+}
+
+.classroom-files-page__error p {
+  margin: 0;
+}
+
+/* pdf.js text layer: transparent DOM text over the canvas (textContent). */
+.classroom-files-page .textLayer {
+  --user-unit: 1;
+  --total-scale-factor: calc(var(--scale-factor, 1) * var(--user-unit));
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: clip;
+  color-scheme: only light;
+  forced-color-adjust: none;
+  line-height: 1;
+  text-align: initial;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+}
+
+.classroom-files-page .textLayer :is(span, br) {
+  position: absolute;
+  color: transparent;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+  white-space: pre;
+}
+
+.classroom-files-page .textLayer > :not(.markedContent),
+.classroom-files-page .textLayer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.classroom-files-page .textLayer .markedContent {
+  display: contents;
+}
+
+.classroom-files-page .textLayer ::selection {
+  background: rgb(37 99 235 / 32%);
+  color: transparent;
+}
+
+.classroom-files-page .textLayer .endOfContent {
+  position: absolute;
+  z-index: 0;
+  inset: 100% 0 0;
+  display: block;
+  cursor: default;
+  user-select: none;
+}
+
+.classroom-files-page .textLayer .classroom-files-hit {
+  margin: -1px;
+  padding: 1px;
+  border-radius: 3px;
+  background: rgb(250 204 21 / 45%);
+}
+
+/* Safe link layer: buttons only for https / mailto / internal pages. */
+.classroom-files-links {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+}
+
+.classroom-files-link {
+  position: absolute;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.classroom-files-link:hover {
+  background: rgb(59 130 246 / 14%);
+  box-shadow: inset 0 -2px 0 rgb(37 99 235 / 75%);
+}
+
+.classroom-files-link:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+/* ---- Thumbnails ---------------------------------------------------- */
+
+.classroom-files-thumbs {
+  display: flex;
+  width: 128px;
+  min-height: 0;
+  flex: none;
+  flex-direction: column;
+  border-right: 1px solid rgb(255 255 255 / 8%);
+  background: #121722;
+}
+
+.classroom-files-thumbs__header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px;
+}
+
+.classroom-files-thumbs ol {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 4px;
+  overflow: auto;
+  list-style: none;
+}
+
+.classroom-files-thumb {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.classroom-files-thumb[aria-current="page"] {
+  border-color: #60a5fa;
+  color: #f3f4f6;
+}
+
+.classroom-files-thumb__image {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #e5e7eb;
+}
+
+.classroom-files-thumb__image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.classroom-files-thumb__number {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Search -------------------------------------------------------- */
+
+.classroom-files-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  background: #161b26;
+}
+
+.classroom-files-search input[type="search"] {
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  flex: 1 1 180px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 9px;
+  background: rgb(0 0 0 / 28%);
+  color: #f3f4f6;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 13px;
+}
+
+.classroom-files-search__option {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.classroom-files-search__status {
+  min-width: 0;
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+/* ---- Crop ---------------------------------------------------------- */
+
+.classroom-files-crop {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  background: rgb(15 23 42 / 18%);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.classroom-files-crop__box {
+  position: absolute;
+  border: 2px solid #2563eb;
+  background: rgb(37 99 235 / 10%);
+  box-shadow: 0 0 0 9999px rgb(15 23 42 / 35%);
+  pointer-events: none;
+}
+
+.classroom-files-crop__actions {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgb(17 24 39 / 86%);
+  cursor: default;
+}
+
+/* ---- Toasts & dialogs ---------------------------------------------- */
+
+.classroom-files-toast {
+  position: absolute;
+  z-index: 6;
+  bottom: 12px;
+  left: 50%;
+  display: flex;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 12px;
+  background: rgb(17 24 39 / 94%);
+  color: #f3f4f6;
+  transform: translateX(-50%);
+}
+
+.classroom-files-toast p {
+  margin: 0;
+}
+
+.classroom-files-toast--error {
+  border-color: rgb(248 113 113 / 55%);
+  color: #fee2e2;
+}
+
+.classroom-files-dialog-backdrop {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: grid;
+  padding: 16px;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.classroom-files-dialog {
+  display: flex;
+  width: min(420px, 100%);
+  box-sizing: border-box;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #232836 0%, #161a23 100%);
+  box-shadow: 0 24px 60px -16px rgb(0 0 0 / 80%);
+  color: #e5e7eb;
+}
+
+.classroom-files-dialog p {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
+.classroom-files-dialog__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #f9fafb;
+  font-size: 15px;
+}
+
+.classroom-files-dialog__title svg {
+  width: 18px;
+  height: 18px;
+  color: #fbbf24;
+}
+
+.classroom-files-dialog__host {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.classroom-files-dialog__url {
+  color: #a7b0c0;
+  font-size: 12px;
+}
+
+.classroom-files-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---- Narrow stages & phones ---------------------------------------- */
+
+@media (max-width: 959px) {
+  .classroom-files-topbar__send-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .classroom-files-topbar__send.th-button {
+    width: 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .classroom-files-topbar__file {
+    max-width: 150px;
+  }
+}
+
+@media (max-width: 767px) {
+  .classroom-files-thumbs {
+    position: absolute;
+    z-index: 4;
+    inset: 0 auto 0 0;
+    box-shadow: 18px 0 40px -18px rgb(0 0 0 / 70%);
+  }
+
+  .classroom-files-topbar__fit,
+  .classroom-files-topbar__percent {
+    display: none;
+  }
+
+  .classroom-files-topbar__file {
+    max-width: 112px;
+  }
+
+  .classroom-files-pages {
+    padding: 8px;
+  }
+
+  .classroom-files-library {
+    padding: 12px;
+  }
+
+  .classroom-files-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .classroom-files-row__icon {
+    display: none;
+  }
+
+  .classroom-files-row__actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 479px) {
+  .classroom-files-topbar {
+    gap: 2px;
+  }
+
+  .classroom-files-topbar__zoom {
+    display: none;
+  }
+
+  .classroom-files-topbar__file {
+    max-width: 88px;
+    padding: 0 6px;
+  }
+
+  .classroom-files-topbar__page input {
+    width: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .classroom-files-drawer,
+  .classroom-files-row__spinner {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .classroom-files-row,
+  .classroom-files-upload,
+  .classroom-files-dropzone,
+  .classroom-files-badge,
+  .classroom-files-topbar__file,
+  .classroom-files-topbar__page input,
+  .classroom-files-topbar__fit,
+  .classroom-files-search,
+  .classroom-files-search input[type="search"],
+  .classroom-files-thumbs,
+  .classroom-files-dialog,
+  .classroom-files-toast,
+  .classroom-files-drawer,
+  .classroom-files-crop__actions {
+    border: 1px solid CanvasText;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
+    forced-color-adjust: auto;
+  }
+
+  .classroom-files-page {
+    outline: 1px solid CanvasText;
+  }
+
+  /* System colours for every chrome text (the PDF text layer stays clear). */
+  .classroom-files,
+  .classroom-files-topbar,
+  :is(.classroom-files, .classroom-files-topbar)
+    :is(p, span, label, legend, h3, output, strong, input, select):not(
+      .textLayer *
+    ) {
+    color: CanvasText;
+  }
+
+  .classroom-files-viewer__region,
+  .classroom-files-pages,
+  .classroom-files-state,
+  .classroom-files-library {
+    background: Canvas;
+  }
+
+  .classroom-files-thumb[aria-current="page"],
+  .classroom-files-row--active {
+    border-color: Highlight;
+    outline: 2px solid Highlight;
+  }
+
+  .classroom-files-crop__box {
+    border-color: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .classroom-files-link:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .classroom-files-page .textLayer .classroom-files-hit {
+    outline: 2px solid Highlight;
+    background: transparent;
+  }
+}
+
+/*
+ * Whiteboard result notice for "Đưa sang Bảng trắng" (rendered by the lazy
+ * whiteboard engine; this stylesheet is always loaded first because only the
+ * Documents tool can queue a snippet).
+ */
+.whiteboard-engine:has(> .whiteboard-snippet-notice) {
+  position: relative;
+}
+
+.whiteboard-snippet-notice {
+  position: absolute;
+  z-index: 5;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid rgb(134 239 172 / 55%);
+  border-radius: 12px;
+  background: rgb(17 24 39 / 94%);
+  color: #f3f4f6;
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+
+.whiteboard-snippet-notice p {
+  margin: 0;
+}
+
+.whiteboard-snippet-notice--error {
+  border-color: rgb(248 113 113 / 55%);
+  color: #fee2e2;
+}
+
+.whiteboard-snippet-notice__dismiss {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 10%);
+  color: inherit;
+  cursor: pointer;
+}
+
+.whiteboard-snippet-notice__dismiss svg {
+  width: 14px;
+  height: 14px;
+}
+
+.whiteboard-snippet-notice__dismiss:focus-visible {
+  outline: 2px solid var(--room-focus-ring, #93c5fd);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .whiteboard-snippet-notice {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}

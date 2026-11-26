@@ -4,7 +4,7 @@ import {
 } from "@tutorhub/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { DisconnectReason } from "livekit-client";
-import { CodeXml, PenTool } from "lucide-react";
+import { CodeXml, FileText, PenTool } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useI18n, type TranslationKey } from "../app/i18n";
@@ -19,7 +19,10 @@ import {
   useMutateMediaSignal,
 } from "../app/mediaSignals";
 import { useMediaModerationControls } from "../app/mediaModeration";
-import { useSession } from "../app/session";
+import {
+  registerPrivateSessionMemoryCleanup,
+  useSession,
+} from "../app/session";
 import {
   mediaDiagnosticPath,
   recordBoundedMediaDiagnostic,
@@ -33,6 +36,7 @@ import {
   useMediaSpaceRoomChat,
 } from "../components/MediaSpaceChatPanel";
 import { ClassroomCodeTool } from "../features/classroom-tools/ClassroomCodeTool";
+import { ClassroomFilesTool } from "../features/classroom-tools/ClassroomFilesTool";
 import {
   ClassroomCodeEditorGrantsContext,
   type ClassroomCodeEditorGrantError,
@@ -40,7 +44,9 @@ import {
 } from "../features/classroom-tools/codeEditorGrantsContext";
 import type { CodePresenceRoster } from "../features/classroom-tools/codePresence";
 import { createClassroomCodeSession } from "../features/classroom-tools/codeSession";
+import { createClassroomFilesSession } from "../features/classroom-tools/filesSession";
 import { ClassroomWhiteboardTool } from "../features/collaboration/ClassroomWhiteboardTool";
+import { createWhiteboardSnippetBridge } from "../features/collaboration/whiteboardSnippetBridge";
 import {
   ClassroomLiveKitRoom,
   type ClassroomLiveKitRoomProps,
@@ -152,6 +158,30 @@ function MediaSpaceRoomSession({
     codeToolEnabled === true &&
     tenantCapabilities.data?.features.code_snippet_library.enabled === true;
   const codeClassID = mediaSpaceClassID(mediaSpace.data?.source);
+  // ROOM-TOOLS-FILES-01B (ADR-0045): the Documents tool needs both
+  // `classroom_files_tool` and `file_uploads`; a failed read fails closed.
+  const filesToolEnabled = tenantCapabilities.data
+    ? tenantCapabilities.data.features.classroom_files_tool?.enabled === true &&
+      tenantCapabilities.data.features.file_uploads?.enabled === true
+    : tenantCapabilities.isError
+      ? false
+      : undefined;
+  // Per-room-session Documents memory (open document, page, verified bytes
+  // in RAM only) and the "Đưa sang Bảng trắng" snippet bridge. Both are
+  // wiped on sign-out (clearPrivateSessionCache) and when the room unmounts.
+  const [filesSession] = useState(createClassroomFilesSession);
+  const [snippetBridge] = useState(createWhiteboardSnippetBridge);
+  useEffect(() => {
+    const wipe = () => {
+      filesSession.clear();
+      snippetBridge.clear();
+    };
+    const unregister = registerPrivateSessionMemoryCleanup(wipe);
+    return () => {
+      unregister();
+      wipe();
+    };
+  }, [filesSession, snippetBridge]);
   const [handoff, setHandoff] = useState(() => {
     if (!spaceId || !roomInstanceId || !tenantId || !userId) {
       clearMediaRoomEscrow();
@@ -230,6 +260,12 @@ function MediaSpaceRoomSession({
     whiteboardEnabled && whiteboardTool.isSuccess
       ? (whiteboardTool.data?.document ?? null)
       : null;
+  // Display hint for "Đưa sang Bảng trắng": a viewer on an open board with a
+  // `view` capability cannot insert (the live board re-checks anyway).
+  const whiteboardCanEdit =
+    whiteboardDocument?.status === "open"
+      ? whiteboardDocument.viewer_capabilities.capability !== "view"
+      : undefined;
   const whiteboardAutoOpenKey =
     whiteboardDocument?.status === "open" &&
     whiteboardDocument.viewer_capabilities.can_exchange_grant
@@ -678,6 +714,7 @@ function MediaSpaceRoomSession({
             autoStart
             enabled={whiteboardEnabled}
             mediaSpaceID={spaceId}
+            snippetBridge={snippetBridge}
             tenantID={tenantId}
           />
         ),
@@ -709,6 +746,26 @@ function MediaSpaceRoomSession({
         id: "code",
         label: t("classroomTools.codeLabel"),
         title: t("classroomTools.codeTitle"),
+      },
+      {
+        content: (
+          <ClassroomFilesTool
+            actorID={userId}
+            enabled={filesToolEnabled}
+            mediaSpaceID={spaceId}
+            session={filesSession}
+            snippetBridge={snippetBridge}
+            tenantID={tenantId}
+            whiteboardCanEdit={whiteboardCanEdit}
+            whiteboardEnabled={whiteboardEnabled}
+          />
+        ),
+        icon: <FileText />,
+        id: "files",
+        label: t("classroomTools.filesLabel"),
+        // Closing the stage releases the in-RAM bytes; switching keeps them.
+        onStageClose: () => filesSession.releaseBytes(),
+        title: t("classroomTools.filesTitle"),
       },
     ],
   };
