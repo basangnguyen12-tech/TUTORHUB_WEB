@@ -92,6 +92,27 @@ func TestB2StorePutGetDelete(t *testing.T) {
 	}
 }
 
+func TestB2VersionedPutRequiresBothProofFieldsWithoutUnsupportedIfNoneMatch(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ etag, version string }{
+		{"tag", "version"}, {"", "version"}, {"tag", ""}, {" ", " "},
+	} {
+		client := &fakeS3Client{putOutput: &s3.PutObjectOutput{ETag: aws.String(test.etag), VersionId: aws.String(test.version)}}
+		store, err := newB2Store(client, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.PutVersioned(context.Background(), "folder/file", strings.NewReader("x"), 1, "image/png")
+		if strings.TrimSpace(test.etag) == "" || strings.TrimSpace(test.version) == "" {
+			if err == nil {
+				t.Fatal("missing storage proof accepted")
+			}
+		} else if err != nil || got.ETag != test.etag || got.VersionID != test.version || client.putInput.IfNoneMatch != nil || client.putRetryMaxAttempts != 1 {
+			t.Fatalf("versioned put returned %+v, ifNoneMatch=%v, retryMax=%d, err=%v", got, client.putInput.IfNoneMatch, client.putRetryMaxAttempts, err)
+		}
+	}
+}
+
 func TestB2StorePresignsExactUploadAndVersionedDownload(t *testing.T) {
 	t.Parallel()
 
@@ -294,8 +315,26 @@ func TestObjectStorageReadinessChecksBucket(t *testing.T) {
 	}
 }
 
+type fakeStatusError int
+
+func (code fakeStatusError) Error() string       { return "status error" }
+func (code fakeStatusError) HTTPStatusCode() int { return int(code) }
+
+func TestB2HeadMapsHTTP404ToErrObjectNotFound(t *testing.T) {
+	t.Parallel()
+	store, err := newB2Store(&fakeS3Client{headObjectErr: fakeStatusError(http.StatusNotFound)}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Head(context.Background(), "folder/missing"); !errors.Is(err, ErrObjectNotFound) {
+		t.Fatalf("expected ErrObjectNotFound, got %v", err)
+	}
+}
+
 type fakeS3Client struct {
 	putInput                *s3.PutObjectInput
+	putOutput               *s3.PutObjectOutput
+	putRetryMaxAttempts     int
 	getInput                *s3.GetObjectInput
 	getOutput               *s3.GetObjectOutput
 	deleteInput             *s3.DeleteObjectInput
@@ -303,6 +342,7 @@ type fakeS3Client struct {
 	headErr                 error
 	headObjectInput         *s3.HeadObjectInput
 	headObjectOutput        *s3.HeadObjectOutput
+	headObjectErr           error
 	createMultipartInput    *s3.CreateMultipartUploadInput
 	createMultipartOutput   *s3.CreateMultipartUploadOutput
 	completeMultipartInput  *s3.CompleteMultipartUploadInput
@@ -373,6 +413,9 @@ func (client *fakeS3Client) HeadObject(
 	_ ...func(*s3.Options),
 ) (*s3.HeadObjectOutput, error) {
 	client.headObjectInput = input
+	if client.headObjectErr != nil {
+		return nil, client.headObjectErr
+	}
 	if client.headObjectOutput == nil {
 		return &s3.HeadObjectOutput{}, nil
 	}
@@ -382,9 +425,17 @@ func (client *fakeS3Client) HeadObject(
 func (client *fakeS3Client) PutObject(
 	_ context.Context,
 	input *s3.PutObjectInput,
-	_ ...func(*s3.Options),
+	options ...func(*s3.Options),
 ) (*s3.PutObjectOutput, error) {
 	client.putInput = input
+	var resolved s3.Options
+	for _, option := range options {
+		option(&resolved)
+	}
+	client.putRetryMaxAttempts = resolved.RetryMaxAttempts
+	if client.putOutput != nil {
+		return client.putOutput, nil
+	}
 	return &s3.PutObjectOutput{}, nil
 }
 

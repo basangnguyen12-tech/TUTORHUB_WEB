@@ -23,6 +23,9 @@ const (
 	roomDocumentUploadIntentPattern = "/api/v1/media/spaces/{space_id}/documents/upload-intents"
 	roomDocumentViewPattern         = "/api/v1/media/spaces/{space_id}/documents/{file_id}/view-capabilities"
 	roomDocumentResourcePattern     = "/api/v1/media/spaces/{space_id}/documents/{file_id}"
+	roomStudyNotePattern            = roomDocumentResourcePattern + "/study-note"
+	roomChatImportPattern           = roomDocumentsPattern + "/from-chat-attachment"
+	roomDocumentTenantHeader        = "X-TutorHub-Tenant-ID"
 )
 
 type roomDocumentHandlers struct {
@@ -68,6 +71,8 @@ func (handlers roomDocumentHandlers) register(mux *http.ServeMux) {
 	mux.Handle(roomDocumentUploadIntentPattern, fileResponseHeaders(http.HandlerFunc(handlers.createIntent)))
 	mux.Handle(roomDocumentViewPattern, fileResponseHeaders(http.HandlerFunc(handlers.viewCapability)))
 	mux.Handle(roomDocumentResourcePattern, fileResponseHeaders(http.HandlerFunc(handlers.update)))
+	mux.Handle(roomStudyNotePattern, fileResponseHeaders(http.HandlerFunc(handlers.studyNote)))
+	mux.Handle(roomChatImportPattern, fileResponseHeaders(http.HandlerFunc(handlers.saveChatAttachment)))
 }
 
 func (handlers roomDocumentHandlers) available(w http.ResponseWriter, r *http.Request) bool {
@@ -82,50 +87,43 @@ func (handlers roomDocumentHandlers) available(w http.ResponseWriter, r *http.Re
 	return true
 }
 
-func (handlers roomDocumentHandlers) readAccess(
+func (handlers roomDocumentHandlers) access(
 	w http.ResponseWriter,
 	r *http.Request,
+	tenantHeader string,
 ) (content.AccessContext, uuid.UUID, bool) {
 	if !handlers.available(w, r) {
 		return content.AccessContext{}, uuid.Nil, false
 	}
-	principal, ok := handlers.files.auth.authenticatedPrincipal(w, r)
+	var principal identity.Principal
+	var ok bool
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		principal, ok = handlers.files.auth.authenticatedPrincipal(w, r)
+	} else {
+		principal, ok = handlers.files.csrfPrincipal(w, r)
+	}
 	if !ok {
 		return content.AccessContext{}, uuid.Nil, false
 	}
-	return handlers.scopedAccess(w, r, principal)
-}
-
-func (handlers roomDocumentHandlers) mutationAccess(
-	w http.ResponseWriter,
-	r *http.Request,
-) (content.AccessContext, uuid.UUID, bool) {
-	if !handlers.available(w, r) {
+	if tenantHeader == roomDocumentTenantHeader && (principal.ActiveTenant == nil || !principal.ActiveTenant.IsActive) {
+		handlers.writeProblem(w, r, content.ErrNotFound)
 		return content.AccessContext{}, uuid.Nil, false
 	}
-	principal, ok := handlers.files.csrfPrincipal(w, r)
-	if !ok {
-		return content.AccessContext{}, uuid.Nil, false
-	}
-	return handlers.scopedAccess(w, r, principal)
-}
-
-func (handlers roomDocumentHandlers) scopedAccess(
-	w http.ResponseWriter,
-	r *http.Request,
-	principal identity.Principal,
-) (content.AccessContext, uuid.UUID, bool) {
 	if principal.ActiveTenant == nil {
 		handlers.writeProblem(w, r, content.ErrAccessDenied)
 		return content.AccessContext{}, uuid.Nil, false
 	}
-	expectedTenantID, ok := parseResourceUUID(strings.TrimSpace(r.Header.Get(fileTenantHeader)))
-	if !ok {
+	expectedTenantID, ok := parseResourceUUID(strings.TrimSpace(r.Header.Get(tenantHeader)))
+	if !ok || len(r.Header.Values(tenantHeader)) != 1 {
 		handlers.writeProblem(w, r, content.ErrInvalidInput)
 		return content.AccessContext{}, uuid.Nil, false
 	}
 	if expectedTenantID != principal.ActiveTenant.ID {
-		handlers.writeProblem(w, r, errFileScopeChanged)
+		if tenantHeader == roomDocumentTenantHeader {
+			handlers.writeProblem(w, r, content.ErrNotFound)
+		} else {
+			handlers.writeProblem(w, r, errFileScopeChanged)
+		}
 		return content.AccessContext{}, uuid.Nil, false
 	}
 	spaceID, ok := parseResourceUUID(r.PathValue("space_id"))
@@ -148,7 +146,7 @@ func (handlers roomDocumentHandlers) list(w http.ResponseWriter, r *http.Request
 		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Room document listing supports GET and HEAD requests.")
 		return
 	}
-	access, spaceID, ok := handlers.readAccess(w, r)
+	access, spaceID, ok := handlers.access(w, r, fileTenantHeader)
 	if !ok {
 		return
 	}
@@ -184,7 +182,7 @@ func (handlers roomDocumentHandlers) createIntent(w http.ResponseWriter, r *http
 		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Room document upload intents support POST requests.")
 		return
 	}
-	access, spaceID, ok := handlers.mutationAccess(w, r)
+	access, spaceID, ok := handlers.access(w, r, fileTenantHeader)
 	if !ok {
 		return
 	}
@@ -233,7 +231,7 @@ func (handlers roomDocumentHandlers) viewCapability(w http.ResponseWriter, r *ht
 		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Room document view capabilities support POST requests.")
 		return
 	}
-	access, spaceID, ok := handlers.mutationAccess(w, r)
+	access, spaceID, ok := handlers.access(w, r, fileTenantHeader)
 	if !ok {
 		return
 	}
@@ -256,7 +254,7 @@ func (handlers roomDocumentHandlers) update(w http.ResponseWriter, r *http.Reque
 		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Room documents support PATCH requests.")
 		return
 	}
-	access, spaceID, ok := handlers.mutationAccess(w, r)
+	access, spaceID, ok := handlers.access(w, r, fileTenantHeader)
 	if !ok {
 		return
 	}
@@ -300,6 +298,12 @@ func (handlers roomDocumentHandlers) writeProblem(w http.ResponseWriter, r *http
 	status, code := http.StatusServiceUnavailable, "room_document_unavailable"
 	title, detail := "Room document request failed", "The room document request could not be completed safely."
 	switch {
+	case errors.Is(err, content.ErrStudyNoteLimitExceeded):
+		status, code = http.StatusConflict, "room_document_note_limit_exceeded"
+		title, detail = "Study note limit reached", "Clear an existing document note before saving another."
+	case errors.Is(err, content.ErrQuotaExceeded):
+		status, code = http.StatusConflict, "quota_exceeded"
+		title, detail = "File quota exceeded", "The document would exceed the workspace file quota."
 	case errors.Is(err, content.ErrDocumentUnsupported):
 		status, code = http.StatusBadRequest, "room_document_unsupported"
 		title, detail = "Unsupported document", "The Documents tool accepts PDF up to 50 MiB and PNG, JPEG or WebP images up to 10 MiB."

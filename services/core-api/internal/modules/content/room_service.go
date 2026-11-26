@@ -373,6 +373,9 @@ func (service *Service) UpdateRoomDocument(
 		return UpdateRoomDocumentResult{}, ErrNotFound
 	}
 	result, err := service.rooms.UpdateRoomDocument(ctx, access, spaceID, fileID, input, service.now().UTC())
+	if err == nil && result.Deleted {
+		service.cleanupRoomObject(context.WithoutCancel(ctx), result.cleanup)
+	}
 	return result, normalizeRepositoryError(err)
 }
 

@@ -9385,6 +9385,121 @@ paths:
         "409": { $ref: "#/components/responses/ConflictResponse" }
         "503": { $ref: "#/components/responses/ProblemResponse" }
         default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/documents/{file_id}/study-note:
+    get:
+      operationId: getRoomStudyNote
+      summary: Read the current participant's private notes on a room document
+      description: Requires file_uploads, classroom_files_tool and viewer access to the ready document. Missing or expired notes return version zero with empty entries and null timestamps.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/RoomDocumentFileID"
+        - $ref: "#/components/parameters/RoomDocumentTenantID"
+      responses:
+        "200":
+          description: Private study note for this session user
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomStudyNote"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "429": { $ref: "#/components/responses/ProblemResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+    put:
+      operationId: putRoomStudyNote
+      summary: Save the current participant's private notes on a room document
+      description: Requires the two room document features and viewer access. Supply the last observed version. Saving extends expiry by 30 days. An empty array clears the note. A version conflict or the limit of 200 active nonempty notes returns 409.
+      security:
+        - SessionCookie: []
+          CSRFHeader: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/RoomDocumentFileID"
+        - $ref: "#/components/parameters/RoomDocumentTenantID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutRoomStudyNoteRequest"
+      responses:
+        "200":
+          description: Saved private note with its new version
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomStudyNote"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "429": { $ref: "#/components/responses/ProblemResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/documents/from-chat-attachment:
+    post:
+      operationId: saveRoomChatAttachment
+      summary: Save a sent room chat attachment as a ready document
+      description: Room teaching staff can import a verified PDF or image up to 10 MiB from this room's conversation into the room or its linked class. A changed request using the same client request ID returns 409.
+      security:
+        - SessionCookie: []
+          CSRFHeader: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/RoomDocumentTenantID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveRoomChatAttachmentRequest"
+      responses:
+        "200":
+          description: Existing ready document on exact replay
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDocument"
+        "201":
+          description: Verified document saved to the library
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDocument"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "429": { $ref: "#/components/responses/ProblemResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
   /api/v1/media/spaces/{space_id}/documents/upload-intents:
     post:
       operationId: createRoomDocumentUploadIntent
@@ -11119,6 +11234,10 @@ components:
       in: cookie
       name: __Host-tutorhub_auth_tx
       description: HttpOnly, SameSite Strict browser binding; development without secure cookies uses tutorhub_auth_tx. Contains no account data.
+    CSRFHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
     SessionCookie:
       type: apiKey
       in: cookie
@@ -11178,6 +11297,12 @@ components:
         type: string
         minLength: 16
         maxLength: 512
+    RoomDocumentTenantID:
+      name: X-TutorHub-Tenant-ID
+      in: header
+      required: true
+      description: Must match the active tenant of the authenticated session.
+      schema: { type: string, format: uuid }
     ExpectedTenantID:
       name: X-TutorHub-Expected-Tenant-ID
       in: header
@@ -13594,6 +13719,57 @@ components:
         - pdf_invalid
         - image_dimensions_exceeded
         - image_invalid
+    StudyNoteEntry:
+      type: object
+      additionalProperties: false
+      required: [page, text]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          maximum: 300
+        text:
+          type: string
+          maxLength: 2000
+          description: Up to 4096 UTF-8 bytes after newline and trailing whitespace normalization.
+    PutRoomStudyNoteRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version, entries]
+      properties:
+        expected_version: { type: integer, format: int64, minimum: 0 }
+        entries:
+          type: array
+          description: One nonempty entry per actual document page, up to 65536 UTF-8 text bytes total.
+          items: { $ref: "#/components/schemas/StudyNoteEntry" }
+    RoomStudyNote:
+      type: object
+      additionalProperties: false
+      required: [file_id, version, entries, byte_length, updated_at, expires_at]
+      properties:
+        file_id: { type: string, format: uuid }
+        version: { type: integer, format: int64, minimum: 0 }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/StudyNoteEntry" }
+        byte_length: { type: integer, minimum: 0, maximum: 65536 }
+        updated_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+    SaveRoomChatAttachmentRequest:
+      type: object
+      additionalProperties: false
+      required: [conversation_id, attachment_id, client_request_id]
+      properties:
+        conversation_id: { type: string, format: uuid }
+        attachment_id: { type: string, format: uuid }
+        client_request_id: { type: string, format: uuid }
+        scope:
+          type: string
+          enum: [media_space, class]
+          description: Defaults to media_space when omitted.
+        allow_student_download:
+          type: boolean
+          description: Defaults to false for room scope and true for class scope.
     RoomDocumentMediaType:
       type: string
       enum: [application/pdf, image/png, image/jpeg, image/webp]

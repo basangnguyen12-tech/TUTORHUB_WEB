@@ -3,6 +3,7 @@ package objectstorage
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -317,14 +318,35 @@ func (store *B2Store) Put(
 	contentLength int64,
 	contentType string,
 ) error {
+	_, err := store.put(ctx, key, body, contentLength, contentType, false)
+	return err
+}
+
+// PutVersioned writes one object with SDK retries disabled so a lost response
+// can be recovered via HEAD before issuing another write, returning the proof
+// required for content_files. Backblaze B2 S3 does not implement If-None-Match
+// conditional writes, so callers serialize per-key writes in PostgreSQL first.
+func (store *B2Store) PutVersioned(ctx context.Context, key string, body io.Reader, contentLength int64, contentType string) (PutResult, error) {
+	output, err := store.put(ctx, key, body, contentLength, contentType, true)
+	if err != nil {
+		return PutResult{}, err
+	}
+	if output == nil || strings.TrimSpace(aws.ToString(output.ETag)) == "" ||
+		strings.TrimSpace(aws.ToString(output.VersionId)) == "" {
+		return PutResult{}, fmt.Errorf("versioned put returned incomplete storage proof")
+	}
+	return PutResult{ETag: strings.TrimSpace(*output.ETag), VersionID: strings.TrimSpace(*output.VersionId)}, nil
+}
+
+func (store *B2Store) put(ctx context.Context, key string, body io.Reader, contentLength int64, contentType string, singleAttempt bool) (*s3.PutObjectOutput, error) {
 	if err := validateKey(key); err != nil {
-		return err
+		return nil, err
 	}
 	if body == nil {
-		return fmt.Errorf("object body is required")
+		return nil, fmt.Errorf("object body is required")
 	}
 	if contentLength < 0 {
-		return fmt.Errorf("object content length must not be negative")
+		return nil, fmt.Errorf("object content length must not be negative")
 	}
 
 	input := &s3.PutObjectInput{
@@ -337,11 +359,11 @@ func (store *B2Store) Put(
 		input.ContentType = aws.String(contentType)
 	}
 
-	if _, err := store.client.PutObject(ctx, input); err != nil {
-		return fmt.Errorf("put object: %w", err)
+	var options []func(*s3.Options)
+	if singleAttempt {
+		options = append(options, func(o *s3.Options) { o.RetryMaxAttempts = 1 })
 	}
-
-	return nil
+	return store.client.PutObject(ctx, input, options...)
 }
 
 func (store *B2Store) Get(ctx context.Context, key string) (Object, error) {
@@ -436,6 +458,14 @@ func (store *B2Store) head(ctx context.Context, key string, versionID string) (M
 	}
 	output, err := store.client.HeadObject(ctx, input)
 	if err != nil {
+		var apiError interface{ ErrorCode() string }
+		if errors.As(err, &apiError) && (apiError.ErrorCode() == "NotFound" || apiError.ErrorCode() == "NoSuchKey") {
+			return Metadata{}, ErrObjectNotFound
+		}
+		var statusError interface{ HTTPStatusCode() int }
+		if errors.As(err, &statusError) && statusError.HTTPStatusCode() == http.StatusNotFound {
+			return Metadata{}, ErrObjectNotFound
+		}
 		return Metadata{}, fmt.Errorf("head object: %w", err)
 	}
 	var checksum []byte

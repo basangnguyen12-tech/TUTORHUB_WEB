@@ -2,8 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   APIRequestError,
   createRoomDocumentUploadIntent,
+  getRoomStudyNote,
   issueRoomDocumentViewCapability,
   listRoomDocuments,
+  putRoomStudyNote,
+  saveRoomChatAttachment,
   updateRoomDocument,
 } from "./index";
 import type {
@@ -11,6 +14,7 @@ import type {
   RoomDocument,
   RoomDocumentPage,
   RoomDocumentViewCapability,
+  RoomStudyNote,
 } from "./index";
 
 const tenantID = "7f44c093-1cb2-46ae-8285-779b78728524";
@@ -57,6 +61,128 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("room document API", () => {
+  it("reads only the signed-in user's note for the selected document", async () => {
+    const empty: RoomStudyNote = {
+      file_id: fileID,
+      version: 0,
+      entries: [],
+      byte_length: 0,
+      updated_at: null,
+      expires_at: null,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(empty));
+    const result = await getRoomStudyNote(
+      tenantID,
+      spaceID,
+      fileID,
+      options(fetchMock),
+    );
+    expect(result).toEqual(empty);
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    const url = new URL(request.url);
+    expect(url.pathname).toBe(
+      `/api/v1/media/spaces/${spaceID}/documents/${fileID}/study-note`,
+    );
+    expect(url.search).toBe("");
+    expect(request.method).toBe("GET");
+    expect(request.headers.get("X-TutorHub-Tenant-ID")).toBe(tenantID);
+    expect(request.headers.get("X-CSRF-Token")).toBeNull();
+  });
+
+  it("saves a versioned note and surfaces a stale write", async () => {
+    const body = {
+      expected_version: 0,
+      entries: [{ page: 1, text: "Page one" }],
+    };
+    const saved: RoomStudyNote = {
+      file_id: fileID,
+      version: 1,
+      entries: body.entries,
+      byte_length: 8,
+      updated_at: "2030-08-07T10:01:00Z",
+      expires_at: "2030-09-06T10:01:00Z",
+    };
+    const code = "room_document_version_conflict";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(saved))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { type: "about:blank", title: "Stale note", status: 409, code },
+          409,
+        ),
+      );
+    const put = () =>
+      putRoomStudyNote(
+        tenantID,
+        spaceID,
+        fileID,
+        body,
+        "csrf-note",
+        options(fetchMock),
+      );
+    await expect(put()).resolves.toEqual(saved);
+    await expect(put()).rejects.toMatchObject({
+      status: 409,
+      problem: { code },
+    });
+    const request = fetchMock.mock.calls[0]?.[0] as Request;
+    expect(request.method).toBe("PUT");
+    expect(new URL(request.url).pathname).toBe(
+      `/api/v1/media/spaces/${spaceID}/documents/${fileID}/study-note`,
+    );
+    expect(request.headers.get("X-TutorHub-Tenant-ID")).toBe(tenantID);
+    expect(request.headers.get("X-CSRF-Token")).toBe("csrf-note");
+    expect(await request.json()).toEqual(body);
+  });
+
+  it("returns the ready chat document for creation and replay, and preserves idempotency conflicts", async () => {
+    const body = {
+      conversation_id: "caed2e11-bae1-4b8b-a149-dd1abed76fd8",
+      attachment_id: "66bb28b9-c284-4825-931c-33931cd10691",
+      client_request_id: "c378f028-c458-47e9-ac33-075a312643fa",
+    };
+    const code = "file_idempotency_conflict";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(readyDocument, 201))
+      .mockResolvedValueOnce(jsonResponse(readyDocument, 200))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { type: "about:blank", title: "Request changed", status: 409, code },
+          409,
+        ),
+      );
+    for (let i = 0; i < 2; i++) {
+      await expect(
+        saveRoomChatAttachment(
+          tenantID,
+          spaceID,
+          body,
+          "csrf-chat",
+          options(fetchMock),
+        ),
+      ).resolves.toEqual(readyDocument);
+      const request = fetchMock.mock.calls[i]?.[0] as Request;
+      expect(request.method).toBe("POST");
+      expect(new URL(request.url).pathname).toBe(
+        `/api/v1/media/spaces/${spaceID}/documents/from-chat-attachment`,
+      );
+      expect(request.headers.get("X-TutorHub-Tenant-ID")).toBe(tenantID);
+      expect(request.headers.get("X-CSRF-Token")).toBe("csrf-chat");
+      expect(await request.json()).toEqual(body);
+    }
+    await expect(
+      saveRoomChatAttachment(
+        tenantID,
+        spaceID,
+        { ...body, scope: "class" },
+        "csrf-chat",
+        options(fetchMock),
+      ),
+    ).rejects.toMatchObject({ status: 409, problem: { code } });
+  });
+
   it("binds the library page to the expected tenant and room", async () => {
     const page: RoomDocumentPage = {
       items: [readyDocument],

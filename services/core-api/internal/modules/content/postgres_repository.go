@@ -63,14 +63,19 @@ func (repository *PostgresRepository) CreateIntent(
 	if err != nil {
 		return CreateIntentResult{}, err
 	}
-	existing, err := loadFileByClientRequest(
-		queryContext, transaction, access.TenantID, access.ActorID, command.ClientRequestID, true,
-	)
-	if err == nil {
-		return repository.replayIntent(queryContext, transaction, access, command, existing)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return CreateIntentResult{}, fmt.Errorf("query upload intent idempotency: %w", err)
+	// Room mutations take both feature locks before the file lock, including
+	// replays. A concurrent importer can otherwise acquire them in reverse
+	// order when its first lookup missed the newly inserted intent.
+	if !command.RequireClassroomFiles && command.OwnerKind != OwnerKindMediaSpace {
+		existing, err := loadFileByClientRequest(
+			queryContext, transaction, access.TenantID, access.ActorID, command.ClientRequestID, true,
+		)
+		if err == nil {
+			return repository.replayIntent(queryContext, transaction, access, command, existing)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return CreateIntentResult{}, fmt.Errorf("query upload intent idempotency: %w", err)
+		}
 	}
 	if err := repository.controls.RequireFeature(
 		queryContext, transaction, access.TenantID, featurecontrol.FeatureFileUploads,
@@ -87,7 +92,7 @@ func (repository *PostgresRepository) CreateIntent(
 	// RequireFeature serializes tenant mutations. Recheck after acquiring its advisory
 	// lock so two concurrent requests with the same idempotency key cannot race into
 	// the unique constraint.
-	existing, err = loadFileByClientRequest(
+	existing, err := loadFileByClientRequest(
 		queryContext, transaction, access.TenantID, access.ActorID, command.ClientRequestID, true,
 	)
 	if err == nil {
@@ -634,23 +639,36 @@ func (repository *PostgresRepository) CommitFinalize(
 		proof.ETag == "" || proof.VersionID == "" {
 		return File{}, ErrStorageMismatch
 	}
+	updated, err := persistFinalizeProof(queryContext, transaction, row, proof)
+	if err != nil {
+		return File{}, err
+	}
+	if err := transaction.Commit(queryContext); err != nil {
+		return File{}, fmt.Errorf("commit file finalize: %w", err)
+	}
+	return projectFile(updated, access, creatorAuthorization), nil
+}
+
+// persistFinalizeProof moves one locked, pending file from reserved to committed
+// quota and binds its immutable storage version in the same transaction.
+func persistFinalizeProof(ctx context.Context, transaction pgx.Tx, row fileRow, proof FinalizeProof) (fileRow, error) {
 	commandTag, err := transaction.Exec(
-		queryContext,
+		ctx,
 		`UPDATE tutorhub.tenant_file_usage
 SET reserved_bytes = reserved_bytes - $2,
     committed_bytes = committed_bytes + $2,
     updated_at = $3
 WHERE tenant_id = $1 AND reserved_bytes >= $2`,
-		access.TenantID, row.ExpectedSizeBytes, proof.FinalizedAt,
+		row.TenantID, row.ExpectedSizeBytes, proof.FinalizedAt,
 	)
 	if err != nil {
-		return File{}, fmt.Errorf("commit finalized file quota: %w", err)
+		return fileRow{}, fmt.Errorf("commit finalized file quota: %w", err)
 	}
 	if commandTag.RowsAffected() != 1 {
-		return File{}, fmt.Errorf("commit finalized file quota: usage invariant failed")
+		return fileRow{}, fmt.Errorf("commit finalized file quota: usage invariant failed")
 	}
 	updated, err := scanFileRow(transaction.QueryRow(
-		queryContext,
+		ctx,
 		`UPDATE tutorhub.content_files
 SET status = 'uploaded',
     version = version + 1,
@@ -662,20 +680,17 @@ SET status = 'uploaded',
     updated_at = $7
 WHERE tenant_id = $1 AND id = $2 AND status = 'pending' AND version = $8
 RETURNING `+fileReturning,
-		access.TenantID, fileID, proof.ContentLength, proof.ContentType,
+		row.TenantID, row.ID, proof.ContentLength, proof.ContentType,
 		proof.ETag, proof.VersionID, proof.FinalizedAt,
 		proof.ExpectedVersion,
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return File{}, ErrVersionConflict
+		return fileRow{}, ErrVersionConflict
 	}
 	if err != nil {
-		return File{}, fmt.Errorf("persist finalized file proof: %w", err)
+		return fileRow{}, fmt.Errorf("persist finalized file proof: %w", err)
 	}
-	if err := transaction.Commit(queryContext); err != nil {
-		return File{}, fmt.Errorf("commit file finalize: %w", err)
-	}
-	return projectFile(updated, access, creatorAuthorization), nil
+	return updated, nil
 }
 
 func (repository *PostgresRepository) PrepareMultipartCreate(
@@ -1381,16 +1396,20 @@ func expireFile(
 	row fileRow,
 	now time.Time,
 ) error {
+	return retirePendingFile(ctx, transaction, row, now, "intent_expired")
+}
+
+func retirePendingFile(ctx context.Context, transaction pgx.Tx, row fileRow, now time.Time, reason string) error {
 	commandTag, err := transaction.Exec(
 		ctx,
 		`UPDATE tutorhub.content_files
-SET deleted_at = $3,
-    deletion_reason = 'intent_expired',
+SET deleted_at = GREATEST($3, created_at, updated_at),
+    deletion_reason = $4,
     version = version + 1,
-    updated_at = $3
+    updated_at = GREATEST($3, created_at, updated_at)
 WHERE tenant_id = $1 AND id = $2
   AND status = 'pending' AND deleted_at IS NULL`,
-		row.TenantID, row.ID, now,
+		row.TenantID, row.ID, now, reason,
 	)
 	if err != nil {
 		return fmt.Errorf("expire file upload intent: %w", err)

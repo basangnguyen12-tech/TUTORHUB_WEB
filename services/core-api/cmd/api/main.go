@@ -918,6 +918,9 @@ func run() int {
 				"error_code", "content_verification_recovery_failed",
 			)
 		})
+		go contentRoomService.RunRetentionCleanup(ctx, 5*time.Minute, func(error) {
+			logger.Warn("room document retention cleanup failed", "error_code", "room_document_retention_cleanup_failed")
+		})
 	}
 	if mediaProviderEffectReconciler != nil {
 		go mediaProviderEffectReconciler.Run(ctx, 2*time.Second, func(error) {

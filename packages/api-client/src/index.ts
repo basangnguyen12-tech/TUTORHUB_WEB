@@ -192,6 +192,12 @@ export type ContentFileRejectionReason =
   components["schemas"]["ContentFileRejectionReason"];
 export type RoomDocumentMediaType =
   components["schemas"]["RoomDocumentMediaType"];
+export type StudyNoteEntry = components["schemas"]["StudyNoteEntry"];
+export type RoomStudyNote = components["schemas"]["RoomStudyNote"];
+export type PutRoomStudyNoteRequest =
+  components["schemas"]["PutRoomStudyNoteRequest"];
+export type SaveRoomChatAttachmentRequest =
+  components["schemas"]["SaveRoomChatAttachmentRequest"];
 export type RoomDocument = components["schemas"]["RoomDocument"];
 export type RoomDocumentViewerAccess =
   components["schemas"]["RoomDocumentViewerAccess"];
@@ -2486,6 +2492,82 @@ export async function issueFileDownloadCapability(
 // ROOM-TOOLS-FILES-01A (ADR-0045 §2): room Documents tool library. Every call
 // is tenant-asserted; view capabilities are short-lived bearer URLs that must
 // never be logged, cached, persisted or broadcast by callers.
+export async function getRoomStudyNote(
+  tenantID: string,
+  mediaSpaceID: string,
+  fileID: string,
+  options: APIRequestOptions = {},
+): Promise<RoomStudyNote> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/media/spaces/{space_id}/documents/{file_id}/study-note",
+    {
+      params: {
+        path: { space_id: mediaSpaceID, file_id: fileID },
+        header: { "X-TutorHub-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<RoomStudyNote>(
+    data as RoomStudyNote | undefined,
+    error,
+    response,
+  );
+}
+
+export async function putRoomStudyNote(
+  tenantID: string,
+  mediaSpaceID: string,
+  fileID: string,
+  input: PutRoomStudyNoteRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<RoomStudyNote> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PUT(
+    "/api/v1/media/spaces/{space_id}/documents/{file_id}/study-note",
+    {
+      params: {
+        path: { space_id: mediaSpaceID, file_id: fileID },
+        header: { "X-TutorHub-Tenant-ID": tenantID, "X-CSRF-Token": csrfToken },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<RoomStudyNote>(
+    data as RoomStudyNote | undefined,
+    error,
+    response,
+  );
+}
+
+export async function saveRoomChatAttachment(
+  tenantID: string,
+  mediaSpaceID: string,
+  input: SaveRoomChatAttachmentRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<RoomDocument> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/media/spaces/{space_id}/documents/from-chat-attachment",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: { "X-TutorHub-Tenant-ID": tenantID, "X-CSRF-Token": csrfToken },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<RoomDocument>(data, error, response);
+}
+
 export async function listRoomDocuments(
   tenantID: string,
   mediaSpaceID: string,

@@ -2,10 +2,19 @@ package objectstorage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"time"
 )
+
+// ErrObjectNotFound distinguishes an absent object from an inconclusive HEAD.
+var ErrObjectNotFound = errors.New("object not found")
+
+type PutResult struct {
+	ETag      string
+	VersionID string
+}
 
 type Metadata struct {
 	ContentLength  int64

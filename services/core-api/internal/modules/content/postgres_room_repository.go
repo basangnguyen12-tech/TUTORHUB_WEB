@@ -402,9 +402,7 @@ func (repository *PostgresRepository) PrepareRoomView(
 		}
 		return RoomViewTarget{}, ErrNotFound
 	}
-	if !row.StorageVersionID.Valid || strings.TrimSpace(row.StorageVersionID.String) == "" ||
-		!row.StoredMediaType.Valid || len(row.StoredChecksumSHA256) != 32 ||
-		!row.PageCount.Valid || !row.FirstPageAspect.Valid {
+	if !hasRoomViewProof(row) {
 		return RoomViewTarget{}, ErrStorageUnavailable
 	}
 	if err := transaction.Commit(queryContext); err != nil {
@@ -417,6 +415,12 @@ func (repository *PostgresRepository) PrepareRoomView(
 		FirstPageAspect: row.FirstPageAspect.Float64, ActiveContent: row.ActiveContent,
 		DisplayName: row.DisplayName, AllowStudentDownload: row.AllowStudentDownload,
 	}, nil
+}
+
+func hasRoomViewProof(row fileRow) bool {
+	return row.StorageVersionID.Valid && strings.TrimSpace(row.StorageVersionID.String) != "" &&
+		row.StoredMediaType.Valid && len(row.StoredChecksumSHA256) == 32 &&
+		row.PageCount.Valid && row.FirstPageAspect.Valid
 }
 
 func (repository *PostgresRepository) UpdateRoomDocument(
@@ -466,7 +470,9 @@ func (repository *PostgresRepository) UpdateRoomDocument(
 		if err := transaction.Commit(queryContext); err != nil {
 			return UpdateRoomDocumentResult{}, fmt.Errorf("commit room document deletion: %w", err)
 		}
-		return UpdateRoomDocumentResult{Deleted: true}, nil
+		return UpdateRoomDocumentResult{
+			Deleted: true, cleanup: roomStorageCleanup{key: row.ObjectKey, version: row.StorageVersionID.String},
+		}, nil
 	}
 	updated, err := scanFileRow(transaction.QueryRow(
 		queryContext,
@@ -568,8 +574,19 @@ func (repository *PostgresRepository) ClaimVerification(
 		return VerificationTarget{}, false, fmt.Errorf("begin verification claim: %w", err)
 	}
 	defer rollback(transaction)
+	target, claimed, err := claimVerificationTx(queryContext, transaction, tenantID, fileID, now)
+	if err != nil || !claimed {
+		return VerificationTarget{}, false, err
+	}
+	if err := transaction.Commit(queryContext); err != nil {
+		return VerificationTarget{}, false, fmt.Errorf("commit verification claim: %w", err)
+	}
+	return target, true, nil
+}
+
+func claimVerificationTx(ctx context.Context, transaction pgx.Tx, tenantID, fileID uuid.UUID, now time.Time) (VerificationTarget, bool, error) {
 	target, err := scanVerificationTarget(transaction.QueryRow(
-		queryContext,
+		ctx,
 		`UPDATE tutorhub.content_files
 SET status = 'processing',
     processing_at = GREATEST($3, uploaded_at, updated_at),
@@ -585,9 +602,6 @@ RETURNING `+verificationTargetReturning,
 	}
 	if err != nil {
 		return VerificationTarget{}, false, fmt.Errorf("claim verification: %w", err)
-	}
-	if err := transaction.Commit(queryContext); err != nil {
-		return VerificationTarget{}, false, fmt.Errorf("commit verification claim: %w", err)
 	}
 	return target, true, nil
 }
@@ -672,14 +686,26 @@ func (repository *PostgresRepository) CompleteVerification(
 		return false, fmt.Errorf("begin verification completion: %w", err)
 	}
 	defer rollback(transaction)
+	completed, err := completeVerificationTx(queryContext, transaction, target, result, now)
+	if err != nil || !completed {
+		return false, err
+	}
+	if err := transaction.Commit(queryContext); err != nil {
+		return false, fmt.Errorf("commit verification outcome: %w", err)
+	}
+	return true, nil
+}
+
+func completeVerificationTx(ctx context.Context, transaction pgx.Tx, target VerificationTarget, result VerificationResult, now time.Time) (bool, error) {
 	var commandTag interface{ RowsAffected() int64 }
+	var err error
 	if result.Ready {
 		if len(result.StoredChecksum) != 32 || result.PageCount < 1 || result.PageCount > ViewerMaxPages ||
 			result.FirstPageAspect < minimumPageAspect || result.FirstPageAspect > maximumPageAspect {
 			return false, ErrInvalidInput
 		}
 		commandTag, err = transaction.Exec(
-			queryContext,
+			ctx,
 			`UPDATE tutorhub.content_files
 SET status = 'ready',
     version = version + 1,
@@ -702,7 +728,7 @@ WHERE tenant_id = $1 AND id = $2 AND status = 'processing' AND version = $8
 			return false, ErrInvalidInput
 		}
 		commandTag, err = transaction.Exec(
-			queryContext,
+			ctx,
 			`UPDATE tutorhub.content_files
 SET status = 'rejected',
     version = version + 1,
@@ -719,9 +745,6 @@ WHERE tenant_id = $1 AND id = $2 AND status = 'processing' AND version = $5
 	}
 	if commandTag.RowsAffected() != 1 {
 		return false, nil
-	}
-	if err := transaction.Commit(queryContext); err != nil {
-		return false, fmt.Errorf("commit verification outcome: %w", err)
 	}
 	return true, nil
 }

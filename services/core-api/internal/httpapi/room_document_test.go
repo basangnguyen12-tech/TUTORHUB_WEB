@@ -298,20 +298,26 @@ func (*roomFailure) Error() string {
 }
 
 type fakeRoomDocumentService struct {
-	err            error
-	calls          int
-	listPage       content.RoomDocumentPage
-	listAccess     content.AccessContext
-	listSpaceID    uuid.UUID
-	listInput      content.ListFilesInput
-	createResult   content.CreateIntentResult
-	createSpaceID  uuid.UUID
-	createInput    content.RoomDocumentIntentInput
-	viewCapability content.RoomDocumentViewCapability
-	viewSpaceID    uuid.UUID
-	viewFileID     uuid.UUID
-	updateResult   content.UpdateRoomDocumentResult
-	updateInput    content.UpdateRoomDocumentInput
+	studyAccess           content.AccessContext
+	studySpace, studyFile uuid.UUID
+	studyInput            content.PutRoomStudyNoteInput
+	studyNote             content.RoomStudyNote
+	chatInput             content.SaveRoomChatAttachmentInput
+	chatResult            content.SaveRoomChatAttachmentResult
+	err                   error
+	calls                 int
+	listPage              content.RoomDocumentPage
+	listAccess            content.AccessContext
+	listSpaceID           uuid.UUID
+	listInput             content.ListFilesInput
+	createResult          content.CreateIntentResult
+	createSpaceID         uuid.UUID
+	createInput           content.RoomDocumentIntentInput
+	viewCapability        content.RoomDocumentViewCapability
+	viewSpaceID           uuid.UUID
+	viewFileID            uuid.UUID
+	updateResult          content.UpdateRoomDocumentResult
+	updateInput           content.UpdateRoomDocumentInput
 }
 
 func (service *fakeRoomDocumentService) ListRoomDocuments(

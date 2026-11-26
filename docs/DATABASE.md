@@ -1643,6 +1643,32 @@ Exact ACL phải được migration owner cấp ngay trong cửa sổ chạy `00
 `tutorhub.media_room_role_assignments`, `tutorhub.media_participant_sessions` và `tutorhub.content_files` (qua
 `content.Service.DescribeRoomDocument`).
 
+## ROOM-TOOLS-FILES-03A — room document study notes and retention schema (000058)
+
+Mỗi hàng trong `tutorhub.document_study_notes` lưu ghi chú của một thành viên theo
+`(tenant_id, owner_user_id, media_space_id, content_file_id)`. Sau 30 ngày kể từ lần ghi cuối,
+API trả bản rỗng và lần lưu kế tiếp ghi đè cùng hàng. Người dùng xóa nội dung bằng cách lưu mảng rỗng.
+Khóa ngoại tổng hợp ràng buộc thành viên, phòng và tài liệu trong cùng tenant.
+
+Migration owner chạy `000058` và cấp các quyền sau cho Core API trong cùng cửa sổ triển khai:
+
+```sql
+GRANT SELECT ON TABLE tutorhub.document_study_notes TO tutorhub_runtime;
+GRANT INSERT (tenant_id, owner_user_id, media_space_id, content_file_id, notes_json, byte_length, expires_at)
+    ON TABLE tutorhub.document_study_notes TO tutorhub_runtime;
+GRANT UPDATE (notes_json, byte_length, version, updated_at, expires_at)
+    ON TABLE tutorhub.document_study_notes TO tutorhub_runtime;
+GRANT UPDATE (expires_at) ON TABLE tutorhub.content_files TO tutorhub_runtime;
+```
+
+Core API dùng quyền đọc hiện có trên `media_spaces`, `conversations` và `message_attachments`.
+PUBLIC bị thu hồi quyền trên bảng ghi chú. Các quyền của `tutorhub_collab_worker` giữ nguyên.
+Hai partial index hỗ trợ tìm phòng đóng và tệp phòng đến hạn. Tác vụ nền neo hạn vào thời điểm
+đóng phòng + 30 ngày, xóa mềm theo lô và hoàn quota trong cùng giao dịch. Sau commit, Core API
+yêu cầu B2 xóa phiên bản đã lưu hoặc hủy multipart đang hoạt động theo kiểu best-effort.
+Rollback xóa bảng và dữ liệu ghi chú cùng hai index mới. Khi rollback về `000057`, migration owner
+thu hồi `UPDATE (expires_at)` trên `content_files` để khôi phục ACL phiên bản trước.
+
 ## Quy tắc thay đổi schema
 
 1. Không sửa migration đã chạy; tạo migration số tiếp theo với cặp `up/down`.

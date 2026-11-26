@@ -230,6 +230,15 @@ WHERE tenant_id = $1 AND id = $2`, fixture.tenantID, room.studentSessionID); err
 		t.Fatalf("disguised HTML must be rejected: %+v err=%v", rejectedFile, err)
 	}
 
+	storage.deleteVersion = func(ctx context.Context, key, version string) error {
+		var committed bool
+		if err := migrationPool.QueryRow(ctx, `SELECT deleted_at IS NOT NULL
+FROM tutorhub.content_files WHERE tenant_id = $1 AND object_key = $2 AND storage_version_id = $3`,
+			fixture.tenantID, key, version).Scan(&committed); err != nil || !committed {
+			t.Fatalf("storage deletion must follow the exact version's database commit: %v", err)
+		}
+		return errors.New("test provider is unavailable")
+	}
 	for _, fileID := range []uuid.UUID{toggled.Document.ID, rejectedFile.ID} {
 		current, err := service.Get(ctx, host, fileID)
 		if err != nil {
@@ -241,6 +250,9 @@ WHERE tenant_id = $1 AND id = $2`, fixture.tenantID, room.studentSessionID); err
 		if err != nil || !deleted.Deleted {
 			t.Fatalf("soft delete room document: %+v err=%v", deleted, err)
 		}
+	}
+	if storage.deleteCalls != 2 {
+		t.Fatalf("expected two best-effort version deletes, got %d", storage.deleteCalls)
 	}
 	var fileCount, reserved, committed int64
 	if err := migrationPool.QueryRow(ctx, `SELECT file_count, reserved_bytes, committed_bytes
@@ -382,8 +394,18 @@ func (spaces *integrationSpaces) GetSpace(
 
 type integrationVersionStorage struct {
 	*integrationMetadataReader
-	objects    map[string][]byte
-	getVersion string
+	objects       map[string][]byte
+	getVersion    string
+	deleteCalls   int
+	deleteVersion func(context.Context, string, string) error
+}
+
+func (storage *integrationVersionStorage) DeleteVersion(ctx context.Context, key, version string) error {
+	storage.deleteCalls++
+	if storage.deleteVersion != nil {
+		return storage.deleteVersion(ctx, key, version)
+	}
+	return nil
 }
 
 func (storage *integrationVersionStorage) GetVersion(

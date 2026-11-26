@@ -464,6 +464,7 @@ type UpdateRoomDocumentInput struct {
 type UpdateRoomDocumentResult struct {
 	Document RoomDocument
 	Deleted  bool
+	cleanup  roomStorageCleanup
 }
 
 // FileOwner is an unauthenticated owner lookup used only to decide which
@@ -494,6 +495,9 @@ type VerificationTarget struct {
 }
 
 type RoomDocumentServiceAPI interface {
+	GetRoomStudyNote(context.Context, AccessContext, uuid.UUID, uuid.UUID) (RoomStudyNote, error)
+	PutRoomStudyNote(context.Context, AccessContext, uuid.UUID, uuid.UUID, PutRoomStudyNoteInput) (RoomStudyNote, error)
+	SaveRoomChatAttachment(context.Context, AccessContext, uuid.UUID, SaveRoomChatAttachmentInput) (SaveRoomChatAttachmentResult, error)
 	ListRoomDocuments(context.Context, AccessContext, uuid.UUID, ListFilesInput) (RoomDocumentPage, error)
 	CreateRoomDocumentIntent(context.Context, AccessContext, uuid.UUID, RoomDocumentIntentInput) (CreateIntentResult, error)
 	IssueRoomDocumentViewCapability(context.Context, AccessContext, uuid.UUID, uuid.UUID) (RoomDocumentViewCapability, error)

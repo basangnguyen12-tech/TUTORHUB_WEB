@@ -85,11 +85,19 @@ SELECT
 			// room staff toggle allow_student_download. No DELETE is granted.
 			updateColumns: []string{
 				"active_content", "allow_student_download", "deleted_at", "deletion_reason",
-				"first_page_aspect", "page_count", "processing_at", "ready_at",
+				"expires_at", "first_page_aspect", "page_count", "processing_at", "ready_at",
 				"rejected_at", "rejection_reason", "status", "storage_etag",
 				"storage_version_id", "stored_checksum_sha256", "stored_media_type",
 				"stored_size_bytes", "updated_at", "uploaded_at", "version",
 			},
+		},
+		{
+			relation: "tutorhub.document_study_notes",
+			insertColumns: []string{
+				"byte_length", "content_file_id", "expires_at", "media_space_id",
+				"notes_json", "owner_user_id", "tenant_id",
+			},
+			updateColumns: []string{"byte_length", "expires_at", "notes_json", "updated_at", "version"},
 		},
 		{
 			relation:      "tutorhub.tenant_file_usage",
@@ -156,7 +164,7 @@ SELECT
     (SELECT count(*) FROM information_schema.column_privileges
      WHERE table_schema = 'tutorhub'
        AND table_name = ANY($1::text[]) AND grantee = 'PUBLIC')`,
-		[]string{"content_files", "tenant_file_usage", "content_file_multipart_uploads", "content_file_multipart_parts"},
+		[]string{"content_files", "document_study_notes", "tenant_file_usage", "content_file_multipart_uploads", "content_file_multipart_parts"},
 	).Scan(&publicTableGrants, &publicColumnGrants); err != nil {
 		t.Fatalf("inspect PUBLIC content grants: %v", err)
 	}
@@ -184,7 +192,7 @@ SELECT
 FROM pg_roles AS runtime
 JOIN pg_roles AS migration ON migration.rolname = $2
 WHERE runtime.rolname = $1`, runtimeRole, migrationRole,
-		[]string{"content_files", "tenant_file_usage", "content_file_multipart_uploads", "content_file_multipart_parts"},
+		[]string{"content_files", "document_study_notes", "tenant_file_usage", "content_file_multipart_uploads", "content_file_multipart_parts"},
 	).Scan(
 		&notSuperuser, &noCreateRole, &noCreateDatabase, &noReplication,
 		&noBypassRLS, &noMigrationInheritance, &notTableOwner,
@@ -653,6 +661,7 @@ END
 $bootstrap$;
 
 REVOKE ALL ON TABLE
+    tutorhub.document_study_notes,
     tutorhub.content_files,
     tutorhub.tenant_file_usage,
     tutorhub.content_file_multipart_uploads,
@@ -686,12 +695,16 @@ TO tutorhub_conversation_runtime_ci;
 -- ROOM-TOOLS-FILES-01A: room authority re-checks the active RoomInstance,
 -- promoted co-hosts and admitted participant sessions (read-only).
 GRANT SELECT ON TABLE
+    tutorhub.media_spaces,
+    tutorhub.conversations,
+    tutorhub.message_attachments,
     tutorhub.media_room_instances,
     tutorhub.media_room_role_assignments,
     tutorhub.media_participant_sessions
 TO tutorhub_conversation_runtime_ci;
 
 GRANT SELECT ON TABLE
+    tutorhub.document_study_notes,
     tutorhub.content_files,
     tutorhub.tenant_file_usage,
     tutorhub.content_file_multipart_uploads,
@@ -715,8 +728,14 @@ GRANT UPDATE (
     uploaded_at, deleted_at, deletion_reason, updated_at,
     stored_checksum_sha256, processing_at, ready_at, rejected_at,
     page_count, first_page_aspect, active_content, rejection_reason,
-    allow_student_download
+    allow_student_download, expires_at
 ) ON TABLE tutorhub.content_files TO tutorhub_conversation_runtime_ci;
+
+GRANT INSERT (tenant_id, owner_user_id, media_space_id, content_file_id, notes_json, byte_length, expires_at)
+ON TABLE tutorhub.document_study_notes TO tutorhub_conversation_runtime_ci;
+
+GRANT UPDATE (notes_json, byte_length, version, updated_at, expires_at)
+ON TABLE tutorhub.document_study_notes TO tutorhub_conversation_runtime_ci;
 
 GRANT UPDATE (file_count, reserved_bytes, committed_bytes, updated_at)
 ON TABLE tutorhub.tenant_file_usage TO tutorhub_conversation_runtime_ci;

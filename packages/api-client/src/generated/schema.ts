@@ -3124,6 +3124,30 @@ export type paths = {
     readonly patch: operations["updateRoomDocument"];
     readonly trace?: never;
   };
+  readonly "/api/v1/media/spaces/{space_id}/documents/{file_id}/study-note": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Read the current participant's private notes on a room document
+     * @description Requires file_uploads, classroom_files_tool and viewer access to the ready document. Missing or expired notes return version zero with empty entries and null timestamps.
+     */
+    readonly get: operations["getRoomStudyNote"];
+    /**
+     * Save the current participant's private notes on a room document
+     * @description Requires the two room document features and viewer access. Supply the last observed version. Saving extends expiry by 30 days. An empty array clears the note. A version conflict or the limit of 200 active nonempty notes returns 409.
+     */
+    readonly put: operations["putRoomStudyNote"];
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/v1/media/spaces/{space_id}/documents/{file_id}/view-capabilities": {
     readonly parameters: {
       readonly query?: never;
@@ -3138,6 +3162,26 @@ export type paths = {
      * @description Requires a ready, unexpired file owned by this room or by its linked class, plus current room access (teaching staff or a participant admitted to the active RoomInstance). Students may view even when allow_student_download is false, while the raw /api/v1/files/{file_id}/download-capability endpoint stays concealed (404) for them. Signs a B2 GET for the persisted storage version only, with a 5-minute TTL, inline disposition and the stored media type. The bearer URL must never be logged, cached, persisted or broadcast.
      */
     readonly post: operations["issueRoomDocumentViewCapability"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/documents/from-chat-attachment": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Save a sent room chat attachment as a ready document
+     * @description Room teaching staff can import a verified PDF or image up to 10 MiB from this room's conversation into the room or its linked class. A changed request using the same client request ID returns 409.
+     */
+    readonly post: operations["saveRoomChatAttachment"];
     readonly delete?: never;
     readonly options?: never;
     readonly head?: never;
@@ -7481,6 +7525,12 @@ export type components = {
       /** @description At most 16384 UTF-8 bytes; defaults to empty. */
       readonly stdin?: string;
     };
+    readonly PutRoomStudyNoteRequest: {
+      /** @description One nonempty entry per actual document page, up to 65536 UTF-8 text bytes total. */
+      readonly entries: readonly components["schemas"]["StudyNoteEntry"][];
+      /** Format: int64 */
+      readonly expected_version: number;
+    };
     readonly QuotaCapability: {
       /** @description Configured tenant limit before deployment guardrails; present only when can_manage_overrides is true. */
       readonly configured_limit?: number;
@@ -7710,6 +7760,33 @@ export type components = {
       /** @description The caller may request a view capability (ready file and current room access). */
       readonly can_view: boolean;
     };
+    readonly RoomStudyNote: {
+      readonly byte_length: number;
+      readonly entries: readonly components["schemas"]["StudyNoteEntry"][];
+      /** Format: date-time */
+      readonly expires_at: string | null;
+      /** Format: uuid */
+      readonly file_id: string;
+      /** Format: date-time */
+      readonly updated_at: string | null;
+      /** Format: int64 */
+      readonly version: number;
+    };
+    readonly SaveRoomChatAttachmentRequest: {
+      /** @description Defaults to false for room scope and true for class scope. */
+      readonly allow_student_download?: boolean;
+      /** Format: uuid */
+      readonly attachment_id: string;
+      /** Format: uuid */
+      readonly client_request_id: string;
+      /** Format: uuid */
+      readonly conversation_id: string;
+      /**
+       * @description Defaults to media_space when omitted.
+       * @enum {string}
+       */
+      readonly scope?: "media_space" | "class";
+    };
     readonly SelfRSVPResponse: {
       readonly attendee: components["schemas"]["SessionAudienceAttendee"];
       readonly replayed: boolean;
@@ -7885,6 +7962,11 @@ export type components = {
     };
     /** @enum {string} */
     readonly StudyMeetingStatus: "scheduled" | "cancelled";
+    readonly StudyNoteEntry: {
+      readonly page: number;
+      /** @description Up to 4096 UTF-8 bytes after newline and trailing whitespace normalization. */
+      readonly text: string;
+    };
     readonly SwitchActiveTenantRequest: {
       /** Format: uuid */
       readonly tenant_id: string;
@@ -8623,6 +8705,8 @@ export type components = {
     /** @description Must exactly match the Web origin; browsers set this header automatically. */
     readonly PreAuthOrigin: string;
     readonly RoomDocumentFileID: string;
+    /** @description Must match the active tenant of the authenticated session. */
+    readonly RoomDocumentTenantID: string;
     readonly SSOConnectionID: string;
     readonly SSODomainID: string;
     readonly SSOTenantID: string;
@@ -15175,6 +15259,80 @@ export interface operations {
       readonly default: components["responses"]["ProblemResponse"];
     };
   };
+  readonly getRoomStudyNote: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Must match the active tenant of the authenticated session. */
+        readonly "X-TutorHub-Tenant-ID": components["parameters"]["RoomDocumentTenantID"];
+      };
+      readonly path: {
+        readonly file_id: components["parameters"]["RoomDocumentFileID"];
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Private study note for this session user */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["RoomStudyNote"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 429: components["responses"]["ProblemResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly putRoomStudyNote: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Must match the active tenant of the authenticated session. */
+        readonly "X-TutorHub-Tenant-ID": components["parameters"]["RoomDocumentTenantID"];
+      };
+      readonly path: {
+        readonly file_id: components["parameters"]["RoomDocumentFileID"];
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["PutRoomStudyNoteRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Saved private note with its new version */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["RoomStudyNote"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 429: components["responses"]["ProblemResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+    };
+  };
   readonly issueRoomDocumentViewCapability: {
     readonly parameters: {
       readonly query?: never;
@@ -15209,6 +15367,55 @@ export interface operations {
       readonly 409: components["responses"]["ConflictResponse"];
       readonly 503: components["responses"]["ProblemResponse"];
       readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly saveRoomChatAttachment: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Must match the active tenant of the authenticated session. */
+        readonly "X-TutorHub-Tenant-ID": components["parameters"]["RoomDocumentTenantID"];
+      };
+      readonly path: {
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["SaveRoomChatAttachmentRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Existing ready document on exact replay */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["RoomDocument"];
+        };
+      };
+      /** @description Verified document saved to the library */
+      readonly 201: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["RoomDocument"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 429: components["responses"]["ProblemResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
     };
   };
   readonly createRoomDocumentUploadIntent: {
