@@ -155,24 +155,24 @@ function MediaSpaceRoomSession({
   });
   const tenantCapabilities = useTenantCapabilities(tenantId, Boolean(tenantId));
   const whiteboardEnabled =
-    tenantCapabilities.data?.features.classroom_whiteboards.enabled === true;
+    tenantCapabilities.data?.features.classroom_whiteboards?.enabled === true;
   // ROOM-TOOLS-CODE-02A: the personal Code tool stays on by default but obeys
   // the Ops kill-switch; a failed capability read fails closed.
   const codeToolEnabled = tenantCapabilities.data
-    ? tenantCapabilities.data.features.classroom_code_tool.enabled === true
+    ? tenantCapabilities.data.features.classroom_code_tool?.enabled === true
     : tenantCapabilities.isError
       ? false
       : undefined;
   // ROOM-TOOLS-CODE-02B: the shared "Chung lớp" mode needs both switches.
   const codeCollaborationEnabled =
     codeToolEnabled === true &&
-    tenantCapabilities.data?.features.classroom_code_collaboration.enabled ===
+    tenantCapabilities.data?.features.classroom_code_collaboration?.enabled ===
       true;
   // ROOM-TOOLS-CODE-03B: durable snippets, the server draft and "Gửi bài cho
   // GV" need both the Code tool and `code_snippet_library`.
   const codeLibraryEnabled =
     codeToolEnabled === true &&
-    tenantCapabilities.data?.features.code_snippet_library.enabled === true;
+    tenantCapabilities.data?.features.code_snippet_library?.enabled === true;
   const codeClassID = mediaSpaceClassID(mediaSpace.data?.source);
   // ROOM-TOOLS-FILES-01B (ADR-0045): the Documents tool needs both
   // `classroom_files_tool` and `file_uploads`; a failed read fails closed.

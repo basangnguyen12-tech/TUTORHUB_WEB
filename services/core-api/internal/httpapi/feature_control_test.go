@@ -1,11 +1,67 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/tutorhub-v2/core-api/internal/modules/featurecontrol"
 )
+
+func TestMapTenantCapabilitiesProjectsEveryCatalogFeatureAndQuota(t *testing.T) {
+	t.Parallel()
+
+	catalog := featurecontrol.NewDefaultCatalog()
+	capabilities := featurecontrol.Capabilities{TenantID: uuid.New(), Version: 1}
+	for _, definition := range catalog.Features() {
+		capabilities.Features = append(capabilities.Features, featurecontrol.FeatureCapability{
+			EffectiveFeature: featurecontrol.EffectiveFeature{Key: definition.Key, Enabled: true},
+		})
+	}
+	for _, definition := range catalog.Quotas() {
+		capabilities.Quotas = append(capabilities.Quotas, featurecontrol.QuotaCapability{
+			EffectiveQuota: featurecontrol.EffectiveQuota{Key: definition.Key, Limit: definition.DefaultLimit},
+		})
+	}
+
+	response, err := mapTenantCapabilities(capabilities)
+	if err != nil {
+		t.Fatalf("map tenant capabilities: %v", err)
+	}
+	rawFeatures, err := json.Marshal(response.Features)
+	if err != nil {
+		t.Fatalf("marshal projected features: %v", err)
+	}
+	var projectedFeatures map[string]any
+	if err := json.Unmarshal(rawFeatures, &projectedFeatures); err != nil {
+		t.Fatalf("unmarshal projected features: %v", err)
+	}
+	for _, definition := range catalog.Features() {
+		if _, ok := projectedFeatures[string(definition.Key)]; !ok {
+			t.Fatalf("catalog feature %q is missing from HTTP capabilities response", definition.Key)
+		}
+	}
+	if len(projectedFeatures) != len(catalog.Features()) {
+		t.Fatalf("projected features count = %d, catalog = %d", len(projectedFeatures), len(catalog.Features()))
+	}
+
+	rawQuotas, err := json.Marshal(response.Quotas)
+	if err != nil {
+		t.Fatalf("marshal projected quotas: %v", err)
+	}
+	var projectedQuotas map[string]any
+	if err := json.Unmarshal(rawQuotas, &projectedQuotas); err != nil {
+		t.Fatalf("unmarshal projected quotas: %v", err)
+	}
+	for _, definition := range catalog.Quotas() {
+		if _, ok := projectedQuotas[string(definition.Key)]; !ok {
+			t.Fatalf("catalog quota %q is missing from HTTP capabilities response", definition.Key)
+		}
+	}
+	if len(projectedQuotas) != len(catalog.Quotas()) {
+		t.Fatalf("projected quotas count = %d, catalog = %d", len(projectedQuotas), len(catalog.Quotas()))
+	}
+}
 
 func TestMapTenantCapabilitiesIncludesAvailabilityPollProfile(t *testing.T) {
 	t.Parallel()

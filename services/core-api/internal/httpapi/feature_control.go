@@ -57,6 +57,9 @@ type tenantFeatureCapabilitiesResponse struct {
 	ClassroomWhiteboards       featureCapabilityResponse `json:"classroom_whiteboards"`
 	ClassroomCodeTool          featureCapabilityResponse `json:"classroom_code_tool"`
 	ClassroomCodeCollaboration featureCapabilityResponse `json:"classroom_code_collaboration"`
+	CodeSnippetLibrary         featureCapabilityResponse `json:"code_snippet_library"`
+	ClassroomFilesTool         featureCapabilityResponse `json:"classroom_files_tool"`
+	ClassroomPDFCollaboration  featureCapabilityResponse `json:"classroom_pdf_collaboration"`
 }
 
 type tenantQuotaCapabilitiesResponse struct {
@@ -85,6 +88,8 @@ type tenantQuotaCapabilitiesResponse struct {
 	WhiteboardConnectionsPerTenant             quotaCapabilityResponse `json:"whiteboard_connections_per_tenant"`
 	WhiteboardStorageBytesPerTenant            quotaCapabilityResponse `json:"whiteboard_storage_bytes_per_tenant"`
 	WhiteboardOperationsPerMinute              quotaCapabilityResponse `json:"whiteboard_operations_per_minute"`
+	CodeSnippetsPerMember                      quotaCapabilityResponse `json:"code_snippets_per_member"`
+	CodeStorageBytesPerTenant                  quotaCapabilityResponse `json:"code_storage_bytes_per_tenant"`
 }
 
 type tenantOperationCapabilitiesResponse struct {
@@ -133,6 +138,9 @@ type updateTenantFeatureControlValuesRequest struct {
 	ClassroomWhiteboards       *bool `json:"classroom_whiteboards"`
 	ClassroomCodeTool          *bool `json:"classroom_code_tool"`
 	ClassroomCodeCollaboration *bool `json:"classroom_code_collaboration"`
+	CodeSnippetLibrary         *bool `json:"code_snippet_library"`
+	ClassroomFilesTool         *bool `json:"classroom_files_tool"`
+	ClassroomPDFCollaboration  *bool `json:"classroom_pdf_collaboration"`
 }
 
 type updateTenantQuotaControlValuesRequest struct {
@@ -161,6 +169,8 @@ type updateTenantQuotaControlValuesRequest struct {
 	WhiteboardConnectionsPerTenant             *int64 `json:"whiteboard_connections_per_tenant"`
 	WhiteboardStorageBytesPerTenant            *int64 `json:"whiteboard_storage_bytes_per_tenant"`
 	WhiteboardOperationsPerMinute              *int64 `json:"whiteboard_operations_per_minute"`
+	CodeSnippetsPerMember                      *int64 `json:"code_snippets_per_member"`
+	CodeStorageBytesPerTenant                  *int64 `json:"code_storage_bytes_per_tenant"`
 }
 
 func (request updateTenantFeatureControlsRequest) complete() bool {
@@ -179,6 +189,9 @@ func (request updateTenantFeatureControlsRequest) complete() bool {
 		request.Features.ClassroomWhiteboards != nil &&
 		request.Features.ClassroomCodeTool != nil &&
 		request.Features.ClassroomCodeCollaboration != nil &&
+		request.Features.CodeSnippetLibrary != nil &&
+		request.Features.ClassroomFilesTool != nil &&
+		request.Features.ClassroomPDFCollaboration != nil &&
 		request.Quotas != nil && request.Quotas.Members != nil &&
 		request.Quotas.ActiveClasses != nil &&
 		request.Quotas.InviteCreationsPerHour != nil &&
@@ -203,7 +216,9 @@ func (request updateTenantFeatureControlsRequest) complete() bool {
 		request.Quotas.WhiteboardDocumentsPerTenant != nil &&
 		request.Quotas.WhiteboardConnectionsPerTenant != nil &&
 		request.Quotas.WhiteboardStorageBytesPerTenant != nil &&
-		request.Quotas.WhiteboardOperationsPerMinute != nil
+		request.Quotas.WhiteboardOperationsPerMinute != nil &&
+		request.Quotas.CodeSnippetsPerMember != nil &&
+		request.Quotas.CodeStorageBytesPerTenant != nil
 }
 
 func newFeatureControlHandlers(
@@ -295,6 +310,9 @@ func (handlers featureControlHandlers) update(w http.ResponseWriter, r *http.Req
 				{Key: featurecontrol.FeatureClassroomWhiteboards, Enabled: *request.Features.ClassroomWhiteboards},
 				{Key: featurecontrol.FeatureClassroomCodeTool, Enabled: *request.Features.ClassroomCodeTool},
 				{Key: featurecontrol.FeatureClassroomCodeCollaboration, Enabled: *request.Features.ClassroomCodeCollaboration},
+				{Key: featurecontrol.FeatureCodeSnippetLibrary, Enabled: *request.Features.CodeSnippetLibrary},
+				{Key: featurecontrol.FeatureClassroomFilesTool, Enabled: *request.Features.ClassroomFilesTool},
+				{Key: featurecontrol.FeatureClassroomPDFCollaboration, Enabled: *request.Features.ClassroomPDFCollaboration},
 			},
 			QuotaOverrides: []featurecontrol.QuotaOverride{
 				{Key: featurecontrol.QuotaMembers, Limit: *request.Quotas.Members},
@@ -322,6 +340,8 @@ func (handlers featureControlHandlers) update(w http.ResponseWriter, r *http.Req
 				{Key: featurecontrol.QuotaWhiteboardConnectionsPerTenant, Limit: *request.Quotas.WhiteboardConnectionsPerTenant},
 				{Key: featurecontrol.QuotaWhiteboardStorageBytesPerTenant, Limit: *request.Quotas.WhiteboardStorageBytesPerTenant},
 				{Key: featurecontrol.QuotaWhiteboardOperationsPerMinute, Limit: *request.Quotas.WhiteboardOperationsPerMinute},
+				{Key: featurecontrol.QuotaCodeSnippetsPerMember, Limit: *request.Quotas.CodeSnippetsPerMember},
+				{Key: featurecontrol.QuotaCodeStorageBytesPerTenant, Limit: *request.Quotas.CodeStorageBytesPerTenant},
 			},
 		},
 	)
@@ -465,6 +485,9 @@ func mapTenantCapabilities(
 	classroomWhiteboardFeature, classroomWhiteboardOK := features[featurecontrol.FeatureClassroomWhiteboards]
 	classroomCodeToolFeature, classroomCodeToolOK := features[featurecontrol.FeatureClassroomCodeTool]
 	classroomCodeCollaborationFeature, classroomCodeCollaborationOK := features[featurecontrol.FeatureClassroomCodeCollaboration]
+	codeSnippetLibraryFeature, codeSnippetLibraryOK := features[featurecontrol.FeatureCodeSnippetLibrary]
+	classroomFilesToolFeature, classroomFilesToolOK := features[featurecontrol.FeatureClassroomFilesTool]
+	classroomPDFCollaborationFeature, classroomPDFCollaborationOK := features[featurecontrol.FeatureClassroomPDFCollaboration]
 	membersQuota, membersOK := quotas[featurecontrol.QuotaMembers]
 	classesQuota, classesOK := quotas[featurecontrol.QuotaActiveClasses]
 	invitesQuota, invitesOK := quotas[featurecontrol.QuotaInviteCreationsPerHour]
@@ -490,6 +513,8 @@ func mapTenantCapabilities(
 	whiteboardConnectionsQuota, whiteboardConnectionsOK := quotas[featurecontrol.QuotaWhiteboardConnectionsPerTenant]
 	whiteboardStorageBytesQuota, whiteboardStorageBytesOK := quotas[featurecontrol.QuotaWhiteboardStorageBytesPerTenant]
 	whiteboardOperationsQuota, whiteboardOperationsOK := quotas[featurecontrol.QuotaWhiteboardOperationsPerMinute]
+	codeSnippetsPerMemberQuota, codeSnippetsPerMemberOK := quotas[featurecontrol.QuotaCodeSnippetsPerMember]
+	codeStorageBytesQuota, codeStorageBytesOK := quotas[featurecontrol.QuotaCodeStorageBytesPerTenant]
 	if !membershipOK || !classOK || !inviteOK || !sessionOK || !recurrenceOK || !notificationOK ||
 		!availabilityPollOK || !conversationOK || !fileUploadOK || !membersOK || !classesOK || !invitesOK || !activePollsOK ||
 		!pollRangeOK || !pollSlotsOK || !pollParticipantsOK || !pollCreationsOK || !pollCapabilitiesOK ||
@@ -499,7 +524,9 @@ func mapTenantCapabilities(
 		!mediaParticipantsPerSpaceOK || !activeMediaParticipantsOK || !mediaSpaceStartsOK ||
 		!classroomWhiteboardOK || !whiteboardDocumentsOK || !whiteboardConnectionsOK ||
 		!whiteboardStorageBytesOK || !whiteboardOperationsOK ||
-		!classroomCodeToolOK || !classroomCodeCollaborationOK {
+		!classroomCodeToolOK || !classroomCodeCollaborationOK ||
+		!codeSnippetLibraryOK || !classroomFilesToolOK || !classroomPDFCollaborationOK ||
+		!codeSnippetsPerMemberOK || !codeStorageBytesOK {
 		return tenantCapabilitiesResponse{}, errors.New("feature control snapshot is incomplete")
 	}
 	response := tenantCapabilitiesResponse{
@@ -521,6 +548,9 @@ func mapTenantCapabilities(
 			ClassroomWhiteboards:       mapFeatureCapability(classroomWhiteboardFeature, capabilities.AllowedAction.ManageControls),
 			ClassroomCodeTool:          mapFeatureCapability(classroomCodeToolFeature, capabilities.AllowedAction.ManageControls),
 			ClassroomCodeCollaboration: mapFeatureCapability(classroomCodeCollaborationFeature, capabilities.AllowedAction.ManageControls),
+			CodeSnippetLibrary:         mapFeatureCapability(codeSnippetLibraryFeature, capabilities.AllowedAction.ManageControls),
+			ClassroomFilesTool:         mapFeatureCapability(classroomFilesToolFeature, capabilities.AllowedAction.ManageControls),
+			ClassroomPDFCollaboration:  mapFeatureCapability(classroomPDFCollaborationFeature, capabilities.AllowedAction.ManageControls),
 		},
 		Quotas: tenantQuotaCapabilitiesResponse{
 			Members:                                    mapQuotaCapability(membersQuota, capabilities.AllowedAction.ManageControls),
@@ -548,6 +578,8 @@ func mapTenantCapabilities(
 			WhiteboardConnectionsPerTenant:             mapQuotaCapability(whiteboardConnectionsQuota, capabilities.AllowedAction.ManageControls),
 			WhiteboardStorageBytesPerTenant:            mapQuotaCapability(whiteboardStorageBytesQuota, capabilities.AllowedAction.ManageControls),
 			WhiteboardOperationsPerMinute:              mapQuotaCapability(whiteboardOperationsQuota, capabilities.AllowedAction.ManageControls),
+			CodeSnippetsPerMember:                      mapQuotaCapability(codeSnippetsPerMemberQuota, capabilities.AllowedAction.ManageControls),
+			CodeStorageBytesPerTenant:                  mapQuotaCapability(codeStorageBytesQuota, capabilities.AllowedAction.ManageControls),
 		},
 	}
 	response.Operations = tenantOperationCapabilitiesResponse{

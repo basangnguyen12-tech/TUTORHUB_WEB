@@ -86,16 +86,13 @@ const quotaLabelKeys: Record<QuotaKey, TranslationKey> = {
 type ControlsDraft = TenantFeatureControlDraft;
 
 function configuredFeature(capabilities: TenantCapabilities, key: FeatureKey) {
-  return (
-    capabilities.features[key].configured_enabled ??
-    capabilities.features[key].enabled
-  );
+  const entry = capabilities.features[key];
+  return entry?.configured_enabled ?? entry?.enabled ?? false;
 }
 
 function configuredQuota(capabilities: TenantCapabilities, key: QuotaKey) {
-  return (
-    capabilities.quotas[key].configured_limit ?? capabilities.quotas[key].limit
-  );
+  const entry = capabilities.quotas[key];
+  return entry?.configured_limit ?? entry?.limit ?? 1;
 }
 
 function controlsDraft(capabilities: TenantCapabilities): ControlsDraft {
@@ -353,23 +350,25 @@ export function TenantFeatureControlsPanel({
       )}
 
       <div className="tenant-controls__features">
-        {featureKeys.map((key) => (
-          <div key={key}>
-            <span>{t(featureLabelKeys[key])}</span>
-            <StatusBadge
-              tone={capabilities.features[key].enabled ? "success" : "neutral"}
-            >
-              {capabilities.features[key].enabled
-                ? t("capabilities.enabled")
-                : t("capabilities.disabled")}
-            </StatusBadge>
-          </div>
-        ))}
+        {featureKeys.map((key) => {
+          const enabled = capabilities.features[key]?.enabled === true;
+          return (
+            <div key={key}>
+              <span>{t(featureLabelKeys[key])}</span>
+              <StatusBadge tone={enabled ? "success" : "neutral"}>
+                {enabled
+                  ? t("capabilities.enabled")
+                  : t("capabilities.disabled")}
+              </StatusBadge>
+            </div>
+          );
+        })}
       </div>
 
       <div className="tenant-controls__quotas">
         {quotaKeys.map((key) => {
           const quota = capabilities.quotas[key];
+          if (!quota) return null;
           return (
             <article key={key}>
               <div>
