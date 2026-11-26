@@ -102,6 +102,7 @@ func TestLoadDefaults(t *testing.T) {
 		cfg.FeatureControls.DisableClassroomCodeTool ||
 		cfg.FeatureControls.EnableClassroomCodeCollaboration ||
 		cfg.FeatureControls.EnableCodeSnippetLibrary ||
+		cfg.FeatureControls.EnableClassroomFilesTool ||
 		cfg.FeatureControls.MaxActiveMediaSpaces != defaultFeatureActiveMediaSpaceLimit ||
 		cfg.FeatureControls.MaxMediaParticipantsPerSpace != defaultFeatureMediaParticipantsPerSpaceLimit ||
 		cfg.FeatureControls.MaxActiveMediaParticipants != defaultFeatureActiveMediaParticipantLimit ||
@@ -978,4 +979,23 @@ func mapLookup(values map[string]string) lookupEnv {
 
 func validSessionSecret() string {
 	return base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+}
+
+func TestLoadParsesClassroomFilesToolGuardrail(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_FILES_TOOL": "true",
+	}))
+	if err != nil {
+		t.Fatalf("load classroom files tool guardrail: %v", err)
+	}
+	if !cfg.FeatureControls.EnableClassroomFilesTool {
+		t.Fatalf("classroom files tool guardrail was not parsed: %+v", cfg.FeatureControls)
+	}
+	if _, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_FILES_TOOL": "maybe",
+	})); err == nil {
+		t.Fatal("expected invalid classroom files tool flag to fail closed")
+	}
 }

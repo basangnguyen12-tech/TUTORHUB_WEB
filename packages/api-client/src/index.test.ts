@@ -841,6 +841,7 @@ describe("getHealth", () => {
         classroom_code_tool: { enabled: true },
         classroom_code_collaboration: { enabled: false },
         code_snippet_library: { enabled: false },
+        classroom_files_tool: { enabled: false },
       },
       quotas: {
         active_availability_polls: { limit: 20, used: 2, remaining: 18 },
@@ -1018,6 +1019,7 @@ describe("getHealth", () => {
         classroom_code_tool: true,
         classroom_code_collaboration: false,
         code_snippet_library: false,
+        classroom_files_tool: false,
       },
       quotas: {
         active_availability_polls: 30,

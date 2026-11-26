@@ -296,6 +296,7 @@ func TestObjectStorageReadinessChecksBucket(t *testing.T) {
 
 type fakeS3Client struct {
 	putInput                *s3.PutObjectInput
+	getInput                *s3.GetObjectInput
 	getOutput               *s3.GetObjectOutput
 	deleteInput             *s3.DeleteObjectInput
 	headInput               *s3.HeadBucketInput
@@ -389,9 +390,10 @@ func (client *fakeS3Client) PutObject(
 
 func (client *fakeS3Client) GetObject(
 	_ context.Context,
-	_ *s3.GetObjectInput,
+	input *s3.GetObjectInput,
 	_ ...func(*s3.Options),
 ) (*s3.GetObjectOutput, error) {
+	client.getInput = input
 	if client.getOutput == nil {
 		return &s3.GetObjectOutput{}, nil
 	}
@@ -447,4 +449,56 @@ func (client *fakeS3Client) AbortMultipartUpload(
 ) (*s3.AbortMultipartUploadOutput, error) {
 	client.abortMultipartInput = input
 	return &s3.AbortMultipartUploadOutput{}, nil
+}
+
+func TestB2StoreGetVersionReadsOnlyTheExactPersistedVersion(t *testing.T) {
+	t.Parallel()
+
+	client := &fakeS3Client{getOutput: &s3.GetObjectOutput{
+		Body:          io.NopCloser(strings.NewReader("%PDF-1.7")),
+		ContentLength: aws.Int64(8), ContentType: aws.String("application/pdf"),
+		ETag: aws.String("etag"), VersionId: aws.String("version-7"),
+	}}
+	store, err := newB2Store(client, "tutorhub-staging")
+	if err != nil {
+		t.Fatalf("create B2 store: %v", err)
+	}
+	object, err := store.GetVersion(context.Background(), "tenants/t/files/f/original", " version-7 ")
+	if err != nil {
+		t.Fatalf("get object version: %v", err)
+	}
+	defer object.Body.Close()
+	if aws.ToString(client.getInput.VersionId) != "version-7" ||
+		aws.ToString(client.getInput.Key) != "tenants/t/files/f/original" ||
+		aws.ToString(client.getInput.Bucket) != "tutorhub-staging" {
+		t.Fatalf("get version must pass the exact version selector: %+v", client.getInput)
+	}
+	if object.VersionID != "version-7" || object.ContentLength != 8 || object.ContentType != "application/pdf" {
+		t.Fatalf("unexpected versioned object: %+v", object)
+	}
+
+	for _, versionID := range []string{"", "  ", "version\r\nx"} {
+		if _, err := store.GetVersion(context.Background(), "tenants/t/files/f/original", versionID); err == nil {
+			t.Fatalf("version %q must be rejected before any provider read", versionID)
+		}
+	}
+
+	closed := &closeRecorder{Reader: strings.NewReader("latest")}
+	client.getOutput = &s3.GetObjectOutput{Body: closed, VersionId: aws.String("version-8")}
+	if _, err := store.GetVersion(context.Background(), "tenants/t/files/f/original", "version-7"); err == nil {
+		t.Fatal("a provider response for another version must be rejected")
+	}
+	if !closed.closed {
+		t.Fatal("a mismatched version body must be closed")
+	}
+}
+
+type closeRecorder struct {
+	io.Reader
+	closed bool
+}
+
+func (recorder *closeRecorder) Close() error {
+	recorder.closed = true
+	return nil
 }

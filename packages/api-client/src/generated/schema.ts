@@ -2218,7 +2218,7 @@ export type paths = {
     readonly put?: never;
     /**
      * Issue a short-lived GET capability for one ready file version
-     * @description Reauthorizes file.view and signs only the immutable B2 version persisted by finalize. Non-ready files return a conflict only to authorized upload managers and remain concealed from other viewers.
+     * @description Reauthorizes file.view and signs only the immutable B2 version persisted by finalize. Non-ready files return a conflict only to authorized upload managers and remain concealed from other viewers. Room-owned files additionally require classroom_files_tool and current room access; when allow_student_download is false only the uploader and teaching staff may download the original, others receive 404.
      */
     readonly post: operations["issueFileDownloadCapability"];
     readonly delete?: never;
@@ -2238,7 +2238,7 @@ export type paths = {
     readonly put?: never;
     /**
      * Verify the stored object and commit a pending file as uploaded
-     * @description The client supplies the immutable B2 version selector returned by its upload. The Core API HEADs exactly that version and verifies size, normalized media type, ETag and version before committing the file as uploaded. SHA-256 is established by the P3-10 pre-ready processing gate; finalize never copies a browser-asserted checksum into stored proof.
+     * @description The client supplies the immutable B2 version selector returned by its upload. The Core API HEADs exactly that version and verifies size, normalized media type, ETag and version before committing the file as uploaded. SHA-256 is established by the P3-10 pre-ready processing gate; finalize never copies a browser-asserted checksum into stored proof. For application/pdf, image/png, image/jpeg and image/webp (ADR-0045 P3-10-PDF/Image) finalize also streams the exact version, verifies SHA-256, magic bytes and bounded structure, and returns ready or rejected (with rejection_reason) in the same call; a transient storage failure leaves processing for bounded recovery. Other media types stay uploaded.
      */
     readonly post: operations["finalizeFileUpload"];
     readonly delete?: never;
@@ -3078,6 +3078,86 @@ export type paths = {
      * @description Resolves the exact participant session from the authenticated actor and join attempt. Token, SDP, ICE, IP, device labels, provider identifiers and raw errors are not accepted.
      */
     readonly post: operations["recordMediaSpaceDiagnostic"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/documents": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * List viewer-supported documents in one room Documents tool
+     * @description ROOM-TOOLS-FILES-01A (ADR-0045 §2). Requires file_uploads and classroom_files_tool (503 feature_disabled otherwise). Returns room-owned media_space files plus, when the room is linked to a class, class-owned files of the four viewer media types (application/pdf, image/png, image/jpeg, image/webp). Attendees see only ready files and only while admitted to the active RoomInstance; uploaders and room teaching staff (organization admin, host, co-host, linked-class teacher/TA) also see pending/uploaded/processing/rejected rows. Unauthorized, not-admitted and cross-tenant access is concealed as 404. Items never expose creator identifiers, object keys or checksums. The opaque cursor is bound to the active tenant and room.
+     */
+    readonly get: operations["listRoomDocuments"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/documents/{file_id}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    /**
+     * Toggle student download or soft-delete one room document
+     * @description Room teaching staff only (404 otherwise). Compare-and-set on expected_version (409 room_document_version_conflict). allow_student_download applies to room-owned and linked-class files; deleted=true soft-deletes a room-owned file (deletion_reason room_staff_deleted), releases its tenant file usage and returns 204. Class-owned files must be deleted from Class Files (400 room_document_invalid).
+     */
+    readonly patch: operations["updateRoomDocument"];
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/documents/{file_id}/view-capabilities": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Issue a short-lived version-bound read capability for the room viewer
+     * @description Requires a ready, unexpired file owned by this room or by its linked class, plus current room access (teaching staff or a participant admitted to the active RoomInstance). Students may view even when allow_student_download is false, while the raw /api/v1/files/{file_id}/download-capability endpoint stays concealed (404) for them. Signs a B2 GET for the persisted storage version only, with a 5-minute TTL, inline disposition and the stored media type. The bearer URL must never be logged, cached, persisted or broadcast.
+     */
+    readonly post: operations["issueRoomDocumentViewCapability"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/v1/media/spaces/{space_id}/documents/upload-intents": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Reserve a room or linked-class document upload for the Documents tool
+     * @description Room teaching staff only (404 otherwise). Accepts only application/pdf (<= 50 MiB) and image/png, image/jpeg, image/webp (<= 10 MiB); other media types or sizes return 400 room_document_unsupported. scope defaults to media_space (allow_student_download defaults to false and the file expires 30 days after creation); scope=class requires a linked class and class file.upload permission (allow_student_download defaults to true). Ended or cancelled rooms return 409 room_document_read_only. The response is the caller-owned ContentFile; continue with /api/v1/files/{file_id}/{upload-capability,multipart-uploads,finalize}. Finalize verifies the exact stored version and returns ready or rejected in one call.
+     */
+    readonly post: operations["createRoomDocumentUploadIntent"];
     readonly delete?: never;
     readonly options?: never;
     readonly head?: never;
@@ -5451,8 +5531,10 @@ export type components = {
       readonly upload: components["schemas"]["FileMultipartUpload"];
     };
     readonly ContentFile: {
-      /** Format: uuid */
-      readonly class_id: string;
+      readonly active_content?: boolean;
+      readonly allow_student_download?: boolean;
+      /** @description Owning class for owner_kind=class; null for room-owned (media_space) files. */
+      readonly class_id: string | null;
       /** Format: date-time */
       readonly created_at: string;
       /** Format: uuid */
@@ -5462,8 +5544,18 @@ export type components = {
       readonly expected_checksum_sha256: string;
       /** Format: int64 */
       readonly expected_size_bytes: number;
+      readonly expires_at?: string | null;
+      /** @description Verified first-page width/height ratio for viewer placeholders. */
+      readonly first_page_aspect?: number | null;
       /** Format: uuid */
       readonly id: string;
+      /** @description Owning room for owner_kind=media_space; null for class files. */
+      readonly media_space_id?: string | null;
+      readonly owner_kind?: components["schemas"]["ContentFileOwnerKind"];
+      /** @description Verified page count for the four viewer media types (images are 1). */
+      readonly page_count?: number | null;
+      readonly rejection_reason?:
+        components["schemas"]["ContentFileRejectionReason"] | null;
       readonly status: components["schemas"]["ContentFileStatus"];
       /** Format: date-time */
       readonly updated_at: string;
@@ -5475,11 +5567,26 @@ export type components = {
       readonly version: number;
       readonly viewer_access: components["schemas"]["ContentFileViewerAccess"];
     };
+    /** @enum {string} */
+    readonly ContentFileOwnerKind: "class" | "media_space";
     readonly ContentFilePage: {
       readonly items: readonly components["schemas"]["ContentFile"][];
       readonly next_cursor: string | null;
       readonly viewer_access: components["schemas"]["ClassFilesViewerAccess"];
     };
+    /**
+     * @description Bounded P3-10-PDF/Image verifier outcome code; present only when status is rejected.
+     * @enum {string}
+     */
+    readonly ContentFileRejectionReason:
+      | "checksum_mismatch"
+      | "media_type_mismatch"
+      | "file_too_large_for_viewer"
+      | "pdf_encrypted"
+      | "pdf_too_many_pages"
+      | "pdf_invalid"
+      | "image_dimensions_exceeded"
+      | "image_invalid";
     /** @enum {string} */
     readonly ContentFileStatus:
       "pending" | "uploaded" | "processing" | "ready" | "rejected";
@@ -5669,6 +5776,25 @@ export type components = {
        */
       readonly accept_url: string;
       readonly invitation: components["schemas"]["MembershipInvitation"];
+    };
+    readonly CreateRoomDocumentUploadIntentRequest: {
+      /** @description Defaults to false for scope=media_space and true for scope=class. */
+      readonly allow_student_download?: boolean;
+      readonly checksum_sha256: string;
+      /** Format: uuid */
+      readonly client_request_id: string;
+      readonly declared_media_type: components["schemas"]["RoomDocumentMediaType"];
+      readonly display_name: string;
+      /**
+       * Format: int64
+       * @description application/pdf accepts up to 52428800 bytes; images accept up to 10485760 bytes.
+       */
+      readonly expected_size_bytes: number;
+      /**
+       * @default media_space
+       * @enum {string}
+       */
+      readonly scope: "media_space" | "class";
     };
     readonly CreateSSOConnectionRequest: {
       readonly allowed_org_ids: readonly string[];
@@ -7318,6 +7444,72 @@ export type components = {
     readonly RevokeOtherSessionsResponse: {
       readonly revoked_count: number;
     };
+    readonly RoomDocument: {
+      /** @description The PDF declares JavaScript, actions, XFA, launch or embedded files. The viewer never executes them; raw downloads must show a warning. */
+      readonly active_content: boolean;
+      readonly allow_student_download: boolean;
+      readonly class_id: string | null;
+      /** Format: date-time */
+      readonly created_at: string;
+      readonly declared_media_type: components["schemas"]["RoomDocumentMediaType"];
+      readonly display_name: string;
+      /** Format: int64 */
+      readonly expected_size_bytes: number;
+      readonly expires_at: string | null;
+      readonly first_page_aspect: number | null;
+      /** Format: uuid */
+      readonly id: string;
+      readonly media_space_id: string | null;
+      readonly owner_kind: components["schemas"]["ContentFileOwnerKind"];
+      readonly page_count: number | null;
+      readonly rejection_reason:
+        components["schemas"]["ContentFileRejectionReason"] | null;
+      readonly status: components["schemas"]["ContentFileStatus"];
+      /** Format: date-time */
+      readonly updated_at: string;
+      readonly uploaded_by_viewer: boolean;
+      /** Format: int64 */
+      readonly version: number;
+      readonly viewer_access: components["schemas"]["RoomDocumentViewerAccess"];
+    };
+    readonly RoomDocumentLibraryViewerAccess: {
+      readonly can_manage: boolean;
+      readonly can_present: boolean;
+      readonly can_upload: boolean;
+      readonly can_upload_to_class: boolean;
+    };
+    /** @enum {string} */
+    readonly RoomDocumentMediaType:
+      "application/pdf" | "image/png" | "image/jpeg" | "image/webp";
+    readonly RoomDocumentPage: {
+      readonly items: readonly components["schemas"]["RoomDocument"][];
+      readonly next_cursor: string | null;
+      readonly viewer_access: components["schemas"]["RoomDocumentLibraryViewerAccess"];
+    };
+    readonly RoomDocumentViewCapability: {
+      readonly active_content: boolean;
+      /** Format: int64 */
+      readonly content_length_bytes: number;
+      /** Format: date-time */
+      readonly expires_at: string;
+      readonly first_page_aspect: number;
+      readonly media_type: components["schemas"]["RoomDocumentMediaType"];
+      /** @constant */
+      readonly method: "GET";
+      readonly page_count: number;
+      readonly sha256: string;
+      /** Format: uri */
+      readonly url: string;
+      readonly version_id: string;
+    };
+    readonly RoomDocumentViewerAccess: {
+      /** @description The caller may request the raw download capability; false for students when allow_student_download is false. */
+      readonly can_download_original: boolean;
+      readonly can_manage: boolean;
+      readonly can_retry_upload: boolean;
+      /** @description The caller may request a view capability (ready file and current room access). */
+      readonly can_view: boolean;
+    };
     readonly SelfRSVPResponse: {
       readonly attendee: components["schemas"]["SessionAudienceAttendee"];
       readonly replayed: boolean;
@@ -7534,6 +7726,7 @@ export type components = {
       readonly class_session_scheduling: components["schemas"]["FeatureCapability"];
       readonly classroom_code_collaboration: components["schemas"]["FeatureCapability"];
       readonly classroom_code_tool: components["schemas"]["FeatureCapability"];
+      readonly classroom_files_tool: components["schemas"]["FeatureCapability"];
       readonly classroom_media_rooms: components["schemas"]["FeatureCapability"];
       readonly classroom_whiteboards: components["schemas"]["FeatureCapability"];
       readonly code_snippet_library: components["schemas"]["FeatureCapability"];
@@ -7551,6 +7744,7 @@ export type components = {
       readonly class_session_scheduling: boolean;
       readonly classroom_code_collaboration: boolean;
       readonly classroom_code_tool: boolean;
+      readonly classroom_files_tool: boolean;
       readonly classroom_media_rooms: boolean;
       readonly classroom_whiteboards: boolean;
       readonly code_snippet_library: boolean;
@@ -7798,6 +7992,13 @@ export type components = {
     };
     readonly UpdateRoomConversationSettingsRequest: {
       readonly participant_chat_enabled: boolean;
+    };
+    readonly UpdateRoomDocumentRequest: {
+      readonly allow_student_download?: boolean;
+      /** @constant */
+      readonly deleted?: true;
+      /** Format: int64 */
+      readonly expected_version: number;
     };
     readonly UpdateSSOConnectionRequest: {
       readonly allowed_org_ids?: readonly string[];
@@ -8207,6 +8408,7 @@ export type components = {
     readonly PreAuthFetchSite: "same-origin";
     /** @description Must exactly match the Web origin; browsers set this header automatically. */
     readonly PreAuthOrigin: string;
+    readonly RoomDocumentFileID: string;
     readonly SSOConnectionID: string;
     readonly SSODomainID: string;
     readonly SSOTenantID: string;
@@ -14672,6 +14874,175 @@ export interface operations {
       readonly 403: components["responses"]["ForbiddenResponse"];
       readonly 404: components["responses"]["NotFoundResponse"];
       readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly listRoomDocuments: {
+    readonly parameters: {
+      readonly query?: {
+        readonly cursor?: string;
+        readonly limit?: number;
+      };
+      readonly header: {
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Bounded room document page */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["RoomDocumentPage"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly updateRoomDocument: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly file_id: components["parameters"]["RoomDocumentFileID"];
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["UpdateRoomDocumentRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Updated room document projection */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["RoomDocument"];
+        };
+      };
+      /** @description Room document soft-deleted */
+      readonly 204: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content?: never;
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly issueRoomDocumentViewCapability: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly file_id: components["parameters"]["RoomDocumentFileID"];
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Short-lived B2 GET capability bound to the verified version */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["RoomDocumentViewCapability"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly createRoomDocumentUploadIntent: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        /** @description Double-submit CSRF token bound to the active authenticated session. */
+        readonly "X-CSRF-Token": components["parameters"]["CSRFToken"];
+        /** @description Active workspace assertion used to prevent confused-deputy mutations and reads. */
+        readonly "X-TutorHub-Expected-Tenant-ID": components["parameters"]["ExpectedTenantID"];
+      };
+      readonly path: {
+        readonly space_id: components["parameters"]["CodeMediaSpaceID"];
+      };
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["CreateRoomDocumentUploadIntentRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Existing intent returned by an exact idempotent replay */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["ContentFile"];
+        };
+      };
+      /** @description Pending room document intent and quota reservation created */
+      readonly 201: {
+        headers: {
+          readonly "Cache-Control"?: "no-store";
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["ContentFile"];
+        };
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 404: components["responses"]["NotFoundResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
+      readonly 429: components["responses"]["ProblemResponse"];
       readonly 503: components["responses"]["ProblemResponse"];
       readonly default: components["responses"]["ProblemResponse"];
     };

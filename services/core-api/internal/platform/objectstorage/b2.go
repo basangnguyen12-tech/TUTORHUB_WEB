@@ -368,6 +368,44 @@ func (store *B2Store) Get(ctx context.Context, key string) (Object, error) {
 	}, nil
 }
 
+// GetVersion streams exactly one persisted object version. A provider response
+// for a different version is rejected and its body closed.
+func (store *B2Store) GetVersion(ctx context.Context, key string, versionID string) (Object, error) {
+	if store == nil || store.client == nil {
+		return Object{}, fmt.Errorf("get object version: object storage is unavailable")
+	}
+	if err := validateKey(key); err != nil {
+		return Object{}, err
+	}
+	versionID = strings.TrimSpace(versionID)
+	if versionID == "" || containsHeaderControl(versionID) {
+		return Object{}, fmt.Errorf("object version ID is required")
+	}
+	output, err := store.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket:    aws.String(store.bucket),
+		Key:       aws.String(key),
+		VersionId: aws.String(versionID),
+	})
+	if err != nil {
+		return Object{}, fmt.Errorf("get object version: %w", err)
+	}
+	if output.Body == nil {
+		return Object{}, fmt.Errorf("get object version returned an empty body")
+	}
+	returned := strings.TrimSpace(aws.ToString(output.VersionId))
+	if returned != "" && returned != versionID {
+		_ = output.Body.Close()
+		return Object{}, fmt.Errorf("get object version returned a different version")
+	}
+	return Object{
+		Body:          output.Body,
+		ContentLength: aws.ToInt64(output.ContentLength),
+		ContentType:   strings.TrimSpace(aws.ToString(output.ContentType)),
+		ETag:          strings.TrimSpace(aws.ToString(output.ETag)),
+		VersionID:     versionID,
+	}, nil
+}
+
 func (store *B2Store) Head(ctx context.Context, key string) (Metadata, error) {
 	return store.head(ctx, key, "")
 }

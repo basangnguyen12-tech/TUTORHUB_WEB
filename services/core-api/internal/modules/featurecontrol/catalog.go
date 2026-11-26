@@ -29,6 +29,9 @@ const (
 	// ROOM-TOOLS-CODE-03A (ADR-0043 §4 Slice 3): durable snippet library and
 	// server scratchpads stay default-off until per-tenant rollout.
 	FeatureCodeSnippetLibrary FeatureKey = "code_snippet_library"
+	// ROOM-TOOLS-FILES-01A (ADR-0045 §2): the classroom Files / PDF tool and
+	// room document library stay default-off until per-tenant rollout.
+	FeatureClassroomFilesTool FeatureKey = "classroom_files_tool"
 )
 
 type QuotaKey string
@@ -142,6 +145,9 @@ var featureDefinitions = map[FeatureKey]FeatureDefinition{
 	},
 	FeatureCodeSnippetLibrary: {
 		Key: FeatureCodeSnippetLibrary, DefaultEnabled: false,
+	},
+	FeatureClassroomFilesTool: {
+		Key: FeatureClassroomFilesTool, DefaultEnabled: false,
 	},
 }
 

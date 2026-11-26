@@ -74,14 +74,20 @@ SELECT
 		{
 			relation: "tutorhub.content_files",
 			insertColumns: []string{
-				"class_id", "client_request_id", "created_at", "creator_user_id",
-				"declared_media_type", "display_name", "expected_checksum_sha256",
-				"expected_size_bytes", "id", "object_key", "request_fingerprint",
+				"allow_student_download", "class_id", "client_request_id", "created_at",
+				"creator_user_id", "declared_media_type", "display_name",
+				"expected_checksum_sha256", "expected_size_bytes", "expires_at", "id",
+				"media_space_id", "object_key", "owner_kind", "request_fingerprint",
 				"tenant_id", "updated_at", "upload_expires_at",
 			},
+			// ROOM-TOOLS-FILES-01A (000056): the P3-10-PDF/Image verifier owns
+			// stored SHA-256, lifecycle timestamps and bounded page metadata;
+			// room staff toggle allow_student_download. No DELETE is granted.
 			updateColumns: []string{
-				"deleted_at", "deletion_reason", "status", "storage_etag",
-				"storage_version_id", "stored_media_type",
+				"active_content", "allow_student_download", "deleted_at", "deletion_reason",
+				"first_page_aspect", "page_count", "processing_at", "ready_at",
+				"rejected_at", "rejection_reason", "status", "storage_etag",
+				"storage_version_id", "stored_checksum_sha256", "stored_media_type",
 				"stored_size_bytes", "updated_at", "uploaded_at", "version",
 			},
 		},
@@ -677,6 +683,14 @@ TO tutorhub_conversation_runtime_ci;
 GRANT INSERT, UPDATE ON TABLE tutorhub.tenant_quota_windows
 TO tutorhub_conversation_runtime_ci;
 
+-- ROOM-TOOLS-FILES-01A: room authority re-checks the active RoomInstance,
+-- promoted co-hosts and admitted participant sessions (read-only).
+GRANT SELECT ON TABLE
+    tutorhub.media_room_instances,
+    tutorhub.media_room_role_assignments,
+    tutorhub.media_participant_sessions
+TO tutorhub_conversation_runtime_ci;
+
 GRANT SELECT ON TABLE
     tutorhub.content_files,
     tutorhub.tenant_file_usage,
@@ -688,7 +702,8 @@ GRANT INSERT (
     id, tenant_id, class_id, creator_user_id, client_request_id,
     request_fingerprint, object_key, display_name, declared_media_type,
     expected_size_bytes, expected_checksum_sha256, upload_expires_at,
-    created_at, updated_at
+    created_at, updated_at, owner_kind, media_space_id,
+    allow_student_download, expires_at
 ) ON TABLE tutorhub.content_files TO tutorhub_conversation_runtime_ci;
 
 GRANT INSERT (tenant_id, updated_at)
@@ -697,7 +712,10 @@ ON TABLE tutorhub.tenant_file_usage TO tutorhub_conversation_runtime_ci;
 GRANT UPDATE (
     status, version, stored_size_bytes, stored_media_type,
     storage_etag, storage_version_id,
-    uploaded_at, deleted_at, deletion_reason, updated_at
+    uploaded_at, deleted_at, deletion_reason, updated_at,
+    stored_checksum_sha256, processing_at, ready_at, rejected_at,
+    page_count, first_page_aspect, active_content, rejection_reason,
+    allow_student_download
 ) ON TABLE tutorhub.content_files TO tutorhub_conversation_runtime_ci;
 
 GRANT UPDATE (file_count, reserved_bytes, committed_bytes, updated_at)
@@ -743,6 +761,9 @@ func assertContentRuntimeDependencies(
 			relation:   "tutorhub.tenant_quota_windows",
 			privileges: []string{"SELECT", "INSERT", "UPDATE"},
 		},
+		{relation: "tutorhub.media_room_instances", privileges: []string{"SELECT"}},
+		{relation: "tutorhub.media_room_role_assignments", privileges: []string{"SELECT"}},
+		{relation: "tutorhub.media_participant_sessions", privileges: []string{"SELECT"}},
 	} {
 		for _, privilege := range expectation.privileges {
 			var allowed bool

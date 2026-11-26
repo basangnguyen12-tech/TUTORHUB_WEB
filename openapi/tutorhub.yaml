@@ -3358,7 +3358,7 @@ paths:
     post:
       operationId: finalizeFileUpload
       summary: Verify the stored object and commit a pending file as uploaded
-      description: The client supplies the immutable B2 version selector returned by its upload. The Core API HEADs exactly that version and verifies size, normalized media type, ETag and version before committing the file as uploaded. SHA-256 is established by the P3-10 pre-ready processing gate; finalize never copies a browser-asserted checksum into stored proof.
+      description: The client supplies the immutable B2 version selector returned by its upload. The Core API HEADs exactly that version and verifies size, normalized media type, ETag and version before committing the file as uploaded. SHA-256 is established by the P3-10 pre-ready processing gate; finalize never copies a browser-asserted checksum into stored proof. For application/pdf, image/png, image/jpeg and image/webp (ADR-0045 P3-10-PDF/Image) finalize also streams the exact version, verifies SHA-256, magic bytes and bounded structure, and returns ready or rejected (with rejection_reason) in the same call; a transient storage failure leaves processing for bounded recovery. Other media types stay uploaded.
       security:
         - SessionCookie: []
       parameters:
@@ -3474,7 +3474,7 @@ paths:
     post:
       operationId: issueFileDownloadCapability
       summary: Issue a short-lived GET capability for one ready file version
-      description: Reauthorizes file.view and signs only the immutable B2 version persisted by finalize. Non-ready files return a conflict only to authorized upload managers and remain concealed from other viewers.
+      description: Reauthorizes file.view and signs only the immutable B2 version persisted by finalize. Non-ready files return a conflict only to authorized upload managers and remain concealed from other viewers. Room-owned files additionally require classroom_files_tool and current room access; when allow_student_download is false only the uploader and teaching staff may download the original, others receive 404.
       security:
         - SessionCookie: []
       parameters:
@@ -9114,6 +9114,166 @@ paths:
         "409": { $ref: "#/components/responses/ConflictResponse" }
         "503": { $ref: "#/components/responses/ProblemResponse" }
         default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/documents:
+    get:
+      operationId: listRoomDocuments
+      summary: List viewer-supported documents in one room Documents tool
+      description: ROOM-TOOLS-FILES-01A (ADR-0045 §2). Requires file_uploads and classroom_files_tool (503 feature_disabled otherwise). Returns room-owned media_space files plus, when the room is linked to a class, class-owned files of the four viewer media types (application/pdf, image/png, image/jpeg, image/webp). Attendees see only ready files and only while admitted to the active RoomInstance; uploaders and room teaching staff (organization admin, host, co-host, linked-class teacher/TA) also see pending/uploaded/processing/rejected rows. Unauthorized, not-admitted and cross-tenant access is concealed as 404. Items never expose creator identifiers, object keys or checksums. The opaque cursor is bound to the active tenant and room.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Bounded room document page
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDocumentPage"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/documents/upload-intents:
+    post:
+      operationId: createRoomDocumentUploadIntent
+      summary: Reserve a room or linked-class document upload for the Documents tool
+      description: Room teaching staff only (404 otherwise). Accepts only application/pdf (<= 50 MiB) and image/png, image/jpeg, image/webp (<= 10 MiB); other media types or sizes return 400 room_document_unsupported. scope defaults to media_space (allow_student_download defaults to false and the file expires 30 days after creation); scope=class requires a linked class and class file.upload permission (allow_student_download defaults to true). Ended or cancelled rooms return 409 room_document_read_only. The response is the caller-owned ContentFile; continue with /api/v1/files/{file_id}/{upload-capability,multipart-uploads,finalize}. Finalize verifies the exact stored version and returns ready or rejected in one call.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoomDocumentUploadIntentRequest"
+      responses:
+        "200":
+          description: Existing intent returned by an exact idempotent replay
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContentFile"
+        "201":
+          description: Pending room document intent and quota reservation created
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContentFile"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "429": { $ref: "#/components/responses/ProblemResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/documents/{file_id}/view-capabilities:
+    post:
+      operationId: issueRoomDocumentViewCapability
+      summary: Issue a short-lived version-bound read capability for the room viewer
+      description: Requires a ready, unexpired file owned by this room or by its linked class, plus current room access (teaching staff or a participant admitted to the active RoomInstance). Students may view even when allow_student_download is false, while the raw /api/v1/files/{file_id}/download-capability endpoint stays concealed (404) for them. Signs a B2 GET for the persisted storage version only, with a 5-minute TTL, inline disposition and the stored media type. The bearer URL must never be logged, cached, persisted or broadcast.
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/RoomDocumentFileID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      responses:
+        "200":
+          description: Short-lived B2 GET capability bound to the verified version
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDocumentViewCapability"
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
+  /api/v1/media/spaces/{space_id}/documents/{file_id}:
+    patch:
+      operationId: updateRoomDocument
+      summary: Toggle student download or soft-delete one room document
+      description: Room teaching staff only (404 otherwise). Compare-and-set on expected_version (409 room_document_version_conflict). allow_student_download applies to room-owned and linked-class files; deleted=true soft-deletes a room-owned file (deletion_reason room_staff_deleted), releases its tenant file usage and returns 204. Class-owned files must be deleted from Class Files (400 room_document_invalid).
+      security:
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CodeMediaSpaceID"
+        - $ref: "#/components/parameters/RoomDocumentFileID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/ExpectedTenantID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoomDocumentRequest"
+      responses:
+        "200":
+          description: Updated room document projection
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoomDocument"
+        "204":
+          description: Room document soft-deleted
+        "400": { $ref: "#/components/responses/ProblemResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedResponse" }
+        "403": { $ref: "#/components/responses/ForbiddenResponse" }
+        "404": { $ref: "#/components/responses/NotFoundResponse" }
+        "409": { $ref: "#/components/responses/ConflictResponse" }
+        "503": { $ref: "#/components/responses/ProblemResponse" }
+        default: { $ref: "#/components/responses/ProblemResponse" }
   /api/v1/media/spaces:
     post:
       operationId: createMediaSpace
@@ -10831,6 +10991,13 @@ components:
         format: uuid
     CodeMediaSpaceID:
       name: space_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RoomDocumentFileID:
+      name: file_id
       in: path
       required: true
       schema:
@@ -12623,6 +12790,7 @@ components:
         - classroom_code_tool
         - classroom_code_collaboration
         - code_snippet_library
+        - classroom_files_tool
       properties:
         membership_invitations:
           $ref: "#/components/schemas/FeatureCapability"
@@ -12653,6 +12821,8 @@ components:
         classroom_code_collaboration:
           $ref: "#/components/schemas/FeatureCapability"
         code_snippet_library:
+          $ref: "#/components/schemas/FeatureCapability"
+        classroom_files_tool:
           $ref: "#/components/schemas/FeatureCapability"
     TenantQuotaCapabilities:
       type: object
@@ -12889,6 +13059,7 @@ components:
         - classroom_code_tool
         - classroom_code_collaboration
         - code_snippet_library
+        - classroom_files_tool
       properties:
         membership_invitations:
           type: boolean
@@ -12919,6 +13090,8 @@ components:
         classroom_code_collaboration:
           type: boolean
         code_snippet_library:
+          type: boolean
+        classroom_files_tool:
           type: boolean
     ContentFileStatus:
       type: string
@@ -12954,8 +13127,11 @@ components:
           type: string
           format: uuid
         class_id:
-          type: string
-          format: uuid
+          description: Owning class for owner_kind=class; null for room-owned (media_space) files.
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
         creator_user_id:
           type: string
           format: uuid
@@ -12992,6 +13168,41 @@ components:
         updated_at:
           type: string
           format: date-time
+        owner_kind:
+          $ref: "#/components/schemas/ContentFileOwnerKind"
+        media_space_id:
+          description: Owning room for owner_kind=media_space; null for class files.
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        allow_student_download:
+          type: boolean
+        expires_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        page_count:
+          description: Verified page count for the four viewer media types (images are 1).
+          oneOf:
+            - type: integer
+              minimum: 1
+              maximum: 300
+            - type: "null"
+        first_page_aspect:
+          description: Verified first-page width/height ratio for viewer placeholders.
+          oneOf:
+            - type: number
+              minimum: 0.1
+              maximum: 10
+            - type: "null"
+        active_content:
+          type: boolean
+        rejection_reason:
+          oneOf:
+            - $ref: "#/components/schemas/ContentFileRejectionReason"
+            - type: "null"
         viewer_access:
           $ref: "#/components/schemas/ContentFileViewerAccess"
     ContentFilePage:
@@ -13114,6 +13325,258 @@ components:
         expires_at:
           type: string
           format: date-time
+    ContentFileOwnerKind:
+      type: string
+      enum: [class, media_space]
+    ContentFileRejectionReason:
+      type: string
+      description: Bounded P3-10-PDF/Image verifier outcome code; present only when status is rejected.
+      enum:
+        - checksum_mismatch
+        - media_type_mismatch
+        - file_too_large_for_viewer
+        - pdf_encrypted
+        - pdf_too_many_pages
+        - pdf_invalid
+        - image_dimensions_exceeded
+        - image_invalid
+    RoomDocumentMediaType:
+      type: string
+      enum: [application/pdf, image/png, image/jpeg, image/webp]
+    RoomDocumentViewerAccess:
+      type: object
+      additionalProperties: false
+      required: [can_view, can_download_original, can_manage, can_retry_upload]
+      properties:
+        can_view:
+          type: boolean
+          description: The caller may request a view capability (ready file and current room access).
+        can_download_original:
+          type: boolean
+          description: The caller may request the raw download capability; false for students when allow_student_download is false.
+        can_manage:
+          type: boolean
+        can_retry_upload:
+          type: boolean
+    RoomDocument:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - owner_kind
+        - media_space_id
+        - class_id
+        - display_name
+        - declared_media_type
+        - expected_size_bytes
+        - status
+        - version
+        - page_count
+        - first_page_aspect
+        - active_content
+        - allow_student_download
+        - rejection_reason
+        - expires_at
+        - uploaded_by_viewer
+        - created_at
+        - updated_at
+        - viewer_access
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner_kind:
+          $ref: "#/components/schemas/ContentFileOwnerKind"
+        media_space_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        class_id:
+          oneOf:
+            - type: string
+              format: uuid
+            - type: "null"
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        declared_media_type:
+          $ref: "#/components/schemas/RoomDocumentMediaType"
+        expected_size_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+        status:
+          $ref: "#/components/schemas/ContentFileStatus"
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        page_count:
+          oneOf:
+            - type: integer
+              minimum: 1
+              maximum: 300
+            - type: "null"
+        first_page_aspect:
+          oneOf:
+            - type: number
+              minimum: 0.1
+              maximum: 10
+            - type: "null"
+        active_content:
+          type: boolean
+          description: The PDF declares JavaScript, actions, XFA, launch or embedded files. The viewer never executes them; raw downloads must show a warning.
+        allow_student_download:
+          type: boolean
+        rejection_reason:
+          oneOf:
+            - $ref: "#/components/schemas/ContentFileRejectionReason"
+            - type: "null"
+        expires_at:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        uploaded_by_viewer:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        viewer_access:
+          $ref: "#/components/schemas/RoomDocumentViewerAccess"
+    RoomDocumentLibraryViewerAccess:
+      type: object
+      additionalProperties: false
+      required: [can_upload, can_upload_to_class, can_present, can_manage]
+      properties:
+        can_upload:
+          type: boolean
+        can_upload_to_class:
+          type: boolean
+        can_present:
+          type: boolean
+        can_manage:
+          type: boolean
+    RoomDocumentPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor, viewer_access]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/RoomDocument"
+        next_cursor:
+          oneOf:
+            - type: string
+              minLength: 1
+              maxLength: 512
+            - type: "null"
+        viewer_access:
+          $ref: "#/components/schemas/RoomDocumentLibraryViewerAccess"
+    CreateRoomDocumentUploadIntentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - display_name
+        - declared_media_type
+        - expected_size_bytes
+        - checksum_sha256
+        - client_request_id
+      properties:
+        scope:
+          type: string
+          enum: [media_space, class]
+          default: media_space
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        declared_media_type:
+          $ref: "#/components/schemas/RoomDocumentMediaType"
+        expected_size_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 52428800
+          description: application/pdf accepts up to 52428800 bytes; images accept up to 10485760 bytes.
+        checksum_sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        client_request_id:
+          type: string
+          format: uuid
+        allow_student_download:
+          type: boolean
+          description: Defaults to false for scope=media_space and true for scope=class.
+    RoomDocumentViewCapability:
+      type: object
+      additionalProperties: false
+      required:
+        - method
+        - url
+        - expires_at
+        - version_id
+        - content_length_bytes
+        - sha256
+        - media_type
+        - page_count
+        - first_page_aspect
+        - active_content
+      properties:
+        method:
+          type: string
+          const: GET
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+        version_id:
+          type: string
+          minLength: 1
+          maxLength: 512
+        content_length_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+        sha256:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+        media_type:
+          $ref: "#/components/schemas/RoomDocumentMediaType"
+        page_count:
+          type: integer
+          minimum: 1
+          maximum: 300
+        first_page_aspect:
+          type: number
+          minimum: 0.1
+          maximum: 10
+        active_content:
+          type: boolean
+    UpdateRoomDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_version]
+      minProperties: 2
+      properties:
+        expected_version:
+          type: integer
+          format: int64
+          minimum: 1
+        allow_student_download:
+          type: boolean
+        deleted:
+          type: boolean
+          const: true
     CreateFileMultipartUploadRequest:
       type: object
       additionalProperties: false

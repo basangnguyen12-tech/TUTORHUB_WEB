@@ -59,6 +59,7 @@ type Options struct {
 	Notifications         notification.ServiceAPI
 	Conversations         conversation.ServiceAPI
 	Content               content.ServiceAPI
+	RoomDocuments         content.RoomDocumentServiceAPI
 	Discovery             discovery.ServiceAPI
 	Collaboration         collaboration.ServiceAPI
 	CollaborationInternal collaboration.InternalServiceAPI
@@ -240,6 +241,7 @@ func NewHandlerWithOptions(cfg config.Config, logger *slog.Logger, options Optio
 	notifications := newNotificationHandlers(logger, auth, options.Notifications)
 	conversations := newConversationHandlers(logger, auth, options.Conversations)
 	files := newContentHandlers(logger, auth, options.Content)
+	roomDocuments := newRoomDocumentHandlers(logger, auth, options.RoomDocuments)
 	discovery := newDiscoveryHandlers(logger, auth, options.Discovery)
 	whiteboards := newWhiteboardHandlers(logger, auth, options.Collaboration)
 	codeWorkspaces := newCodeWorkspaceHandlers(logger, auth, options.CodeWorkspaces)
@@ -454,6 +456,7 @@ func NewHandlerWithOptions(cfg config.Config, logger *slog.Logger, options Optio
 		fileMultipartAbortPattern,
 		fileResponseHeaders(http.HandlerFunc(files.multipartAbort)),
 	)
+	roomDocuments.register(mux)
 	mux.Handle(
 		conversationsCollectionPath,
 		conversationResponseHeaders(http.HandlerFunc(conversations.collection)),

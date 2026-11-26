@@ -42,6 +42,7 @@ const featureLabelKeys: Record<FeatureKey, TranslationKey> = {
   classroom_code_collaboration:
     "capabilities.featureClassroomCodeCollaboration",
   code_snippet_library: "capabilities.featureCodeSnippetLibrary",
+  classroom_files_tool: "capabilities.featureClassroomFilesTool",
   instant_study_rooms: "capabilities.featureInstantStudyRooms",
   in_app_notifications: "capabilities.featureInAppNotifications",
   membership_invitations: "capabilities.featureMembershipInvitations",
@@ -135,6 +136,10 @@ function controlsDraft(capabilities: TenantCapabilities): ControlsDraft {
       code_snippet_library: configuredFeature(
         capabilities,
         "code_snippet_library",
+      ),
+      classroom_files_tool: configuredFeature(
+        capabilities,
+        "classroom_files_tool",
       ),
       instant_study_rooms: configuredFeature(
         capabilities,

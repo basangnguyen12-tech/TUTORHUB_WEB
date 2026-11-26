@@ -17,6 +17,7 @@ export const tenantFeatureKeys = [
   "classroom_code_tool",
   "classroom_code_collaboration",
   "code_snippet_library",
+  "classroom_files_tool",
   "in_app_notifications",
   "availability_polls",
 ] as const satisfies readonly TenantFeatureKey[];

@@ -90,7 +90,7 @@ func TestListFilesBindsCursorToTenantAndClass(t *testing.T) {
 	classID := uuid.New()
 	fileID := uuid.New()
 	repository.listResult = ListFilesResult{
-		Items:   []File{{ID: fileID, ClassID: classID, CreatedAt: contentTestTime}},
+		Items:   []File{{ID: fileID, ClassID: &classID, CreatedAt: contentTestTime}},
 		HasMore: true, CanUpload: true,
 	}
 	page, err := service.List(

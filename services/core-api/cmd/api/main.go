@@ -229,6 +229,7 @@ func run() int {
 		}
 	}
 	var contentService content.ServiceAPI
+	var contentRoomService *content.Service
 	if pool != nil && objectStore != nil {
 		contentRepository, contentErr := content.NewPostgresRepository(
 			pool,
@@ -240,11 +241,12 @@ func run() int {
 			logger.Error("initialize content repository", "error", contentErr)
 			return 1
 		}
-		contentService, contentErr = content.NewService(contentRepository, objectStore)
+		contentRoomService, contentErr = content.NewService(contentRepository, objectStore)
 		if contentErr != nil {
 			logger.Error("initialize content service", "error", contentErr)
 			return 1
 		}
+		contentService = contentRoomService
 	}
 	var discoveryService discovery.ServiceAPI
 	if pool != nil {
@@ -425,6 +427,11 @@ func run() int {
 		if mediaLifecycleErr != nil {
 			logger.Error("initialize media lifecycle service", "error", mediaLifecycleErr)
 			return 1
+		}
+		// ROOM-TOOLS-FILES-01A: room documents re-derive room authority from
+		// the same MediaSpace projection the classroom tools use.
+		if contentRoomService != nil {
+			contentRoomService.UseSpaceAuthority(mediaLifecycleService)
 		}
 		// ROOM-TOOLS-CODE-03A: the snippet library and scratchpads need no
 		// collaboration runtime; both feature keys gate them per tenant.
@@ -808,6 +815,10 @@ func run() int {
 		logger.Info("LiveKit classroom media is disabled for this environment")
 	}
 
+	var roomDocumentService content.RoomDocumentServiceAPI
+	if contentRoomService != nil {
+		roomDocumentService = contentRoomService
+	}
 	handler := httpapi.NewHandlerWithOptions(cfg, logger, httpapi.Options{
 		Metrics:               metrics,
 		Tracer:                observability.NoopTracer{},
@@ -827,6 +838,7 @@ func run() int {
 		Notifications:         notificationService,
 		Conversations:         conversationService,
 		Content:               contentService,
+		RoomDocuments:         roomDocumentService,
 		Discovery:             discoveryService,
 		Collaboration:         collaborationService,
 		CollaborationInternal: collaborationInternalService,
@@ -865,6 +877,16 @@ func run() int {
 		syscall.SIGTERM,
 	)
 	defer stop()
+	if contentRoomService != nil {
+		// ROOM-TOOLS-FILES-01A: bounded SKIP LOCKED recovery for viewer files
+		// left uploaded/processing by a restart or transient storage error.
+		go contentRoomService.RunVerificationRecovery(ctx, time.Minute, func(error) {
+			logger.Warn(
+				"content readiness verification recovery failed",
+				"error_code", "content_verification_recovery_failed",
+			)
+		})
+	}
 	if mediaProviderEffectReconciler != nil {
 		go mediaProviderEffectReconciler.Run(ctx, 2*time.Second, func(error) {
 			logger.Warn(
@@ -943,6 +965,9 @@ func featureControlGuardrails(configuration config.FeatureControlConfig) feature
 	}
 	if !configuration.EnableCodeSnippetLibrary {
 		forcedOff[featurecontrol.FeatureCodeSnippetLibrary] = true
+	}
+	if !configuration.EnableClassroomFilesTool {
+		forcedOff[featurecontrol.FeatureClassroomFilesTool] = true
 	}
 
 	tenantQuotaCeilings := map[featurecontrol.QuotaKey]map[uuid.UUID]int64{}

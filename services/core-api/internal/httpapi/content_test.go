@@ -28,7 +28,7 @@ func TestCreateFileUploadIntentUsesTenantCSRFAndPrivacyProjection(t *testing.T) 
 	service := &fakeContentService{createResult: content.CreateIntentResult{
 		Created: true,
 		File: content.File{
-			ID: fileID, ClassID: classID, CreatorUserID: userID,
+			ID: fileID, ClassID: &classID, CreatorUserID: userID,
 			DisplayName: "lesson.pdf", DeclaredMediaType: "application/pdf",
 			ExpectedSizeBytes: 42, ExpectedChecksumSHA256: hex.EncodeToString(make([]byte, 32)),
 			Status: content.StatusPending, Version: 1,
@@ -94,7 +94,7 @@ func TestListClassFilesBindsScopeAndProjectsNullableCursor(t *testing.T) {
 	next := "next-files"
 	service := &fakeContentService{listPage: content.FilePage{
 		Items: []content.File{{
-			ID: uuid.New(), ClassID: classID, CreatorUserID: userID,
+			ID: uuid.New(), ClassID: &classID, CreatorUserID: userID,
 			DisplayName: "lesson.pdf", DeclaredMediaType: "application/pdf",
 			ExpectedSizeBytes: 42, ExpectedChecksumSHA256: hex.EncodeToString(make([]byte, 32)),
 			Status: content.StatusPending, Version: 1,

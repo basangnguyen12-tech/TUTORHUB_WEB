@@ -186,6 +186,24 @@ export type FileUploadCapability =
   components["schemas"]["FileUploadCapability"];
 export type FileDownloadCapability =
   components["schemas"]["FileDownloadCapability"];
+export type ContentFileOwnerKind =
+  components["schemas"]["ContentFileOwnerKind"];
+export type ContentFileRejectionReason =
+  components["schemas"]["ContentFileRejectionReason"];
+export type RoomDocumentMediaType =
+  components["schemas"]["RoomDocumentMediaType"];
+export type RoomDocument = components["schemas"]["RoomDocument"];
+export type RoomDocumentViewerAccess =
+  components["schemas"]["RoomDocumentViewerAccess"];
+export type RoomDocumentLibraryViewerAccess =
+  components["schemas"]["RoomDocumentLibraryViewerAccess"];
+export type RoomDocumentPage = components["schemas"]["RoomDocumentPage"];
+export type CreateRoomDocumentUploadIntentRequest =
+  components["schemas"]["CreateRoomDocumentUploadIntentRequest"];
+export type RoomDocumentViewCapability =
+  components["schemas"]["RoomDocumentViewCapability"];
+export type UpdateRoomDocumentRequest =
+  components["schemas"]["UpdateRoomDocumentRequest"];
 export type CreateFileMultipartUploadRequest =
   components["schemas"]["CreateFileMultipartUploadRequest"];
 export type AbortFileMultipartUploadRequest =
@@ -686,6 +704,10 @@ export interface ListClassesInput {
   status?: ClassStatus;
 }
 export interface ListClassFilesInput {
+  cursor?: string;
+  limit?: number;
+}
+export interface ListRoomDocumentsInput {
   cursor?: string;
   limit?: number;
 }
@@ -2444,6 +2466,129 @@ export async function issueFileDownloadCapability(
 
   return requireData<FileDownloadCapability>(
     data as FileDownloadCapability | undefined,
+    error,
+    response,
+  );
+}
+
+// ROOM-TOOLS-FILES-01A (ADR-0045 §2): room Documents tool library. Every call
+// is tenant-asserted; view capabilities are short-lived bearer URLs that must
+// never be logged, cached, persisted or broadcast by callers.
+export async function listRoomDocuments(
+  tenantID: string,
+  mediaSpaceID: string,
+  input: ListRoomDocumentsInput = {},
+  options: APIRequestOptions = {},
+): Promise<RoomDocumentPage> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/media/spaces/{space_id}/documents",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        query: input,
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<RoomDocumentPage>(
+    data as RoomDocumentPage | undefined,
+    error,
+    response,
+  );
+}
+
+export async function createRoomDocumentUploadIntent(
+  tenantID: string,
+  mediaSpaceID: string,
+  input: CreateRoomDocumentUploadIntentRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<ContentFile> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/media/spaces/{space_id}/documents/upload-intents",
+    {
+      params: {
+        path: { space_id: mediaSpaceID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<ContentFile>(
+    data as ContentFile | undefined,
+    error,
+    response,
+  );
+}
+
+export async function issueRoomDocumentViewCapability(
+  tenantID: string,
+  mediaSpaceID: string,
+  fileID: string,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<RoomDocumentViewCapability> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).POST(
+    "/api/v1/media/spaces/{space_id}/documents/{file_id}/view-capabilities",
+    {
+      params: {
+        path: { space_id: mediaSpaceID, file_id: fileID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  return requireData<RoomDocumentViewCapability>(
+    data as RoomDocumentViewCapability | undefined,
+    error,
+    response,
+  );
+}
+
+/** Returns the updated document, or null when `deleted: true` soft-deleted it (204). */
+export async function updateRoomDocument(
+  tenantID: string,
+  mediaSpaceID: string,
+  fileID: string,
+  input: UpdateRoomDocumentRequest,
+  csrfToken: string,
+  options: APIRequestOptions = {},
+): Promise<RoomDocument | null> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).PATCH(
+    "/api/v1/media/spaces/{space_id}/documents/{file_id}",
+    {
+      params: {
+        path: { space_id: mediaSpaceID, file_id: fileID },
+        header: {
+          "X-CSRF-Token": csrfToken,
+          "X-TutorHub-Expected-Tenant-ID": tenantID,
+        },
+      },
+      body: input,
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+  if (response.status === 204) {
+    return null;
+  }
+  return requireData<RoomDocument>(
+    data as RoomDocument | undefined,
     error,
     response,
   );

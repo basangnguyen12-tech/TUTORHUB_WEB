@@ -47,13 +47,41 @@ type Service struct {
 	repository Repository
 	storage    ObjectStorage
 	now        func() time.Time
+	// ROOM-TOOLS-FILES-01A: optional room document and verifier surfaces,
+	// detected from the repository/storage implementations.
+	rooms         RoomRepository
+	spaces        SpaceAuthority
+	verifications VerificationRepository
+	versions      objectstorage.VersionReader
+	verifySlots   chan struct{}
 }
 
 func NewService(repository Repository, storage ObjectStorage) (*Service, error) {
 	if repository == nil || storage == nil {
 		return nil, fmt.Errorf("content repository and object metadata reader are required")
 	}
-	return &Service{repository: repository, storage: storage, now: time.Now}, nil
+	service := &Service{
+		repository: repository, storage: storage, now: time.Now,
+		verifySlots: make(chan struct{}, maximumConcurrentVerifications),
+	}
+	if rooms, ok := repository.(RoomRepository); ok {
+		service.rooms = rooms
+	}
+	if verifications, ok := repository.(VerificationRepository); ok {
+		service.verifications = verifications
+	}
+	if versions, ok := storage.(objectstorage.VersionReader); ok {
+		service.versions = versions
+	}
+	return service, nil
+}
+
+// UseSpaceAuthority enables room-owned documents. It must be called before
+// the service starts handling requests (it is not synchronized).
+func (service *Service) UseSpaceAuthority(spaces SpaceAuthority) {
+	if service != nil {
+		service.spaces = spaces
+	}
 }
 
 func (service *Service) IssueUploadCapability(
@@ -73,6 +101,10 @@ func (service *Service) IssueUploadCapability(
 	}
 	if input.ExpectedVersion < 1 {
 		return UploadCapability{}, ErrInvalidInput
+	}
+	access, err := service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return UploadCapability{}, err
 	}
 	now := service.now().UTC()
 	target, err := service.repository.PrepareUpload(
@@ -120,6 +152,10 @@ func (service *Service) IssueDownloadCapability(
 	if fileID == uuid.Nil {
 		return DownloadCapability{}, ErrNotFound
 	}
+	access, err := service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return DownloadCapability{}, err
+	}
 	target, err := service.repository.PrepareDownload(ctx, access, fileID)
 	if err != nil {
 		return DownloadCapability{}, normalizeRepositoryError(err)
@@ -158,6 +194,10 @@ func (service *Service) CreateMultipart(
 	}
 	if input.ExpectedVersion < 1 {
 		return MultipartUpload{}, ErrInvalidInput
+	}
+	access, err := service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return MultipartUpload{}, err
 	}
 	now := service.now().UTC()
 	target, err := service.repository.PrepareMultipartCreate(
@@ -212,6 +252,10 @@ func (service *Service) IssueMultipartPartCapability(
 		input.ContentLengthBytes < 1 || input.ContentLengthBytes > maximumMultipartPartSize {
 		return MultipartPartCapability{}, ErrInvalidInput
 	}
+	access, err := service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return MultipartPartCapability{}, err
+	}
 	now := service.now().UTC()
 	target, err := service.repository.PrepareMultipartPart(
 		ctx, access, fileID, multipartID, input.ExpectedVersion,
@@ -260,6 +304,10 @@ func (service *Service) CompleteMultipart(
 	parts, err := normalizeCompletedParts(input.Parts)
 	if input.ExpectedVersion < 1 || err != nil {
 		return CompleteMultipartResult{}, ErrInvalidInput
+	}
+	access, err = service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return CompleteMultipartResult{}, err
 	}
 	now := service.now().UTC()
 	target, err := service.repository.PrepareMultipartComplete(
@@ -325,6 +373,10 @@ func (service *Service) AbortMultipart(
 	}
 	if input.ExpectedVersion < 1 {
 		return MultipartUpload{}, ErrInvalidInput
+	}
+	access, err := service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return MultipartUpload{}, err
 	}
 	now := service.now().UTC()
 	target, err := service.repository.PrepareMultipartAbort(
@@ -404,6 +456,10 @@ func (service *Service) Get(
 	}
 	if fileID == uuid.Nil {
 		return File{}, ErrNotFound
+	}
+	access, err := service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return File{}, err
 	}
 	item, err := service.repository.Get(ctx, access, fileID)
 	return item, normalizeRepositoryError(err)
@@ -547,6 +603,10 @@ func (service *Service) Finalize(
 	if input.ExpectedVersion < 1 || err != nil {
 		return File{}, ErrInvalidInput
 	}
+	access, err = service.withFileRoom(ctx, access, fileID)
+	if err != nil {
+		return File{}, err
+	}
 	now := service.now().UTC()
 	target, err := service.repository.PrepareFinalize(
 		ctx, access, fileID, input.ExpectedVersion, now,
@@ -554,11 +614,11 @@ func (service *Service) Finalize(
 	if err != nil {
 		return File{}, normalizeRepositoryError(err)
 	}
-	if target.File.Status == StatusUploaded {
+	if finalizedStatus(target.File.Status) {
 		if target.StorageVersionID != storageVersionID {
 			return File{}, ErrVersionConflict
 		}
-		return target.File, nil
+		return service.verifyFinalized(ctx, access, target.File), nil
 	}
 	metadata, err := service.storage.HeadVersion(ctx, target.ObjectKey, storageVersionID)
 	if err != nil {
@@ -577,7 +637,10 @@ func (service *Service) Finalize(
 		ETag: strings.TrimSpace(metadata.ETag), VersionID: storageVersionID,
 		FinalizedAt: now,
 	})
-	return item, normalizeRepositoryError(err)
+	if err != nil {
+		return File{}, normalizeRepositoryError(err)
+	}
+	return service.verifyFinalized(ctx, access, item), nil
 }
 
 func validObservedStorageProof(value string) bool {
@@ -737,7 +800,7 @@ func normalizeRepositoryError(err error) error {
 		ErrIdempotencyConflict, ErrIntentExpired, ErrQuotaExceeded,
 		ErrRateLimited, ErrStorageMismatch, ErrStorageUnavailable,
 		ErrNotReady, ErrVersionConflict, ErrUnavailable,
-		ErrMultipartConflict, ErrMultipartExpired,
+		ErrMultipartConflict, ErrMultipartExpired, ErrDocumentUnsupported,
 		featurecontrol.ErrInvalidControl, featurecontrol.ErrAccessDenied,
 		featurecontrol.ErrTenantNotFound, featurecontrol.ErrFeatureDisabled,
 		featurecontrol.ErrQuotaExceeded, featurecontrol.ErrVersionConflict,

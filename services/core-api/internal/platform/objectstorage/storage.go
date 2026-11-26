@@ -92,6 +92,14 @@ type Object struct {
 	ContentLength int64
 	ContentType   string
 	ETag          string
+	VersionID     string
+}
+
+// VersionReader streams one immutable object version. Implementations must
+// pass the version selector to the provider and never fall back to the latest
+// object, so verification always reads the exact bytes finalize recorded.
+type VersionReader interface {
+	GetVersion(context.Context, string, string) (Object, error)
 }
 
 type Store interface {

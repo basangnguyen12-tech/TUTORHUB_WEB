@@ -289,6 +289,7 @@ type FeatureControlConfig struct {
 	DisableClassroomCodeTool                      bool
 	EnableClassroomCodeCollaboration              bool
 	EnableCodeSnippetLibrary                      bool
+	EnableClassroomFilesTool                      bool
 	MaxMembers                                    int
 	MaxActiveClasses                              int
 	MaxInviteCreationsPerHour                     int
@@ -701,6 +702,12 @@ func featureControlConfig(
 		EnableCodeSnippetLibrary: boolValue(
 			lookup,
 			"FEATURE_CONTROL_ENABLE_CODE_SNIPPET_LIBRARY",
+			false,
+			validationErrors,
+		),
+		EnableClassroomFilesTool: boolValue(
+			lookup,
+			"FEATURE_CONTROL_ENABLE_CLASSROOM_FILES_TOOL",
 			false,
 			validationErrors,
 		),

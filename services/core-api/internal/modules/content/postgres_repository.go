@@ -77,6 +77,13 @@ func (repository *PostgresRepository) CreateIntent(
 	); err != nil {
 		return CreateIntentResult{}, err
 	}
+	if command.RequireClassroomFiles || command.OwnerKind == OwnerKindMediaSpace {
+		if err := repository.controls.RequireFeature(
+			queryContext, transaction, access.TenantID, featurecontrol.FeatureClassroomFilesTool,
+		); err != nil {
+			return CreateIntentResult{}, err
+		}
+	}
 	// RequireFeature serializes tenant mutations. Recheck after acquiring its advisory
 	// lock so two concurrent requests with the same idempotency key cannot race into
 	// the unique constraint.
@@ -89,9 +96,7 @@ func (repository *PostgresRepository) CreateIntent(
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return CreateIntentResult{}, fmt.Errorf("recheck upload intent idempotency: %w", err)
 	}
-	if err := repository.authorizeClass(
-		queryContext, transaction, access, command.ClassID, policy.ActionFileUpload,
-	); err != nil {
+	if err := repository.authorizeIntentOwner(queryContext, transaction, access, command); err != nil {
 		return CreateIntentResult{}, err
 	}
 	if err := repository.controls.RequireQuotaAtMost(
@@ -139,14 +144,17 @@ func (repository *PostgresRepository) CreateIntent(
     id, tenant_id, class_id, creator_user_id, client_request_id,
     request_fingerprint, object_key, display_name, declared_media_type,
     expected_size_bytes, expected_checksum_sha256, upload_expires_at,
-    created_at, updated_at
+    created_at, updated_at, owner_kind, media_space_id,
+    allow_student_download, expires_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13, $14, $15, $16, $17)
 RETURNING `+fileReturning,
-		command.ID, access.TenantID, command.ClassID, access.ActorID,
+		command.ID, access.TenantID, ownerClassID(command), access.ActorID,
 		command.ClientRequestID, command.RequestFingerprint, command.ObjectKey,
 		command.DisplayName, command.DeclaredMediaType, command.ExpectedSizeBytes,
 		command.ChecksumSHA256, command.UploadExpiresAt, command.CreatedAt,
+		string(commandOwnerKind(command)), ownerMediaSpaceID(command),
+		!command.DenyStudentDownload, command.ExpiresAt,
 	))
 	if err != nil {
 		return CreateIntentResult{}, fmt.Errorf("insert upload intent: %w", err)
@@ -165,7 +173,59 @@ WHERE tenant_id = $1`,
 	if err := transaction.Commit(queryContext); err != nil {
 		return CreateIntentResult{}, fmt.Errorf("commit upload intent creation: %w", err)
 	}
-	return CreateIntentResult{File: projectFile(row, access, true), Created: true}, nil
+	return CreateIntentResult{File: projectFile(row, access, creatorAuthorization), Created: true}, nil
+}
+
+// authorizeIntentOwner checks the authority for a new intent: class intents
+// use class file.upload; room intents require the writable room grant for the
+// same MediaSpace, and room-originated class intents must target its class.
+func (repository *PostgresRepository) authorizeIntentOwner(
+	ctx context.Context,
+	transaction pgx.Tx,
+	access AccessContext,
+	command CreateCommand,
+) error {
+	roomOriginated := command.RequireClassroomFiles || command.OwnerKind == OwnerKindMediaSpace
+	if roomOriginated {
+		grant := access.room
+		if grant == nil || !grant.canManage {
+			return ErrNotFound
+		}
+		if !grant.writable {
+			return ErrReadOnly
+		}
+		if command.OwnerKind == OwnerKindMediaSpace {
+			if command.MediaSpaceID == uuid.Nil || grant.spaceID != command.MediaSpaceID {
+				return ErrNotFound
+			}
+			return nil
+		}
+		if grant.classID == uuid.Nil || grant.classID != command.ClassID {
+			return ErrNotFound
+		}
+	}
+	return repository.authorizeClass(ctx, transaction, access, command.ClassID, policy.ActionFileUpload)
+}
+
+func commandOwnerKind(command CreateCommand) OwnerKind {
+	if command.OwnerKind == OwnerKindMediaSpace {
+		return OwnerKindMediaSpace
+	}
+	return OwnerKindClass
+}
+
+func ownerClassID(command CreateCommand) uuid.NullUUID {
+	if commandOwnerKind(command) == OwnerKindMediaSpace {
+		return uuid.NullUUID{}
+	}
+	return uuid.NullUUID{UUID: command.ClassID, Valid: true}
+}
+
+func ownerMediaSpaceID(command CreateCommand) uuid.NullUUID {
+	if commandOwnerKind(command) != OwnerKindMediaSpace {
+		return uuid.NullUUID{}
+	}
+	return uuid.NullUUID{UUID: command.MediaSpaceID, Valid: true}
 }
 
 func (repository *PostgresRepository) replayIntent(
@@ -175,8 +235,8 @@ func (repository *PostgresRepository) replayIntent(
 	command CreateCommand,
 	existing fileRow,
 ) (CreateIntentResult, error) {
-	if err := repository.authorizeClass(
-		ctx, transaction, access, existing.ClassID, policy.ActionFileUpload,
+	if _, err := repository.authorizeFileRow(
+		ctx, transaction, access, existing, policy.ActionFileUpload,
 	); err != nil {
 		return CreateIntentResult{}, err
 	}
@@ -201,7 +261,7 @@ func (repository *PostgresRepository) replayIntent(
 	if err := transaction.Commit(ctx); err != nil {
 		return CreateIntentResult{}, fmt.Errorf("commit upload intent replay: %w", err)
 	}
-	return CreateIntentResult{File: projectFile(existing, access, true), Created: false}, nil
+	return CreateIntentResult{File: projectFile(existing, access, creatorAuthorization), Created: false}, nil
 }
 
 func (repository *PostgresRepository) Get(
@@ -227,28 +287,19 @@ func (repository *PostgresRepository) Get(
 	if err != nil {
 		return File{}, fmt.Errorf("query file metadata: %w", err)
 	}
-	class, classRoles, err := lockClassAccess(queryContext, transaction, access, row.ClassID)
+	authorization, err := repository.authorizeFileRow(
+		queryContext, transaction, access, row, policy.ActionFileView,
+	)
 	if err != nil {
 		return File{}, err
 	}
-	if err := repository.authorizeClassResource(
-		access, row.ClassID, class.Status, classRoles, policy.ActionFileView,
-	); err != nil {
-		return File{}, err
-	}
-	canManageTransfer := repository.authorizeClassResource(
-		access, row.ClassID, policy.ResourceStateActive, classRoles, policy.ActionFileUpload,
-	) == nil
-	canUpload := repository.authorizeClassResource(
-		access, row.ClassID, class.Status, classRoles, policy.ActionFileUpload,
-	) == nil
-	if row.Status != StatusReady && row.CreatorUserID != access.ActorID && !canManageTransfer {
+	if row.Status != StatusReady && row.CreatorUserID != access.ActorID && !authorization.staff {
 		return File{}, ErrNotFound
 	}
 	if err := transaction.Commit(queryContext); err != nil {
 		return File{}, fmt.Errorf("commit file metadata query: %w", err)
 	}
-	return projectFile(row, access, canUpload), nil
+	return projectFile(row, access, authorization), nil
 }
 
 func (repository *PostgresRepository) List(
@@ -309,7 +360,9 @@ WHERE tenant_id = $1 AND class_id = $2 AND deleted_at IS NULL
 			return ListFilesResult{}, fmt.Errorf("scan class file: %w", err)
 		}
 		if len(items) < params.Limit {
-			items = append(items, projectFile(row, access, canUpload))
+			items = append(items, projectFile(row, access, fileAuthorization{
+				canUpload: canUpload, staff: canManageTransfer,
+			}))
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -357,8 +410,8 @@ func (repository *PostgresRepository) PrepareUpload(
 	if row.CreatorUserID != access.ActorID {
 		return UploadTarget{}, ErrNotFound
 	}
-	if err := repository.authorizeClass(
-		queryContext, transaction, access, row.ClassID, policy.ActionFileUpload,
+	if _, err := repository.authorizeFileRow(
+		queryContext, transaction, access, row, policy.ActionFileUpload,
 	); err != nil {
 		return UploadTarget{}, err
 	}
@@ -392,7 +445,7 @@ func (repository *PostgresRepository) PrepareUpload(
 	if err := transaction.Commit(queryContext); err != nil {
 		return UploadTarget{}, fmt.Errorf("commit file upload capability preparation: %w", err)
 	}
-	return UploadTarget{File: projectFile(row, access, true), ObjectKey: row.ObjectKey}, nil
+	return UploadTarget{File: projectFile(row, access, creatorAuthorization), ObjectKey: row.ObjectKey}, nil
 }
 
 func (repository *PostgresRepository) PrepareDownload(
@@ -423,21 +476,22 @@ func (repository *PostgresRepository) PrepareDownload(
 	if err != nil {
 		return DownloadTarget{}, fmt.Errorf("query file download capability target: %w", err)
 	}
-	if err := repository.authorizeClass(
-		queryContext, transaction, access, row.ClassID, policy.ActionFileView,
-	); err != nil {
+	authorization, err := repository.authorizeFileRow(
+		queryContext, transaction, access, row, policy.ActionFileView,
+	)
+	if err != nil {
 		return DownloadTarget{}, err
 	}
 	if row.Status != StatusReady {
-		if row.CreatorUserID == access.ActorID {
+		if row.CreatorUserID == access.ActorID || authorization.staff {
 			return DownloadTarget{}, ErrNotReady
 		}
-		if err := repository.authorizeClassAsActive(
-			queryContext, transaction, access, row.ClassID, policy.ActionFileUpload,
-		); err != nil {
-			return DownloadTarget{}, ErrNotFound
-		}
-		return DownloadTarget{}, ErrNotReady
+		return DownloadTarget{}, ErrNotFound
+	}
+	// ADR-0045: the raw original stays concealed from students when the owner
+	// disabled downloads; they keep viewing through room view capabilities.
+	if !canDownloadOriginal(row, access, authorization) {
+		return DownloadTarget{}, ErrNotFound
 	}
 	if !row.StorageVersionID.Valid || strings.TrimSpace(row.StorageVersionID.String) == "" ||
 		!row.StoredMediaType.Valid || strings.TrimSpace(row.StoredMediaType.String) == "" {
@@ -447,7 +501,7 @@ func (repository *PostgresRepository) PrepareDownload(
 		return DownloadTarget{}, fmt.Errorf("commit file download capability preparation: %w", err)
 	}
 	return DownloadTarget{
-		File: projectFile(row, access, true), ObjectKey: row.ObjectKey,
+		File: projectFile(row, access, authorization), ObjectKey: row.ObjectKey,
 		VersionID:       strings.TrimSpace(row.StorageVersionID.String),
 		StoredMediaType: strings.TrimSpace(row.StoredMediaType.String),
 	}, nil
@@ -486,13 +540,13 @@ func (repository *PostgresRepository) PrepareFinalize(
 	if row.CreatorUserID != access.ActorID {
 		return FinalizeTarget{}, ErrNotFound
 	}
-	if err := repository.authorizeClass(
-		queryContext, transaction, access, row.ClassID, policy.ActionFileUpload,
+	if _, err := repository.authorizeFileRow(
+		queryContext, transaction, access, row, policy.ActionFileUpload,
 	); err != nil {
 		return FinalizeTarget{}, err
 	}
-	if row.Status == StatusUploaded {
-		if expectedVersion != row.Version && expectedVersion+1 != row.Version {
+	if finalizedStatus(row.Status) {
+		if !finalizeReplayVersionMatches(row, expectedVersion) {
 			return FinalizeTarget{}, ErrVersionConflict
 		}
 		if err := transaction.Commit(queryContext); err != nil {
@@ -550,20 +604,19 @@ func (repository *PostgresRepository) CommitFinalize(
 	if row.CreatorUserID != access.ActorID {
 		return File{}, ErrNotFound
 	}
-	if err := repository.authorizeClass(
-		queryContext, transaction, access, row.ClassID, policy.ActionFileUpload,
+	if _, err := repository.authorizeFileRow(
+		queryContext, transaction, access, row, policy.ActionFileUpload,
 	); err != nil {
 		return File{}, err
 	}
-	if row.Status == StatusUploaded {
-		if (proof.ExpectedVersion != row.Version && proof.ExpectedVersion+1 != row.Version) ||
-			!storedProofMatches(row, proof) {
+	if finalizedStatus(row.Status) {
+		if !finalizeReplayVersionMatches(row, proof.ExpectedVersion) || !storedProofMatches(row, proof) {
 			return File{}, ErrVersionConflict
 		}
 		if err := transaction.Commit(queryContext); err != nil {
 			return File{}, fmt.Errorf("commit concurrent file finalize replay: %w", err)
 		}
-		return projectFile(row, access, true), nil
+		return projectFile(row, access, creatorAuthorization), nil
 	}
 	if row.Status != StatusPending || row.Version != proof.ExpectedVersion {
 		return File{}, ErrVersionConflict
@@ -622,7 +675,7 @@ RETURNING `+fileReturning,
 	if err := transaction.Commit(queryContext); err != nil {
 		return File{}, fmt.Errorf("commit file finalize: %w", err)
 	}
-	return projectFile(updated, access, true), nil
+	return projectFile(updated, access, creatorAuthorization), nil
 }
 
 func (repository *PostgresRepository) PrepareMultipartCreate(
@@ -664,7 +717,7 @@ func (repository *PostgresRepository) PrepareMultipartCreate(
 	if err := transaction.Commit(queryContext); err != nil {
 		return UploadTarget{}, fmt.Errorf("commit multipart creation preparation: %w", err)
 	}
-	return UploadTarget{File: projectFile(row, access, true), ObjectKey: row.ObjectKey}, nil
+	return UploadTarget{File: projectFile(row, access, creatorAuthorization), ObjectKey: row.ObjectKey}, nil
 }
 
 func (repository *PostgresRepository) CreateMultipart(
@@ -1106,8 +1159,8 @@ func (repository *PostgresRepository) lockOwnedPendingFile(
 	if row.CreatorUserID != access.ActorID {
 		return AccessContext{}, fileRow{}, ErrNotFound
 	}
-	if err := repository.authorizeClass(
-		ctx, transaction, access, row.ClassID, policy.ActionFileUpload,
+	if _, err := repository.authorizeFileRow(
+		ctx, transaction, access, row, policy.ActionFileUpload,
 	); err != nil {
 		return AccessContext{}, fileRow{}, err
 	}
@@ -1174,7 +1227,7 @@ func projectMultipartUpload(row multipartUploadRow) MultipartUpload {
 
 func multipartTarget(upload multipartUploadRow, file fileRow) MultipartTarget {
 	target := MultipartTarget{
-		Upload: projectMultipartUpload(upload), File: projectFile(file, AccessContext{}, false),
+		Upload: projectMultipartUpload(upload), File: projectFile(file, AccessContext{}, fileAuthorization{}),
 		ObjectKey: file.ObjectKey, ProviderUploadID: upload.ProviderUploadID,
 	}
 	if upload.CompletedVersionID.Valid {
@@ -1368,6 +1421,64 @@ type lockedClass struct {
 	Status      policy.ResourceState
 }
 
+// authorizeFileRow re-evaluates the owner-specific authority for one file:
+// class files use the class policy exactly as before; room (media_space)
+// files require the classroom_files_tool feature and the server-derived room
+// grant for the same MediaSpace. Every denial is ErrNotFound concealment
+// except archived-class and closed-room uploads (ErrReadOnly).
+func (repository *PostgresRepository) authorizeFileRow(
+	ctx context.Context,
+	transaction pgx.Tx,
+	access AccessContext,
+	row fileRow,
+	action policy.Action,
+) (fileAuthorization, error) {
+	if row.OwnerKind == OwnerKindMediaSpace {
+		grant := access.room
+		if grant == nil || !row.MediaSpaceID.Valid || grant.spaceID != row.MediaSpaceID.UUID ||
+			(row.ExpiresAt.Valid && !time.Now().Before(row.ExpiresAt.Time)) {
+			return fileAuthorization{}, ErrNotFound
+		}
+		if err := repository.controls.RequireFeature(
+			ctx, transaction, access.TenantID, featurecontrol.FeatureClassroomFilesTool,
+		); err != nil {
+			return fileAuthorization{}, err
+		}
+		switch action {
+		case policy.ActionFileUpload:
+			if !grant.canManage {
+				return fileAuthorization{}, ErrNotFound
+			}
+		default:
+			if !grant.canView {
+				return fileAuthorization{}, ErrNotFound
+			}
+		}
+		return fileAuthorization{canUpload: grant.canManage && grant.writable, staff: grant.canManage}, nil
+	}
+	if !row.ClassID.Valid {
+		return fileAuthorization{}, ErrNotFound
+	}
+	classID := row.ClassID.UUID
+	class, classRoles, err := lockClassAccess(ctx, transaction, access, classID)
+	if err != nil {
+		return fileAuthorization{}, err
+	}
+	if err := repository.authorizeClassResource(
+		access, classID, class.Status, classRoles, action,
+	); err != nil {
+		return fileAuthorization{}, err
+	}
+	return fileAuthorization{
+		canUpload: repository.authorizeClassResource(
+			access, classID, class.Status, classRoles, policy.ActionFileUpload,
+		) == nil,
+		staff: repository.authorizeClassResource(
+			access, classID, policy.ResourceStateActive, classRoles, policy.ActionFileUpload,
+		) == nil,
+	}, nil
+}
+
 func (repository *PostgresRepository) authorizeClass(
 	ctx context.Context,
 	transaction pgx.Tx,
@@ -1380,22 +1491,6 @@ func (repository *PostgresRepository) authorizeClass(
 		return err
 	}
 	return repository.authorizeClassResource(access, classID, class.Status, classRoles, action)
-}
-
-func (repository *PostgresRepository) authorizeClassAsActive(
-	ctx context.Context,
-	transaction pgx.Tx,
-	access AccessContext,
-	classID uuid.UUID,
-	action policy.Action,
-) error {
-	_, classRoles, err := lockClassAccess(ctx, transaction, access, classID)
-	if err != nil {
-		return err
-	}
-	return repository.authorizeClassResource(
-		access, classID, policy.ResourceStateActive, classRoles, action,
-	)
 }
 
 func (repository *PostgresRepository) authorizeClassResource(
@@ -1499,7 +1594,7 @@ WHERE tenant.id = $1 AND member.user_id = $2
 type fileRow struct {
 	ID                     uuid.UUID
 	TenantID               uuid.UUID
-	ClassID                uuid.UUID
+	ClassID                uuid.NullUUID
 	CreatorUserID          uuid.UUID
 	ClientRequestID        uuid.UUID
 	RequestFingerprint     []byte
@@ -1521,13 +1616,23 @@ type fileRow struct {
 	UpdatedAt              time.Time
 	DeletedAt              sql.NullTime
 	DeletionReason         sql.NullString
+	OwnerKind              OwnerKind
+	MediaSpaceID           uuid.NullUUID
+	AllowStudentDownload   bool
+	ExpiresAt              sql.NullTime
+	PageCount              sql.NullInt32
+	FirstPageAspect        sql.NullFloat64
+	ActiveContent          bool
+	RejectionReason        sql.NullString
 }
 
 const fileReturning = `id, tenant_id, class_id, creator_user_id, client_request_id,
 request_fingerprint, object_key, display_name, declared_media_type,
 expected_size_bytes, expected_checksum_sha256, status, version, upload_expires_at,
 stored_size_bytes, stored_media_type, stored_checksum_sha256, storage_etag,
-storage_version_id, uploaded_at, created_at, updated_at, deleted_at, deletion_reason`
+storage_version_id, uploaded_at, created_at, updated_at, deleted_at, deletion_reason,
+owner_kind, media_space_id, allow_student_download, expires_at, page_count,
+first_page_aspect, active_content, rejection_reason`
 
 func loadFile(
 	ctx context.Context,
@@ -1573,35 +1678,96 @@ func scanFileRow(row rowScanner) (fileRow, error) {
 		&item.UploadExpiresAt, &item.StoredSizeBytes, &item.StoredMediaType,
 		&item.StoredChecksumSHA256, &item.StorageETag, &item.StorageVersionID,
 		&item.UploadedAt, &item.CreatedAt, &item.UpdatedAt, &item.DeletedAt,
-		&item.DeletionReason,
+		&item.DeletionReason, &item.OwnerKind, &item.MediaSpaceID,
+		&item.AllowStudentDownload, &item.ExpiresAt, &item.PageCount,
+		&item.FirstPageAspect, &item.ActiveContent, &item.RejectionReason,
 	)
 	return item, err
 }
 
-func projectFile(row fileRow, access AccessContext, canUpload bool) File {
+// fileAuthorization is the owner-specific authority evaluated for one row.
+// staff may manage transfers and always download originals; canUpload also
+// requires a writable class or room.
+type fileAuthorization struct {
+	canUpload bool
+	staff     bool
+}
+
+// creatorAuthorization describes the creator/upload-manager context of the
+// upload pipeline, where authorizeFileRow(file.upload) has already passed.
+var creatorAuthorization = fileAuthorization{canUpload: true, staff: true}
+
+func projectFile(row fileRow, access AccessContext, authorization fileAuthorization) File {
 	item := File{
-		ID: row.ID, ClassID: row.ClassID, CreatorUserID: row.CreatorUserID,
+		ID: row.ID, CreatorUserID: row.CreatorUserID,
 		DisplayName: row.DisplayName, DeclaredMediaType: row.DeclaredMediaType,
 		ExpectedSizeBytes:      row.ExpectedSizeBytes,
 		ExpectedChecksumSHA256: hex.EncodeToString(row.ExpectedChecksumSHA256),
 		Status:                 row.Status, Version: row.Version, UploadExpiresAt: row.UploadExpiresAt,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		OwnerKind: row.OwnerKind, AllowStudentDownload: row.AllowStudentDownload,
+		ActiveContent: row.ActiveContent,
 		ViewerAccess: FileViewerAccess{
-			CanDownload: row.Status == StatusReady,
-			CanRetryUpload: canUpload && row.CreatorUserID == access.ActorID &&
+			CanDownload: row.Status == StatusReady && canDownloadOriginal(row, access, authorization),
+			CanRetryUpload: authorization.canUpload && row.CreatorUserID == access.ActorID &&
 				row.Status == StatusPending && time.Now().UTC().Before(row.UploadExpiresAt),
 		},
 	}
+	if item.OwnerKind == "" {
+		item.OwnerKind = OwnerKindClass
+	}
+	item.ClassID = nullUUIDPointer(row.ClassID)
+	item.MediaSpaceID = nullUUIDPointer(row.MediaSpaceID)
 	if row.UploadedAt.Valid {
 		uploadedAt := row.UploadedAt.Time
 		item.UploadedAt = &uploadedAt
 	}
+	item.ExpiresAt, item.PageCount, item.FirstPageAspect, item.RejectionReason = verifierProjection(row)
 	return item
+}
+
+// canDownloadOriginal enforces allow_student_download for the raw original:
+// the uploader and teaching staff always may; everybody else only when the
+// owner allows student downloads.
+func canDownloadOriginal(row fileRow, access AccessContext, authorization fileAuthorization) bool {
+	return row.AllowStudentDownload || row.CreatorUserID == access.ActorID || authorization.staff
+}
+
+func verifierProjection(row fileRow) (*time.Time, *int, *float64, *string) {
+	var expiresAt *time.Time
+	var pageCount *int
+	var aspect *float64
+	var reason *string
+	if row.ExpiresAt.Valid {
+		value := row.ExpiresAt.Time
+		expiresAt = &value
+	}
+	if row.PageCount.Valid {
+		value := int(row.PageCount.Int32)
+		pageCount = &value
+	}
+	if row.FirstPageAspect.Valid {
+		value := row.FirstPageAspect.Float64
+		aspect = &value
+	}
+	if row.RejectionReason.Valid && row.Status == StatusRejected {
+		value := row.RejectionReason.String
+		reason = &value
+	}
+	return expiresAt, pageCount, aspect, reason
+}
+
+func nullUUIDPointer(value uuid.NullUUID) *uuid.UUID {
+	if !value.Valid || value.UUID == uuid.Nil {
+		return nil
+	}
+	id := value.UUID
+	return &id
 }
 
 func finalizeTarget(row fileRow) FinalizeTarget {
 	target := FinalizeTarget{
-		File: projectFile(row, AccessContext{}, false), ObjectKey: row.ObjectKey,
+		File: projectFile(row, AccessContext{}, fileAuthorization{}), ObjectKey: row.ObjectKey,
 	}
 	if row.StorageVersionID.Valid {
 		target.StorageVersionID = strings.TrimSpace(row.StorageVersionID.String)
@@ -1612,9 +1778,34 @@ func finalizeTarget(row fileRow) FinalizeTarget {
 func storedProofMatches(row fileRow, proof FinalizeProof) bool {
 	return row.StoredSizeBytes.Valid && row.StoredSizeBytes.Int64 == proof.ContentLength &&
 		row.StoredMediaType.Valid && row.StoredMediaType.String == proof.ContentType &&
-		len(row.StoredChecksumSHA256) == 0 &&
+		(len(row.StoredChecksumSHA256) == 0 || row.Status == StatusReady || row.Status == StatusRejected) &&
 		row.StorageETag.Valid && row.StorageETag.String == proof.ETag &&
 		row.StorageVersionID.Valid && row.StorageVersionID.String == proof.VersionID
+}
+
+// finalizedStatus reports a row that finalize already committed; the
+// verifier may have advanced it to processing, ready or rejected since.
+func finalizedStatus(status Status) bool {
+	switch status {
+	case StatusUploaded, StatusProcessing, StatusReady, StatusRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// finalizeReplayVersionMatches accepts the original pending version (or the
+// committed version for an uploaded row) so a retried finalize returns the
+// current projection instead of a conflict. The service additionally binds
+// the replay to the exact storage version selector.
+func finalizeReplayVersionMatches(row fileRow, expectedVersion int64) bool {
+	if expectedVersion < 1 {
+		return false
+	}
+	if row.Status == StatusUploaded {
+		return expectedVersion == row.Version || expectedVersion+1 == row.Version
+	}
+	return expectedVersion < row.Version
 }
 
 func rollback(transaction pgx.Tx) {

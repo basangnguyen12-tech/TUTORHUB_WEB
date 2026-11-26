@@ -179,6 +179,9 @@ func TestCodeSnippetLibraryFeatureQuotaMigrationExtendsAndRestoresAllowlists(t *
 		}
 	}
 	for _, definition := range catalog.Features() {
+		if featuresIntroducedAfter000055[definition.Key] {
+			continue
+		}
 		if !strings.Contains(up, "'"+string(definition.Key)+"'") {
 			t.Fatalf("forward feature allowlist dropped %q", definition.Key)
 		}
@@ -202,4 +205,80 @@ func TestCodeSnippetLibraryFeatureQuotaMigrationExtendsAndRestoresAllowlists(t *
 	if strings.Contains(featureAllowlist, "code_snippet_library") {
 		t.Fatal("rollback must restore the exact 000054 feature allowlist")
 	}
+}
+
+// featuresIntroducedAfter000055 lists catalog keys whose override allowlist
+// entry is added by a later forward migration.
+var featuresIntroducedAfter000055 = map[FeatureKey]bool{
+	FeatureClassroomFilesTool: true,
+}
+
+func TestClassroomFilesToolFeatureMigrationExtendsAndRestoresAllowlist(t *testing.T) {
+	t.Parallel()
+
+	migrations := filepath.Join("..", "..", "..", "migrations")
+	upContents, err := os.ReadFile(filepath.Join(migrations, "000056_classroom_files_and_ready_verifier.up.sql"))
+	if err != nil {
+		t.Fatalf("read classroom files migration: %v", err)
+	}
+	downContents, err := os.ReadFile(filepath.Join(migrations, "000056_classroom_files_and_ready_verifier.down.sql"))
+	if err != nil {
+		t.Fatalf("read classroom files rollback: %v", err)
+	}
+	previousContents, err := os.ReadFile(filepath.Join(migrations, "000055_code_snippets_and_scratchpads.up.sql"))
+	if err != nil {
+		t.Fatalf("read previous feature allowlist migration: %v", err)
+	}
+	up := string(upContents)
+	down := string(downContents)
+	catalog := NewDefaultCatalog()
+	if definition, ok := catalog.FeatureDefinition(FeatureClassroomFilesTool); !ok || definition.DefaultEnabled {
+		t.Fatalf("classroom_files_tool must exist and default off: %+v", definition)
+	}
+	upAllowlist := featureAllowlistBlock(t, up)
+	for _, definition := range catalog.Features() {
+		if !strings.Contains(upAllowlist, "'"+string(definition.Key)+"'") {
+			t.Fatalf("forward feature allowlist dropped %q", definition.Key)
+		}
+	}
+	if strings.Contains(strings.ToUpper(up), "DELETE FROM") {
+		t.Fatal("forward classroom files migration must not delete data")
+	}
+	if !strings.Contains(down, "DELETE FROM tutorhub.tenant_feature_overrides") ||
+		!strings.Contains(down, "WHERE feature_key = 'classroom_files_tool'") {
+		t.Fatal("rollback must remove overrides for classroom_files_tool")
+	}
+	restored := normalizeSQLWhitespace(featureAllowlistBlock(t, down))
+	previous := normalizeSQLWhitespace(featureAllowlistBlock(t, string(previousContents)))
+	if restored != previous {
+		t.Fatalf("rollback must restore the exact 000055 feature allowlist:\n got %s\nwant %s", restored, previous)
+	}
+	if strings.Contains(restored, "classroom_files_tool") {
+		t.Fatal("rollback allowlist must not keep classroom_files_tool")
+	}
+	if expected := strings.Replace(
+		previous, "'code_snippet_library'", "'code_snippet_library', 'classroom_files_tool'", 1,
+	); normalizeSQLWhitespace(upAllowlist) != expected {
+		t.Fatalf("forward allowlist must equal 000055 plus classroom_files_tool:\n got %s\nwant %s",
+			normalizeSQLWhitespace(upAllowlist), expected)
+	}
+}
+
+func featureAllowlistBlock(t *testing.T, sql string) string {
+	t.Helper()
+	marker := "ADD CONSTRAINT tenant_feature_overrides_key_valid CHECK ("
+	start := strings.Index(sql, marker)
+	if start < 0 {
+		t.Fatal("migration is missing the feature override allowlist constraint")
+	}
+	rest := sql[start+len(marker):]
+	end := strings.Index(rest, ");")
+	if end < 0 {
+		t.Fatal("feature override allowlist constraint is not terminated")
+	}
+	return rest[:end]
+}
+
+func normalizeSQLWhitespace(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
