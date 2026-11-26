@@ -105,7 +105,14 @@ func (repository *PostgresRepository) Create(
 			return CreateResult{}, ErrUnavailable
 		}
 		var count int64
-		if err := tx.QueryRow(queryContext, `SELECT count(*) FROM tutorhub.whiteboard_documents WHERE tenant_id = $1`, access.TenantID).Scan(&count); err != nil {
+		if err := tx.QueryRow(queryContext, `SELECT count(*)
+			FROM tutorhub.whiteboard_documents AS document
+			JOIN tutorhub.media_spaces AS space
+			  ON space.tenant_id = document.tenant_id
+			 AND space.id = document.media_space_id
+			WHERE document.tenant_id = $1
+			  AND document.status <> 'closed'
+			  AND space.status IN ('scheduled', 'open')`, access.TenantID).Scan(&count); err != nil {
 			return CreateResult{}, ErrUnavailable
 		}
 		if err := repository.controls.RequireQuotaAtMost(queryContext, tx, access.TenantID, featurecontrol.QuotaWhiteboardDocumentsPerTenant, count+1); err != nil {

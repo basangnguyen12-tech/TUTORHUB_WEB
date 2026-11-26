@@ -1019,8 +1019,11 @@ func featureControlGuardrails(configuration config.FeatureControlConfig) feature
 			configuration.ClassroomWhiteboardCanaryTenantIDs,
 		)
 	}
+	if configuration.EnableClassroomWhiteboardRollout {
+		tenantQuotaCeilings = map[featurecontrol.QuotaKey]map[uuid.UUID]int64{}
+	}
 
-	return featurecontrol.Guardrails{
+	guardrails := featurecontrol.Guardrails{
 		ForcedOffFeatures: forcedOff,
 		TenantAllowlists: map[featurecontrol.FeatureKey][]uuid.UUID{
 			featurecontrol.FeatureClassroomWhiteboards: append(
@@ -1057,6 +1060,11 @@ func featureControlGuardrails(configuration config.FeatureControlConfig) feature
 		},
 		TenantQuotaCeilings: tenantQuotaCeilings,
 	}
+	if configuration.EnableClassroomWhiteboardRollout &&
+		len(configuration.ClassroomWhiteboardCanaryTenantIDs) == 0 {
+		delete(guardrails.TenantAllowlists, featurecontrol.FeatureClassroomWhiteboards)
+	}
+	return guardrails
 }
 
 func p518InternalCanaryQuotaCeilings(tenantID uuid.UUID) map[featurecontrol.QuotaKey]map[uuid.UUID]int64 {

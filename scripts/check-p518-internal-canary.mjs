@@ -98,7 +98,7 @@ requireMatch(
 );
 requireMatch(
   "apps/web/src/pages/MediaSpaceRoomPage.tsx",
-  /features\.classroom_whiteboards\.enabled\s*===\s*true/u,
+  /features\??\.classroom_whiteboards\??\.enabled\s*===\s*true/u,
   "fail-closed whiteboard capability check",
 );
 requireMatch(

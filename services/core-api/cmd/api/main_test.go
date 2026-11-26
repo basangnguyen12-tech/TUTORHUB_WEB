@@ -332,6 +332,34 @@ func TestFeatureControlGuardrailsMapP520ExactTwoRampQuotaCeilings(t *testing.T) 
 	}
 }
 
+func TestFeatureControlGuardrailsLiftCanaryQuotaClampInWhiteboardRollout(t *testing.T) {
+	t.Parallel()
+
+	firstTenantID := uuid.MustParse("10000000-0000-4000-8000-000000000001")
+	secondTenantID := uuid.MustParse("10000000-0000-4000-8000-000000000002")
+	allowlisted := featureControlGuardrails(config.FeatureControlConfig{
+		EnableClassroomWhiteboards:         true,
+		EnableClassroomWhiteboardRollout:   true,
+		ClassroomWhiteboardCanaryTenantIDs: []uuid.UUID{firstTenantID, secondTenantID},
+		MaxWhiteboardDocumentsPerTenant:    100,
+	})
+	if len(allowlisted.TenantQuotaCeilings) != 0 {
+		t.Fatalf("rollout mode must lift low canary quota clamps: %+v", allowlisted.TenantQuotaCeilings)
+	}
+	if len(allowlisted.TenantAllowlists[featurecontrol.FeatureClassroomWhiteboards]) != 2 {
+		t.Fatalf("rollout mode with explicit tenant IDs must preserve allowlist: %+v", allowlisted.TenantAllowlists)
+	}
+
+	perTenant := featureControlGuardrails(config.FeatureControlConfig{
+		EnableClassroomWhiteboards:       true,
+		EnableClassroomWhiteboardRollout: true,
+		MaxWhiteboardDocumentsPerTenant:  100,
+	})
+	if _, guarded := perTenant.TenantAllowlists[featurecontrol.FeatureClassroomWhiteboards]; guarded {
+		t.Fatalf("rollout mode with empty allowlist must defer to tenant overrides: %+v", perTenant.TenantAllowlists)
+	}
+}
+
 func TestAvailabilityPollFeatureFailsClosedWithoutProtectedData(t *testing.T) {
 	t.Parallel()
 

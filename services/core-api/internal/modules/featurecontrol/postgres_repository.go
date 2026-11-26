@@ -826,7 +826,14 @@ func readQuotaUsage(
     WHERE tenant_id = $1
 ), 0)`
 	case QuotaWhiteboardDocumentsPerTenant:
-		query = `SELECT count(*) FROM tutorhub.whiteboard_documents WHERE tenant_id = $1`
+		query = `SELECT count(*)
+FROM tutorhub.whiteboard_documents AS document
+JOIN tutorhub.media_spaces AS space
+  ON space.tenant_id = document.tenant_id
+ AND space.id = document.media_space_id
+WHERE document.tenant_id = $1
+  AND document.status <> 'closed'
+  AND space.status IN ('scheduled', 'open')`
 	case QuotaWhiteboardStorageBytesPerTenant:
 		query = `SELECT COALESCE(sum(size_bytes), 0) FROM tutorhub.whiteboard_snapshots WHERE tenant_id = $1`
 	case QuotaCodeStorageBytesPerTenant:

@@ -285,6 +285,7 @@ type FeatureControlConfig struct {
 	EnableInstantStudyRooms                       bool
 	EnableClassroomWhiteboards                    bool
 	EnableClassroomWhiteboardRamp                 bool
+	EnableClassroomWhiteboardRollout              bool
 	ClassroomWhiteboardCanaryTenantIDs            []uuid.UUID
 	DisableClassroomCodeTool                      bool
 	EnableClassroomCodeCollaboration              bool
@@ -688,6 +689,12 @@ func featureControlConfig(
 			false,
 			validationErrors,
 		),
+		EnableClassroomWhiteboardRollout: boolValue(
+			lookup,
+			"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_ROLLOUT",
+			false,
+			validationErrors,
+		),
 		DisableClassroomCodeTool: boolValue(
 			lookup,
 			"FEATURE_CONTROL_DISABLE_CLASSROOM_CODE_TOOL",
@@ -926,7 +933,8 @@ func featureControlConfig(
 	)
 	if configuration.EnableClassroomWhiteboards &&
 		len(configuration.ClassroomWhiteboardCanaryTenantIDs) != 1 &&
-		!configuration.EnableClassroomWhiteboardRamp {
+		!configuration.EnableClassroomWhiteboardRamp &&
+		!configuration.EnableClassroomWhiteboardRollout {
 		*validationErrors = append(
 			*validationErrors,
 			errors.New("FEATURE_CONTROL_CLASSROOM_WHITEBOARD_CANARY_TENANT_IDS must contain exactly one canonical tenant UUID when FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARDS is true"),
@@ -945,6 +953,20 @@ func featureControlConfig(
 		*validationErrors = append(
 			*validationErrors,
 			errors.New("FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_RAMP requires FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARDS"),
+		)
+	}
+	if configuration.EnableClassroomWhiteboardRollout &&
+		!configuration.EnableClassroomWhiteboards {
+		*validationErrors = append(
+			*validationErrors,
+			errors.New("FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_ROLLOUT requires FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARDS"),
+		)
+	}
+	if configuration.EnableClassroomWhiteboardRollout &&
+		configuration.EnableClassroomWhiteboardRamp {
+		*validationErrors = append(
+			*validationErrors,
+			errors.New("FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_ROLLOUT and FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_RAMP are mutually exclusive"),
 		)
 	}
 

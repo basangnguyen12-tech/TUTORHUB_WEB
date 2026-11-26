@@ -571,6 +571,42 @@ func TestLoadAllowsExactlyTwoWhiteboardRampTenantsOnlyWithExplicitRampFlag(t *te
 	}
 }
 
+func TestLoadAllowsWhiteboardRolloutWithoutCanaryCountClamp(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARDS":        "true",
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_ROLLOUT": "true",
+	}))
+	if err != nil {
+		t.Fatalf("load per-tenant whiteboard rollout config: %v", err)
+	}
+	if !cfg.FeatureControls.EnableClassroomWhiteboardRollout ||
+		len(cfg.FeatureControls.ClassroomWhiteboardCanaryTenantIDs) != 0 {
+		t.Fatalf("unexpected whiteboard rollout config: %+v", cfg.FeatureControls)
+	}
+
+	if _, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_ROLLOUT": "true",
+	})); err == nil || !strings.Contains(
+		err.Error(),
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_ROLLOUT requires FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARDS",
+	) {
+		t.Fatalf("expected rollout-without-whiteboards error, got %v", err)
+	}
+
+	if _, err := load(mapLookup(map[string]string{
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARDS":        "true",
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_RAMP":    "true",
+		"FEATURE_CONTROL_ENABLE_CLASSROOM_WHITEBOARD_ROLLOUT": "true",
+	})); err == nil || !strings.Contains(
+		err.Error(),
+		"mutually exclusive",
+	) {
+		t.Fatalf("expected ramp/rollout mutual exclusion error, got %v", err)
+	}
+}
+
 func TestLoadParsesClassroomCodeFeatureGuardrails(t *testing.T) {
 	t.Parallel()
 
