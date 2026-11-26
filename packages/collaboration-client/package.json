@@ -41,6 +41,6 @@
     "yjs": "13.6.27"
   },
   "devDependencies": {
-    "vitest": "4.1.10"
+    "vitest": "5.1.1"
   }
 }
