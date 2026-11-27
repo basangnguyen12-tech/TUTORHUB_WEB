@@ -1,4 +1,10 @@
-import { APIRequestError, type Conversation } from "@tutorhub/api-client";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import {
+  APIRequestError,
+  type Conversation,
+  type Message,
+  type MessagePage,
+} from "@tutorhub/api-client";
 import {
   Button,
   Dialog,
@@ -10,52 +16,130 @@ import {
   EmptyState,
   ErrorState,
   ForbiddenState,
+  IconButton,
   Skeleton,
   SkeletonGroup,
   StatusBadge,
   TextField,
 } from "@tutorhub/ui";
-import { ChevronDown, MessageCircle, Plus, RefreshCw } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  ChevronDown,
+  Mail,
+  MessageSquarePlus,
+  Pin,
+  PinOff,
+  RefreshCw,
+  School,
+  Search,
+  X,
+} from "lucide-react";
 import {
   useEffect,
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type FormEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type RefObject,
 } from "react";
-import { NavLink, useNavigate, useParams } from "react-router";
+import { Link, NavLink, useNavigate, useParams } from "react-router";
+import {
+  type ClassCoverTheme,
+  useClassroomPreferences,
+} from "../app/classroomPreferences";
+import {
+  compactConversationTime,
+  conversationFilters,
+  filterConversations,
+  partitionPinnedConversations,
+  useConversationPreferences,
+  type ConversationFilter,
+  type ConversationListSection,
+} from "../app/conversationPreferences";
 import {
   conversationCreationAvailability,
+  conversationQueryKeys,
   useConversation,
   useConversations,
   useCreateDirectConversation,
 } from "../app/conversations";
-import { useI18n } from "../app/i18n";
+import { useI18n, type TranslationKey } from "../app/i18n";
 import { useSession } from "../app/session";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
-import { ConversationMessages } from "../components/ConversationMessages";
+import {
+  ConversationAvatar,
+  ConversationMessages,
+  PersonAvatar,
+} from "../components/ConversationMessages";
+import { parseQuotedMessage } from "../components/ConversationQuote";
 import { TenantOperationNotice } from "../components/TenantOperationNotice";
 import "./ConversationsPage.css";
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const filterLabels: Record<ConversationFilter, TranslationKey> = {
+  all: "conversations.filterAll",
+  class: "conversations.filterClass",
+  direct: "conversations.filterDirect",
+  room: "conversations.filterRoom",
+  unread: "conversations.filterUnread",
+};
+
+function kindLabelKey(kind: Conversation["kind"]): TranslationKey {
+  return kind === "class"
+    ? "conversations.classKind"
+    : kind === "room"
+      ? "conversations.roomKind"
+      : "conversations.directKind";
+}
+
+function cachedNewestMessage(
+  data: InfiniteData<MessagePage> | undefined,
+): Message | undefined {
+  return data?.pages[0]?.items.reduce<Message | undefined>(
+    (newest, item) =>
+      !newest || item.sequence > newest.sequence ? item : newest,
+    undefined,
+  );
+}
 
 export function ConversationsPage() {
   const { conversationId } = useParams();
   const { language, t } = useI18n();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const session = useSession();
   const tenantID = session.currentUser?.active_tenant?.id;
+  const actorID = session.currentUser?.user.id ?? "";
   const conversations = useConversations(tenantID);
   const conversation = useConversation(tenantID, conversationId);
   const capabilities = useTenantCapabilities(tenantID, Boolean(tenantID));
   const createAvailability = conversationCreationAvailability(capabilities);
   const createDirect = useCreateDirectConversation(tenantID);
+  const conversationPreferences = useConversationPreferences(
+    tenantID,
+    actorID || undefined,
+  );
+  const classroomPreferences = useClassroomPreferences(
+    tenantID,
+    actorID || undefined,
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [targetEmail, setTargetEmail] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [createdTitle, setCreatedTitle] = useState<string | null>(null);
-  const createTrigger = useRef<HTMLButtonElement>(null);
+  const [filter, setFilter] = useState<ConversationFilter>("all");
+  const [query, setQuery] = useState("");
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const createTrigger = useRef<HTMLButtonElement | null>(null);
+  const headerCreateButton = useRef<HTMLButtonElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const suppressShortcutsOnFocus = useRef(false);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const items = useMemo(() => {
     const byID = new Map<string, Conversation>();
@@ -97,10 +181,79 @@ export function ConversationsPage() {
     items.length > 0 &&
     !conversations.isFetchNextPageError;
 
+  const unreadConversations = items.filter(
+    (item) => item.unread_count > 0,
+  ).length;
+  const hasRoomConversations = items.some((item) => item.kind === "room");
+  const visibleFilters = conversationFilters.filter(
+    (value) => value !== "room" || hasRoomConversations || filter === "room",
+  );
+  const filtered = useMemo(
+    () => filterConversations(items, filter, query),
+    [filter, items, query],
+  );
+  const searching = query.trim().length > 0;
+  const { pinned: pinnedItems, others: otherItems } =
+    partitionPinnedConversations(
+      filtered,
+      conversationPreferences.preferences.pinned,
+    );
+  const grouped = filter === "all" && !searching && pinnedItems.length > 0;
+  const now = new Date();
+
   const openCreate = (event: MouseEvent<HTMLButtonElement>) => {
     createTrigger.current = event.currentTarget;
     setCreatedTitle(null);
     setCreateOpen(true);
+  };
+
+  const openCreateFromShortcut = () => {
+    // The shortcut panel closes with the dialog, so focus returns to the
+    // header button that owns "Start a conversation".
+    createTrigger.current = headerCreateButton.current;
+    const candidate = query.trim().toLowerCase();
+    setTargetEmail(emailPattern.test(candidate) ? candidate : "");
+    setEmailError(null);
+    setCreatedTitle(null);
+    setShortcutsOpen(false);
+    setCreateOpen(true);
+  };
+
+  const focusSearchQuietly = () => {
+    suppressShortcutsOnFocus.current = true;
+    searchInput.current?.focus();
+    suppressShortcutsOnFocus.current = false;
+  };
+
+  const clearSearch = () => {
+    if (query) {
+      setQuery("");
+      searchInput.current?.focus();
+      return;
+    }
+    setShortcutsOpen(false);
+    focusSearchQuietly();
+  };
+
+  const handleSearchAreaKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+    if (shortcutsOpen) {
+      event.preventDefault();
+      setShortcutsOpen(false);
+      focusSearchQuietly();
+    } else if (query) {
+      event.preventDefault();
+      setQuery("");
+    }
+  };
+
+  const handleSearchAreaBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
+      setShortcutsOpen(false);
+    }
   };
 
   const submitDirect = (event: FormEvent<HTMLFormElement>) => {
@@ -110,7 +263,7 @@ export function ConversationsPage() {
       setEmailError(t("conversations.targetEmailRequired"));
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    if (!emailPattern.test(normalizedEmail)) {
       setEmailError(t("conversations.targetEmailInvalid"));
       return;
     }
@@ -128,10 +281,147 @@ export function ConversationsPage() {
     );
   };
 
+  const previewFor = (item: Conversation) => {
+    if (!tenantID) {
+      return null;
+    }
+    const newest = cachedNewestMessage(
+      queryClient.getQueryData<InfiniteData<MessagePage>>(
+        conversationQueryKeys.messages(tenantID, item.id),
+      ),
+    );
+    if (!newest) {
+      return null;
+    }
+    const text =
+      newest.state === "deleted"
+        ? t("conversations.messageDeleted")
+        : parseQuotedMessage(newest.content).body.replace(/\s+/g, " ").trim() ||
+          t("conversations.attachmentPreview");
+    if (newest.author.user_id === actorID) {
+      return `${t("conversations.youPrefix")}: ${text}`;
+    }
+    return item.kind === "direct"
+      ? text
+      : `${newest.author.display_name}: ${text}`;
+  };
+
+  const renderRow = (item: Conversation) => {
+    const pinned = conversationPreferences.isPinned(item.id);
+    const preview = previewFor(item);
+    const kindLabel = t(kindLabelKey(item.kind));
+    const unreadLabel = t("conversations.unreadBadge", {
+      count: item.unread_count_capped ? "100+" : item.unread_count,
+    });
+    const compactUnread =
+      item.unread_count_capped || item.unread_count > 99
+        ? "99+"
+        : String(item.unread_count);
+    return (
+      <li
+        className="conversation-list__item"
+        data-pinned={pinned ? "true" : undefined}
+        key={item.id}
+      >
+        <NavLink
+          className={({ isActive }) =>
+            `conversation-list__link${
+              isActive ? " conversation-list__link--active" : ""
+            }`
+          }
+          onClick={() => setShortcutsOpen(false)}
+          to={`/app/messages/${item.id}`}
+        >
+          <ConversationAvatar
+            actorID={actorID}
+            conversation={item}
+            coverTheme={
+              item.class_id
+                ? classroomPreferences.coverFor(item.class_id)
+                : undefined
+            }
+          />
+          <span className="conversation-list__text">
+            <span className="conversation-list__line">
+              <strong className="conversation-list__title">{item.title}</strong>
+              <time
+                className="conversation-list__time"
+                dateTime={item.updated_at}
+                title={formatter.format(new Date(item.updated_at))}
+              >
+                {compactConversationTime(item.updated_at, now, language)}
+              </time>
+            </span>
+            <span className="conversation-list__line">
+              <span className="conversation-list__preview">
+                {preview ? (
+                  <>
+                    <span className="visually-hidden">{kindLabel}. </span>
+                    {preview}
+                  </>
+                ) : (
+                  kindLabel
+                )}
+              </span>
+              {item.unread_count > 0 && (
+                <span className="conversation-list__unread">
+                  <span aria-hidden="true">{compactUnread}</span>
+                  <span className="visually-hidden">{unreadLabel}</span>
+                </span>
+              )}
+            </span>
+          </span>
+        </NavLink>
+        <button
+          aria-label={t(pinned ? "conversations.unpin" : "conversations.pin", {
+            title: item.title,
+          })}
+          className="conversation-list__pin"
+          data-tooltip={t(
+            pinned ? "conversations.unpinCurrent" : "conversations.pinCurrent",
+          )}
+          onClick={() => conversationPreferences.togglePin(item.id)}
+          type="button"
+        >
+          {pinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
+        </button>
+      </li>
+    );
+  };
+
+  const renderSection = (
+    section: ConversationListSection,
+    label: string,
+    sectionItems: readonly Conversation[],
+  ) => {
+    const collapsed = conversationPreferences.isCollapsed(section);
+    const listID = `conversation-section-${section}`;
+    return (
+      <div className="conversation-section" key={section}>
+        <button
+          aria-controls={listID}
+          aria-expanded={!collapsed}
+          className="conversation-section__toggle"
+          onClick={() => conversationPreferences.toggleCollapsed(section)}
+          type="button"
+        >
+          <ChevronDown aria-hidden="true" />
+          <span>{label}</span>
+          <span className="conversation-section__count">
+            {sectionItems.length}
+          </span>
+        </button>
+        <ul className="conversation-list" hidden={collapsed} id={listID}>
+          {sectionItems.map(renderRow)}
+        </ul>
+      </div>
+    );
+  };
+
   if (initialListError) {
     const State = listForbidden ? ForbiddenState : ErrorState;
     return (
-      <div className="page-content conversations-page">
+      <div className="page-content conversations-page conversations-page--state">
         <State
           actions={
             <Button
@@ -157,74 +447,198 @@ export function ConversationsPage() {
     );
   }
 
+  const listStatus =
+    filter !== "all" || searching
+      ? t("conversations.matchCount", { count: filtered.length })
+      : t("conversations.loadedCount", { count: items.length });
+
   return (
-    <div className="page-content conversations-page">
-      <header className="page-heading conversations-page__header">
-        <div>
-          <p>{t("conversations.kicker")}</p>
-          <h1>{t("conversations.title")}</h1>
-          <span>{t("conversations.description")}</span>
-        </div>
-        <Button
-          disabled={!createAvailability.available}
-          leadingIcon={<Plus />}
-          onClick={openCreate}
-        >
-          {t("conversations.createAction")}
-        </Button>
-      </header>
-
-      {createdTitle && (
-        <p className="conversations-page__feedback" role="status">
-          {t("conversations.created", { title: createdTitle })}
-        </p>
-      )}
-
-      <TenantOperationNotice
-        availability={createAvailability}
-        label={t("capabilities.operationCreateConversation")}
-        onRetry={() => void capabilities.refetch()}
-      />
-
-      {refreshingError && (
-        <div className="conversations-page__inline-error" role="alert">
-          <span>{t("conversations.refreshError")}</span>
-          <Button
-            onClick={() => void conversations.refetch()}
-            size="sm"
-            variant="secondary"
-          >
-            {t("state.retry")}
-          </Button>
-        </div>
-      )}
-
-      <div className="conversations-layout">
-        <section
-          aria-labelledby="conversation-list-title"
-          className="conversation-list-panel"
-        >
-          <div className="conversation-list-panel__heading">
-            <h2 id="conversation-list-title">{t("conversations.listTitle")}</h2>
-            <Button
-              leadingIcon={<RefreshCw />}
+    <div
+      className="page-content conversations-page"
+      data-view={conversationId ? "detail" : "list"}
+    >
+      <section
+        aria-labelledby="conversations-page-title"
+        className="conversation-list-panel"
+      >
+        <header className="conversations-page__header">
+          <h1 id="conversations-page-title">{t("conversations.title")}</h1>
+          <p className="visually-hidden">
+            {t("conversations.headerDescription")}
+          </p>
+          <div className="conversations-page__header-actions">
+            <IconButton
+              className="conversations-page__icon-action"
+              data-tooltip={t("conversations.refresh")}
+              label={t("conversations.refresh")}
               loading={
                 conversations.isRefetching && !conversations.isFetchingNextPage
               }
-              loadingLabel={t("conversations.refreshing")}
+              onClick={() => void conversations.refetch()}
+              size="sm"
+              variant="quiet"
+            >
+              <RefreshCw />
+            </IconButton>
+            <IconButton
+              className="conversations-page__icon-action"
+              data-tooltip={t("conversations.createAction")}
+              disabled={!createAvailability.available}
+              label={t("conversations.createAction")}
+              onClick={openCreate}
+              ref={headerCreateButton}
+              size="sm"
+              variant="quiet"
+            >
+              <MessageSquarePlus />
+            </IconButton>
+          </div>
+        </header>
+
+        {createdTitle && (
+          <p className="conversations-page__feedback" role="status">
+            {t("conversations.created", { title: createdTitle })}
+          </p>
+        )}
+
+        <TenantOperationNotice
+          availability={createAvailability}
+          label={t("capabilities.operationCreateConversation")}
+          onRetry={() => void capabilities.refetch()}
+        />
+
+        {refreshingError && (
+          <div className="conversations-page__inline-error" role="alert">
+            <span>{t("conversations.refreshError")}</span>
+            <Button
               onClick={() => void conversations.refetch()}
               size="sm"
               variant="secondary"
             >
-              {t("conversations.refresh")}
+              {t("state.retry")}
             </Button>
           </div>
+        )}
 
+        <div
+          className="conversation-search-area"
+          onBlur={handleSearchAreaBlur}
+          onKeyDown={handleSearchAreaKeyDown}
+        >
+          <div
+            aria-label={t("conversations.searchLabel")}
+            className="conversation-search"
+            data-active={shortcutsOpen || searching ? "true" : undefined}
+            role="search"
+          >
+            <Search aria-hidden="true" className="conversation-search__icon" />
+            <label className="visually-hidden" htmlFor="conversation-search">
+              {t("conversations.searchLabel")}
+            </label>
+            <input
+              autoComplete="off"
+              id="conversation-search"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setShortcutsOpen(true);
+              }}
+              onFocus={() => {
+                if (!suppressShortcutsOnFocus.current) {
+                  setShortcutsOpen(true);
+                }
+              }}
+              placeholder={t("conversations.searchPlaceholder")}
+              ref={searchInput}
+              type="search"
+              value={query}
+            />
+            {(searching || shortcutsOpen) && (
+              <button
+                aria-label={t("conversations.searchClear")}
+                className="conversation-search__clear"
+                onClick={clearSearch}
+                type="button"
+              >
+                <X aria-hidden="true" />
+              </button>
+            )}
+          </div>
+          {shortcutsOpen && (
+            <div className="conversation-shortcuts">
+              <p
+                className="conversation-shortcuts__title"
+                id="conversation-shortcuts-title"
+              >
+                {t("conversations.shortcutsTitle")}
+              </p>
+              <ul aria-labelledby="conversation-shortcuts-title">
+                <li>
+                  <button
+                    className="conversation-shortcut"
+                    disabled={!createAvailability.available}
+                    onClick={openCreateFromShortcut}
+                    type="button"
+                  >
+                    <Mail aria-hidden="true" />
+                    <span className="conversation-shortcut__text">
+                      <strong>{t("conversations.shortcutDirect")}</strong>
+                      <span>{t("conversations.shortcutDirectHint")}</span>
+                    </span>
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="conversation-shortcut__arrow"
+                    />
+                  </button>
+                </li>
+                <li>
+                  <Link className="conversation-shortcut" to="/app/classrooms">
+                    <School aria-hidden="true" />
+                    <span className="conversation-shortcut__text">
+                      <strong>{t("conversations.shortcutClasses")}</strong>
+                      <span>{t("conversations.shortcutClassesHint")}</span>
+                    </span>
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="conversation-shortcut__arrow"
+                    />
+                  </Link>
+                </li>
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {!listConcealed && items.length > 0 && (
+          <div
+            aria-label={t("conversations.filtersLabel")}
+            className="conversation-filters"
+            role="group"
+          >
+            {visibleFilters.map((value) => (
+              <button
+                aria-pressed={filter === value}
+                className="conversation-filter"
+                key={value}
+                onClick={() => setFilter(value)}
+                type="button"
+              >
+                {t(filterLabels[value])}
+                {value === "unread" && unreadConversations > 0 && (
+                  <span className="conversation-filter__count">
+                    {unreadConversations}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="conversation-list-panel__scroll">
           {conversations.isPending && (
             <SkeletonGroup label={t("conversations.loading")}>
-              <Skeleton height={82} />
-              <Skeleton height={82} />
-              <Skeleton height={82} />
+              <Skeleton height={56} />
+              <Skeleton height={56} />
+              <Skeleton height={56} />
             </SkeletonGroup>
           )}
 
@@ -232,8 +646,12 @@ export function ConversationsPage() {
             <EmptyState
               actions={
                 createAvailability.available ? (
-                  <Button onClick={openCreate} variant="secondary">
-                    {t("conversations.createAction")}
+                  <Button
+                    leadingIcon={<Mail />}
+                    onClick={openCreateFromShortcut}
+                    variant="secondary"
+                  >
+                    {t("conversations.shortcutDirect")}
                   </Button>
                 ) : undefined
               }
@@ -245,49 +663,32 @@ export function ConversationsPage() {
           {!listConcealed && items.length > 0 && (
             <>
               <p className="visually-hidden" role="status">
-                {t("conversations.loadedCount", { count: items.length })}
+                {listStatus}
               </p>
-              <ul className="conversation-list">
-                {items.map((item) => (
-                  <li key={item.id}>
-                    <NavLink
-                      className={({ isActive }) =>
-                        `conversation-list__link${
-                          isActive ? " conversation-list__link--active" : ""
-                        }`
-                      }
-                      to={`/app/messages/${item.id}`}
-                    >
-                      <span className="conversation-list__identity">
-                        <strong>{item.title}</strong>
-                        <StatusBadge tone="neutral">
-                          {t(
-                            item.kind === "class"
-                              ? "conversations.classKind"
-                              : item.kind === "room"
-                                ? "conversations.roomKind"
-                                : "conversations.directKind",
-                          )}
-                        </StatusBadge>
-                      </span>
-                      <span className="conversation-list__summary">
-                        <time dateTime={item.updated_at}>
-                          {formatter.format(new Date(item.updated_at))}
-                        </time>
-                        {item.unread_count > 0 && (
-                          <StatusBadge tone="warning">
-                            {t("conversations.unreadBadge", {
-                              count: item.unread_count_capped
-                                ? "100+"
-                                : item.unread_count,
-                            })}
-                          </StatusBadge>
-                        )}
-                      </span>
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
+              {filtered.length === 0 ? (
+                <div className="conversation-list__no-match">
+                  <strong>{t("conversations.noMatchTitle")}</strong>
+                  <span>{t("conversations.noMatchDescription")}</span>
+                </div>
+              ) : grouped ? (
+                <>
+                  {renderSection(
+                    "favorites",
+                    t("conversations.favoritesSection"),
+                    pinnedItems,
+                  )}
+                  {otherItems.length > 0 &&
+                    renderSection(
+                      "chats",
+                      t("conversations.chatsSection"),
+                      otherItems,
+                    )}
+                </>
+              ) : (
+                <ul className="conversation-list">
+                  {[...pinnedItems, ...otherItems].map(renderRow)}
+                </ul>
+              )}
             </>
           )}
 
@@ -311,23 +712,27 @@ export function ConversationsPage() {
                 loading={conversations.isFetchingNextPage}
                 loadingLabel={t("conversations.loadingMore")}
                 onClick={() => void conversations.fetchNextPage()}
+                size="sm"
                 variant="secondary"
               >
                 {t("conversations.loadMore")}
               </Button>
             </div>
           )}
-        </section>
+        </div>
+      </section>
 
-        <ConversationDetail
-          actorID={session.currentUser?.user.id ?? ""}
-          conversation={conversation}
-          detailHeading={detailHeading}
-          formatter={formatter}
-          selected={Boolean(conversationId)}
-          tenantID={tenantID ?? ""}
-        />
-      </div>
+      <ConversationDetail
+        actorID={actorID}
+        conversation={conversation}
+        coverFor={classroomPreferences.coverFor}
+        detailHeading={detailHeading}
+        formatter={formatter}
+        isPinned={conversationPreferences.isPinned}
+        onTogglePin={conversationPreferences.togglePin}
+        selected={Boolean(conversationId)}
+        tenantID={tenantID ?? ""}
+      />
 
       <Dialog
         onOpenChange={(open) => {
@@ -343,13 +748,17 @@ export function ConversationsPage() {
         open={createOpen}
       >
         <DialogContent
+          className="conversations-dialog"
           closeLabel={t("conversations.closeDialog")}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             createTrigger.current?.focus();
           }}
         >
-          <form onSubmit={submitDirect}>
+          <form className="conversations-dialog__form" onSubmit={submitDirect}>
+            <span aria-hidden="true" className="conversations-dialog__icon">
+              <Mail />
+            </span>
             <DialogTitle>{t("conversations.createDialogTitle")}</DialogTitle>
             <DialogDescription>
               {t("conversations.createDialogDescription")}
@@ -375,7 +784,7 @@ export function ConversationsPage() {
                 {t("conversations.createError")}
               </p>
             )}
-            <DialogFooter>
+            <DialogFooter className="conversations-dialog__footer">
               <DialogClose asChild>
                 <Button disabled={createDirect.isPending} variant="secondary">
                   {t("conversations.cancel")}
@@ -396,26 +805,43 @@ export function ConversationsPage() {
   );
 }
 
+function DetailBackLink() {
+  const { t } = useI18n();
+  return (
+    <Link className="conversation-detail-panel__back" to="/app/messages">
+      <ArrowLeft aria-hidden="true" />
+      <span>{t("conversations.backToList")}</span>
+    </Link>
+  );
+}
+
 function ConversationDetail({
   actorID,
   conversation,
+  coverFor,
   detailHeading,
   formatter,
+  isPinned,
+  onTogglePin,
   selected,
   tenantID,
 }: {
   actorID: string;
   conversation: ReturnType<typeof useConversation>;
+  coverFor: (classID: string) => ClassCoverTheme;
   detailHeading: RefObject<HTMLHeadingElement | null>;
   formatter: Intl.DateTimeFormat;
+  isPinned: (conversationID: string) => boolean;
+  onTogglePin: (conversationID: string) => void;
   selected: boolean;
   tenantID: string;
 }) {
   const { t } = useI18n();
+  const [toolsTarget, setToolsTarget] = useState<HTMLDivElement | null>(null);
 
   if (!selected) {
     return (
-      <section className="conversation-detail-panel">
+      <section className="conversation-detail-panel conversation-detail-panel--prompt">
         <EmptyState
           description={t("conversations.detailPromptDescription")}
           title={t("conversations.detailPromptTitle")}
@@ -426,7 +852,8 @@ function ConversationDetail({
 
   if (conversation.isPending) {
     return (
-      <section className="conversation-detail-panel">
+      <section className="conversation-detail-panel conversation-detail-panel--state">
+        <DetailBackLink />
         <SkeletonGroup label={t("conversations.detailLoading")}>
           <Skeleton height={36} width="55%" />
           <Skeleton height={90} />
@@ -446,7 +873,8 @@ function ConversationDetail({
           ? EmptyState
           : ErrorState;
     return (
-      <section className="conversation-detail-panel">
+      <section className="conversation-detail-panel conversation-detail-panel--state">
+        <DetailBackLink />
         <State
           actions={
             concealed ? undefined : (
@@ -478,71 +906,150 @@ function ConversationDetail({
   const readOnly =
     item.class_status === "archived" ||
     item.viewer_access.can_post_messages !== true;
+  const pinned = isPinned(item.id);
+  const classPath =
+    item.kind === "class" && item.class_id
+      ? `/app/classrooms/${item.class_id}`
+      : null;
+  const roomPath =
+    item.kind === "room" &&
+    item.media_space_id &&
+    item.media_space_status === "open"
+      ? `/app/media/spaces/${item.media_space_id}/prejoin`
+      : null;
 
   return (
-    <article className="conversation-detail-panel">
+    <article
+      aria-labelledby="conversation-detail-title"
+      className="conversation-detail-panel"
+    >
       <header className="conversation-detail-panel__header">
-        <div>
-          <p>
-            {t(
-              item.kind === "class"
-                ? "conversations.classKind"
-                : item.kind === "room"
-                  ? "conversations.roomKind"
-                  : "conversations.directKind",
-            )}
-          </p>
-          <h2 ref={detailHeading} tabIndex={-1}>
+        <DetailBackLink />
+        <ConversationAvatar
+          actorID={actorID}
+          conversation={item}
+          coverTheme={item.class_id ? coverFor(item.class_id) : undefined}
+          size="sm"
+        />
+        <div className="conversation-detail-panel__identity">
+          <h2 id="conversation-detail-title" ref={detailHeading} tabIndex={-1}>
             {item.title}
           </h2>
+          <p className="conversation-detail-panel__meta">
+            <span>{t(kindLabelKey(item.kind))}</span>
+            <StatusBadge tone={readOnly ? "warning" : "success"}>
+              {t(readOnly ? "conversations.readOnly" : "conversations.ready")}
+            </StatusBadge>
+          </p>
         </div>
-        <StatusBadge tone={readOnly ? "warning" : "success"}>
-          {t(readOnly ? "conversations.readOnly" : "conversations.ready")}
-        </StatusBadge>
+        <div className="conversation-detail-panel__actions">
+          {classPath && (
+            <Link className="conversation-cta" to={classPath}>
+              <span>{t("conversations.openClass")}</span>
+              <ArrowUpRight aria-hidden="true" />
+            </Link>
+          )}
+          {roomPath && (
+            <Link className="conversation-cta" to={roomPath}>
+              <span>{t("conversations.openRoom")}</span>
+              <ArrowUpRight aria-hidden="true" />
+            </Link>
+          )}
+          <div
+            className="conversation-detail-panel__tools"
+            ref={setToolsTarget}
+          />
+          <IconButton
+            className="conversation-thread-tools__button"
+            data-tooltip={t(
+              pinned
+                ? "conversations.unpinCurrent"
+                : "conversations.pinCurrent",
+            )}
+            label={t(
+              pinned
+                ? "conversations.unpinCurrent"
+                : "conversations.pinCurrent",
+            )}
+            onClick={() => onTogglePin(item.id)}
+            size="sm"
+            variant="quiet"
+          >
+            {pinned ? <PinOff /> : <Pin />}
+          </IconButton>
+        </div>
       </header>
 
-      {readOnly && (
-        <p className="conversation-detail-panel__notice" role="status">
-          {t("conversations.readOnlyDescription")}
-        </p>
-      )}
-
-      <section aria-labelledby="conversation-participants-title">
-        <h3 id="conversation-participants-title">
-          {t("conversations.participantsTitle")}
-        </h3>
-        {item.participants.length > 0 ? (
-          <ul className="conversation-participants">
-            {item.participants.map((participant) => (
-              <li key={participant.user_id}>
-                <MessageCircle aria-hidden="true" />
-                <span>{participant.display_name}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>{t("conversations.participantsEmpty")}</p>
-        )}
-      </section>
-
-      <dl className="conversation-detail-panel__facts">
-        <div>
-          <dt>{t("conversations.updatedLabel")}</dt>
-          <dd>
-            <time dateTime={item.updated_at}>
-              {formatter.format(new Date(item.updated_at))}
-            </time>
-          </dd>
+      <div className="conversation-subbar">
+        <nav
+          aria-label={t("conversations.detailNavLabel")}
+          className="conversation-subbar__nav"
+        >
+          <span aria-current="page" className="conversation-subbar__tab">
+            {t("conversations.chatTab")}
+          </span>
+          {classPath && (
+            <>
+              <Link className="conversation-subbar__link" to={classPath}>
+                {t("conversations.openClass")}
+                <ArrowUpRight aria-hidden="true" />
+              </Link>
+              <Link
+                className="conversation-subbar__link"
+                to={`${classPath}?tab=materials`}
+              >
+                {t("conversations.openMaterials")}
+                <ArrowUpRight aria-hidden="true" />
+              </Link>
+            </>
+          )}
+          {roomPath && (
+            <Link className="conversation-subbar__link" to={roomPath}>
+              {t("conversations.openRoom")}
+              <ArrowUpRight aria-hidden="true" />
+            </Link>
+          )}
+        </nav>
+        <div className="conversation-detail-panel__members">
+          <h3 className="visually-hidden" id="conversation-participants-title">
+            {t("conversations.participantsTitle")}
+          </h3>
+          {item.participants.length > 0 ? (
+            <ul
+              aria-labelledby="conversation-participants-title"
+              className="conversation-participants"
+            >
+              {item.participants.map((participant) => (
+                <li key={participant.user_id}>
+                  <PersonAvatar
+                    name={participant.display_name}
+                    seed={participant.user_id}
+                    size="xs"
+                  />
+                  <span>{participant.display_name}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="conversation-detail-panel__members-empty">
+              {t("conversations.participantsEmpty")}
+            </p>
+          )}
         </div>
-      </dl>
+      </div>
 
       <ConversationMessages
         actorID={actorID}
         canPostMessages={!readOnly}
+        conversation={item}
         conversationID={item.id}
         formatter={formatter}
         key={item.id}
+        readOnlyNotice={
+          readOnly ? t("conversations.readOnlyDescription") : undefined
+        }
         tenantID={tenantID}
+        toolbarTarget={toolsTarget}
       />
     </article>
   );

@@ -26,8 +26,10 @@ import {
   clearChatEmojiRecentStorage,
   clearClassroomPreferencesStorage,
   clearCodeDraftStorage,
+  clearConversationPreferencesStorage,
   clearPrivateSessionCache,
   CODE_DRAFT_STORAGE_PREFIX,
+  CONVERSATION_PREFERENCES_STORAGE_PREFIX,
   nativeSignOutTarget,
   SessionProvider,
   useSession,
@@ -389,6 +391,36 @@ describe("remote session provider", () => {
       },
     } as unknown as Storage;
     expect(() => clearClassroomPreferencesStorage(blocked)).not.toThrow();
+  });
+
+  it("removes every conversation preference key on sign-out (MSG-CLASSIN-TEAMS-01)", async () => {
+    const queryClient = new QueryClient();
+    localStorage.setItem(
+      `${CONVERSATION_PREFERENCES_STORAGE_PREFIX}tenant-a:user-a`,
+      JSON.stringify({ pinned: ["conversation-1"], collapsed: [] }),
+    );
+    localStorage.setItem(
+      `${CONVERSATION_PREFERENCES_STORAGE_PREFIX}tenant-b:user-b`,
+      JSON.stringify({ pinned: [], collapsed: ["favorites"] }),
+    );
+    localStorage.setItem("tutorhub:unrelated-preference", "keep");
+
+    await clearPrivateSessionCache(queryClient);
+
+    expect(
+      Object.keys(localStorage).filter((key) =>
+        key.startsWith(CONVERSATION_PREFERENCES_STORAGE_PREFIX),
+      ),
+    ).toEqual([]);
+    expect(localStorage.getItem("tutorhub:unrelated-preference")).toBe("keep");
+    localStorage.clear();
+
+    const blocked = {
+      get length(): number {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    } as unknown as Storage;
+    expect(() => clearConversationPreferencesStorage(blocked)).not.toThrow();
   });
 
   it("wipes every classroom Code draft on sign-out (ROOM-TOOLS-CODE-01)", async () => {

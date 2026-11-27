@@ -1484,18 +1484,24 @@ textarea:focus-visible {
 }
 
 /* CLASS-CLASSIN-UI-01: ClassIn white plane, only while /app/classrooms or
-   /app/classrooms/:classId is open (other routes keep the canvas). */
-.app-workspace:has(.classroom-page, .classroom-detail) {
+   /app/classrooms/:classId is open (other routes keep the canvas).
+   MSG-CLASSIN-TEAMS-01 extends the same plane to /app/messages[/:id]. */
+.app-workspace:has(.classroom-page, .classroom-detail, .conversations-page) {
   background: #ffffff;
 }
 
-[data-theme="dark"] .app-workspace:has(.classroom-page, .classroom-detail),
-.app-workspace[data-theme="dark"]:has(.classroom-page, .classroom-detail) {
+[data-theme="dark"]
+  .app-workspace:has(.classroom-page, .classroom-detail, .conversations-page),
+.app-workspace[data-theme="dark"]:has(
+    .classroom-page,
+    .classroom-detail,
+    .conversations-page
+  ) {
   background: var(--color-surface);
 }
 
 @media (forced-colors: active) {
-  .app-workspace:has(.classroom-page, .classroom-detail) {
+  .app-workspace:has(.classroom-page, .classroom-detail, .conversations-page) {
     background: Canvas;
   }
 }

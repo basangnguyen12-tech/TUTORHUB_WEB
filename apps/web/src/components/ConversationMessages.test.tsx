@@ -18,6 +18,7 @@ import type {
   Message,
   MessagePage,
 } from "@tutorhub/api-client";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { conversationQueryKeys } from "../app/conversations";
 import { I18nProvider } from "../app/i18n";
@@ -99,7 +100,10 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function renderMessages(fetchMock: ReturnType<typeof vi.fn>) {
+function renderMessages(
+  fetchMock: ReturnType<typeof vi.fn>,
+  options: { conversation?: Conversation } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
@@ -110,19 +114,22 @@ function renderMessages(fetchMock: ReturnType<typeof vi.fn>) {
   render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider initialLanguage="en">
-        <ConversationMessages
-          actorID={teacherID}
-          canPostMessages
-          conversationID={conversationID}
-          formatter={
-            new Intl.DateTimeFormat("en-US", {
-              timeZone: "UTC",
-              dateStyle: "medium",
-              timeStyle: "short",
-            })
-          }
-          tenantID={tenantID}
-        />
+        <MemoryRouter>
+          <ConversationMessages
+            actorID={teacherID}
+            canPostMessages
+            conversation={options.conversation}
+            conversationID={conversationID}
+            formatter={
+              new Intl.DateTimeFormat("en-US", {
+                timeZone: "UTC",
+                dateStyle: "medium",
+                timeStyle: "short",
+              })
+            }
+            tenantID={tenantID}
+          />
+        </MemoryRouter>
       </I18nProvider>
     </QueryClientProvider>,
   );
@@ -133,6 +140,7 @@ describe("ConversationMessages", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    localStorage.clear();
   });
 
   it("orders newest-first pages chronologically, loads older history, and marks the visible newest message read", async () => {
@@ -673,5 +681,338 @@ describe("ConversationMessages", () => {
     expect(
       screen.queryByRole("textbox", { name: "New message" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("groups consecutive messages by author and keeps one list item per message", async () => {
+    const first = message(1, "First line");
+    const second = message(2, "Second line");
+    const reply = message(3, "Teacher reply", { own: true });
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse(page([reply, second, first]))),
+      );
+
+    renderMessages(fetchMock);
+
+    const history = await screen.findByRole("list", {
+      name: "Persistent message history",
+    });
+    const items = within(history).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(history.querySelectorAll(".conversation-day-divider")).toHaveLength(
+      1,
+    );
+    expect(items[0]?.querySelector(".conversation-day-divider")).not.toBeNull();
+    expect(items[0]).toHaveClass("conversation-message--continued");
+    expect(items[1]).toHaveClass("conversation-message--grouped");
+    expect(items[2]).toHaveClass("conversation-message--own");
+    expect(items[2]).not.toHaveClass("conversation-message--grouped");
+    // The grouped item still names its author for assistive technology.
+    expect(
+      within(items[1] as HTMLElement).getByText("TutorHub Student"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Second line", { exact: true })).toHaveClass(
+      "conversation-message__content",
+    );
+  });
+
+  it("sends a quoted reply and renders the quote block above the body", async () => {
+    const question = message(1, "Original question about vectors");
+    let current: Message[] = [question];
+    const sendRequests: Request[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/api/v1/auth/csrf")) {
+        return jsonResponse({ csrf_token: "reply-csrf" });
+      }
+      if (request.method === "POST") {
+        sendRequests.push(request);
+        const body = (await request.clone().json()) as { content: string };
+        const sent = message(2, body.content, { own: true });
+        current = [question, sent];
+        return jsonResponse(sent, 201);
+      }
+      return jsonResponse(page([...current].reverse()));
+    });
+
+    renderMessages(fetchMock);
+
+    const original = await screen.findByText("Original question about vectors");
+    const item = original.closest("li") as HTMLElement;
+    fireEvent.click(within(item).getByRole("button", { name: "Reply" }));
+    expect(
+      screen.getByText("Replying to TutorHub Student"),
+    ).toBeInTheDocument();
+    const composer = screen.getByRole("textbox", { name: "New message" });
+    await waitFor(() => expect(composer).toHaveFocus());
+    fireEvent.change(composer, { target: { value: "Use the dot product" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText("Message saved.")).toBeInTheDocument();
+    await expect(sendRequests[0]?.clone().json()).resolves.toEqual({
+      client_message_id: expect.any(String),
+      content:
+        "> TutorHub Student: Original question about vectors\n\nUse the dot product",
+    });
+    expect(
+      await screen.findByText("Use the dot product", { exact: true }),
+    ).toHaveClass("conversation-message__content");
+    const quote = document.querySelector(".conversation-message__quote");
+    expect(quote).toHaveTextContent("TutorHub Student");
+    expect(quote).toHaveTextContent("Original question about vectors");
+    expect(
+      screen.queryByText("Replying to TutorHub Student"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("edits an own message with PATCH and unsends it with DELETE", async () => {
+    const original = message(1, "Draft answer", { own: true });
+    let current: Message = original;
+    const requests: Request[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/api/v1/auth/csrf")) {
+        return jsonResponse({ csrf_token: "edit-csrf" });
+      }
+      if (url.pathname.endsWith(`/messages/${original.id}`)) {
+        requests.push(request);
+        if (request.method === "PATCH") {
+          const body = (await request.clone().json()) as { content: string };
+          current = {
+            id: original.id,
+            conversation_id: original.conversation_id,
+            client_message_id: original.client_message_id,
+            sequence: original.sequence,
+            author: original.author,
+            created_at: original.created_at,
+            state: "active",
+            content: body.content,
+            edited_at: "2026-08-03T09:05:00Z",
+            updated_at: "2026-08-03T09:05:00Z",
+            version: 2,
+          };
+        } else {
+          current = {
+            id: original.id,
+            conversation_id: original.conversation_id,
+            client_message_id: original.client_message_id,
+            sequence: original.sequence,
+            author: original.author,
+            created_at: original.created_at,
+            updated_at: "2026-08-03T09:06:00Z",
+            deleted_at: "2026-08-03T09:06:00Z",
+            state: "deleted",
+            version: 3,
+          };
+        }
+        return jsonResponse(current);
+      }
+      return jsonResponse(page([current]));
+    });
+
+    renderMessages(fetchMock);
+
+    const draft = await screen.findByText("Draft answer");
+    fireEvent.click(
+      within(draft.closest("li") as HTMLElement).getByRole("button", {
+        name: "Edit",
+      }),
+    );
+    const editor = await screen.findByRole("textbox", { name: "Edit message" });
+    expect(editor).toHaveValue("Draft answer");
+    await waitFor(() => expect(editor).toHaveFocus());
+    fireEvent.change(editor, { target: { value: "Final answer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    // React mirrors a controlled textarea's value into its text, so match the
+    // saved message paragraph rather than the closing editor.
+    expect(
+      await screen.findByText("Final answer", { exact: true, selector: "p" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "Edit message" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Edited")).toBeInTheDocument();
+    const patch = requests.find((request) => request.method === "PATCH");
+    expect(patch?.headers.get("X-CSRF-Token")).toBe("edit-csrf");
+    await expect(patch?.clone().json()).resolves.toEqual({
+      content: "Final answer",
+      expected_version: 1,
+    });
+
+    const updated = screen
+      .getByText("Final answer", { selector: "p" })
+      .closest("li") as HTMLElement;
+    fireEvent.click(within(updated).getByRole("button", { name: "Unsend" }));
+    const confirm = screen.getByRole("group", {
+      name: "Unsend this message for everyone?",
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Unsend" }));
+
+    expect(
+      await screen.findByText("This message was deleted."),
+    ).toBeInTheDocument();
+    const removal = requests.find((request) => request.method === "DELETE");
+    await expect(removal?.clone().json()).resolves.toEqual({
+      expected_version: 2,
+    });
+  });
+
+  it("never offers Edit on others' messages and Unsend only to moderators", async () => {
+    const incoming = message(1, "Student note");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse(page([incoming]))),
+      );
+
+    renderMessages(fetchMock);
+    let item = (await screen.findByText("Student note")).closest(
+      "li",
+    ) as HTMLElement;
+    expect(within(item).getByRole("button", { name: "Reply" })).toBeVisible();
+    expect(within(item).getByRole("button", { name: "Copy" })).toBeVisible();
+    expect(
+      within(item).queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(item).queryByRole("button", { name: "Unsend" }),
+    ).not.toBeInTheDocument();
+    cleanup();
+
+    renderMessages(fetchMock, {
+      conversation: {
+        ...conversation,
+        viewer_access: { can_post_messages: true, can_moderate_chat: true },
+      },
+    });
+    item = (await screen.findByText("Student note")).closest(
+      "li",
+    ) as HTMLElement;
+    expect(within(item).getByRole("button", { name: "Unsend" })).toBeVisible();
+    expect(
+      within(item).queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("inserts a picked emoji at the composer caret", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(page([]))));
+
+    renderMessages(fetchMock);
+
+    const composer = (await screen.findByRole("textbox", {
+      name: "New message",
+    })) as HTMLTextAreaElement;
+    fireEvent.change(composer, { target: { value: "ab" } });
+    composer.setSelectionRange(1, 1);
+    fireEvent.select(composer);
+    fireEvent.click(screen.getByRole("button", { name: "Emoji" }));
+    const picker = screen.getByRole("dialog", { name: "Pick an emoji" });
+    fireEvent.click(
+      await within(picker).findByRole("button", { name: "grinning face" }),
+    );
+    expect(composer).toHaveValue("a😀b");
+  });
+
+  it("mentions known members by display name only", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(jsonResponse(page([message(1, "Hello teacher")]))),
+      );
+
+    renderMessages(fetchMock, { conversation });
+
+    const composer = await screen.findByRole("textbox", {
+      name: "New message",
+    });
+    await screen.findByText("Hello teacher");
+    const trigger = screen.getByRole("button", { name: "Mention a member" });
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    const options = await screen.findAllByRole("menuitem");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "TSTutorHub Student",
+    ]);
+    expect(document.body.textContent).not.toContain("@example.com");
+    fireEvent.click(options[0] as HTMLElement);
+    await waitFor(() => expect(composer).toHaveValue("@TutorHub Student "));
+  });
+
+  it("stages uploads only where the server allows them and sends their ids", async () => {
+    const attachment = {
+      id: "30000000-0000-4000-8000-000000000001",
+      conversation_id: conversationID,
+      created_at: "2026-08-03T09:10:00Z",
+      display_name: "notes.pdf",
+      kind: "file" as const,
+      media_type: "application/pdf",
+      size_bytes: 8,
+    };
+    const sendRequests: Request[] = [];
+    let uploads = 0;
+    const fetchMock = vi.fn().mockImplementation(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/api/v1/auth/csrf")) {
+        return jsonResponse({ csrf_token: "upload-csrf" });
+      }
+      if (url.pathname.endsWith("/attachments")) {
+        uploads += 1;
+        return jsonResponse(attachment, 201);
+      }
+      if (request.method === "POST") {
+        sendRequests.push(request);
+        return jsonResponse(
+          {
+            ...message(1, "", { own: true }),
+            attachments: [attachment],
+          },
+          201,
+        );
+      }
+      return jsonResponse(page([]));
+    });
+
+    renderMessages(fetchMock, {
+      conversation: {
+        ...conversation,
+        kind: "room",
+        media_space_id: "dd060149-e85d-43c2-98d0-110f6e3ead29",
+        media_space_status: "open",
+        participants: [],
+        viewer_access: {
+          can_post_messages: true,
+          can_upload_attachments: true,
+        },
+      },
+    });
+
+    await screen.findByRole("textbox", { name: "New message" });
+    expect(
+      screen.getByRole("button", { name: "Attach a file or image" }),
+    ).toBeInTheDocument();
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+    expect(await screen.findByText("8 B")).toBeInTheDocument();
+    expect(uploads).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText("Message saved.")).toBeInTheDocument();
+    await expect(sendRequests[0]?.clone().json()).resolves.toEqual({
+      attachment_ids: [attachment.id],
+      client_message_id: expect.any(String),
+      content: "",
+    });
   });
 });

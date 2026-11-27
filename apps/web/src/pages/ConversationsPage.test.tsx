@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type {
   Conversation,
@@ -25,6 +27,9 @@ const studentID = "53f0dac5-6c10-46ff-bcb8-da03d07bc142";
 const directID = "c82ef7ee-0a1b-4e99-b9d5-3ae20858a82e";
 const classConversationID = "4cbcb21e-008f-4693-ab95-a5bc952802df";
 const roomConversationID = "6a8b229d-b4ee-4464-bb94-b0c0af8828a6";
+const activeClassID = "f3b8c2a1-5d6e-4f70-8a9b-0c1d2e3f4a5b";
+const activeClassConversationID = "9e7d6c5b-4a3f-4e2d-9c1b-0a9f8e7d6c5b";
+const preferencesKey = `tutorhub.conversation-prefs:${tenantID}:${teacherID}`;
 
 const session: CurrentUser = {
   user: {
@@ -100,6 +105,20 @@ const endedRoomConversation: Conversation = {
   updated_at: "2026-08-03T11:00:00Z",
 };
 
+const activeClassConversation: Conversation = {
+  id: activeClassConversationID,
+  kind: "class",
+  class_id: activeClassID,
+  class_status: "active",
+  title: "Đại số tuyến tính",
+  participants: [],
+  viewer_access: { can_post_messages: true },
+  unread_count: 0,
+  unread_count_capped: false,
+  created_at: "2026-08-03T08:00:00Z",
+  updated_at: "2026-08-03T12:00:00Z",
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -164,6 +183,8 @@ describe("ConversationsPage", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    localStorage.clear();
   });
 
   it("renders class history as read-only and focuses the selected heading", async () => {
@@ -345,6 +366,259 @@ describe("ConversationsPage", () => {
     await expect(createRequest?.clone().json()).resolves.toEqual({
       target_member_email: "student@example.com",
     });
+  });
+
+  it("filters by accent-insensitive search and Teams-style chips", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          listResponse([
+            directConversation,
+            activeClassConversation,
+            endedRoomConversation,
+          ]),
+        ),
+      );
+
+    renderPage("/app/messages", fetchMock);
+
+    expect(await screen.findByText("Đại số tuyến tính")).toBeInTheDocument();
+    const search = screen.getByRole("searchbox", {
+      name: "Tìm cuộc trò chuyện",
+    });
+    fireEvent.change(search, { target: { value: "  DAI SO " } });
+    expect(screen.getByText("Đại số tuyến tính")).toBeInTheDocument();
+    expect(screen.queryByText("TutorHub Student")).not.toBeInTheDocument();
+    expect(screen.queryByText("Phòng ôn tập Toán")).not.toBeInTheDocument();
+    expect(screen.getByText("1 cuộc trò chuyện phù hợp")).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "" } });
+
+    const filters = screen.getByRole("group", {
+      name: "Lọc cuộc trò chuyện",
+    });
+    const unread = within(filters).getByRole("button", { name: /^Chưa đọc/ });
+    expect(unread).toHaveTextContent("1");
+    fireEvent.click(unread);
+    expect(unread).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("TutorHub Student")).toBeInTheDocument();
+    expect(screen.queryByText("Đại số tuyến tính")).not.toBeInTheDocument();
+
+    fireEvent.click(within(filters).getByRole("button", { name: "Lớp học" }));
+    expect(screen.getByText("Đại số tuyến tính")).toBeInTheDocument();
+    expect(screen.queryByText("TutorHub Student")).not.toBeInTheDocument();
+
+    fireEvent.click(within(filters).getByRole("button", { name: "Trực tiếp" }));
+    expect(screen.getByText("TutorHub Student")).toBeInTheDocument();
+    expect(screen.queryByText("Đại số tuyến tính")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(filters).getByRole("button", { name: "Phòng trực tuyến" }),
+    );
+    expect(screen.getByText("Phòng ôn tập Toán")).toBeInTheDocument();
+    expect(screen.queryByText("TutorHub Student")).not.toBeInTheDocument();
+  });
+
+  it("pins conversations into a collapsible Favorites group only after a click", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          listResponse([directConversation, activeClassConversation]),
+        ),
+      );
+
+    renderPage("/app/messages", fetchMock);
+
+    expect(await screen.findByText("Đại số tuyến tính")).toBeInTheDocument();
+    expect(
+      setItem.mock.calls.some(([key]) =>
+        String(key).startsWith("tutorhub.conversation-prefs:"),
+      ),
+    ).toBe(false);
+    expect(localStorage.getItem(preferencesKey)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^Đã ghim/ }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ghim Đại số tuyến tính" }),
+    );
+    expect(JSON.parse(localStorage.getItem(preferencesKey) ?? "{}")).toEqual({
+      pinned: [activeClassConversationID],
+      collapsed: [],
+    });
+    const favorites = screen.getByRole("button", { name: /^Đã ghim/ });
+    expect(favorites).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /^Trò chuyện/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    const favoritesList = document.getElementById(
+      favorites.getAttribute("aria-controls") ?? "",
+    );
+    expect(favoritesList).not.toBeNull();
+    expect(
+      within(favoritesList as HTMLElement).getByText("Đại số tuyến tính"),
+    ).toBeInTheDocument();
+    expect(
+      within(favoritesList as HTMLElement).queryByText("TutorHub Student"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(favorites);
+    expect(favorites).toHaveAttribute("aria-expanded", "false");
+    expect(favoritesList).not.toBeVisible();
+    expect(JSON.parse(localStorage.getItem(preferencesKey) ?? "{}")).toEqual({
+      pinned: [activeClassConversationID],
+      collapsed: ["favorites"],
+    });
+
+    fireEvent.click(favorites);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Bỏ ghim Đại số tuyến tính" }),
+    );
+    expect(localStorage.getItem(preferencesKey)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^Đã ghim/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows search shortcuts on focus and opens a prefilled direct conversation", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(listResponse()));
+
+    renderPage("/app/messages", fetchMock);
+
+    const search = await screen.findByRole("searchbox", {
+      name: "Tìm cuộc trò chuyện",
+    });
+    expect(screen.queryByText("Lối tắt")).not.toBeInTheDocument();
+    act(() => search.focus());
+    expect(screen.getByText("Lối tắt")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Tìm hoặc tham gia lớp học/ }),
+    ).toHaveAttribute("href", "/app/classrooms");
+
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(screen.queryByText("Lối tắt")).not.toBeInTheDocument();
+    expect(search).toHaveFocus();
+
+    fireEvent.change(search, { target: { value: " Student@Example.com " } });
+    expect(
+      screen.getByText("Không có cuộc trò chuyện phù hợp"),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Nhắn tin trực tiếp bằng email/ }),
+    );
+    const email = await screen.findByRole("textbox", {
+      name: "Email thành viên",
+    });
+    expect(email).toHaveValue("student@example.com");
+
+    fireEvent.keyDown(email, { code: "Escape", key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Bắt đầu trò chuyện" }),
+    ).toHaveFocus();
+  });
+
+  it("welcomes a new class conversation with real class shortcuts", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (
+        path.endsWith(
+          `/api/v1/conversations/${activeClassConversationID}/messages`,
+        )
+      ) {
+        return Promise.resolve(emptyMessagePageResponse());
+      }
+      if (path.endsWith(`/api/v1/conversations/${activeClassConversationID}`)) {
+        return Promise.resolve(jsonResponse(activeClassConversation));
+      }
+      if (path.endsWith("/api/v1/conversations")) {
+        return Promise.resolve(listResponse([activeClassConversation]));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+
+    renderPage(`/app/messages/${activeClassConversationID}`, fetchMock);
+
+    const heading = await screen.findByRole("heading", {
+      name: "Đại số tuyến tính",
+    });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(
+      await screen.findByRole("heading", {
+        name: "Lớp học mới bắt đầu từ đây",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Thêm thành viên/ }),
+    ).toHaveAttribute("href", `/app/classrooms/${activeClassID}?tab=members`);
+    expect(
+      screen.getByRole("link", { name: /Quản lý buổi học & tài liệu/ }),
+    ).toHaveAttribute("href", `/app/classrooms/${activeClassID}`);
+    for (const link of screen.getAllByRole("link", { name: /^Vào lớp học/ })) {
+      expect(link).toHaveAttribute("href", `/app/classrooms/${activeClassID}`);
+    }
+    expect(
+      screen.getByRole("link", { name: /^Kho tài liệu lớp/ }),
+    ).toHaveAttribute("href", `/app/classrooms/${activeClassID}?tab=materials`);
+    expect(
+      screen.getByRole("link", { name: "Mở kho tài liệu lớp" }),
+    ).toHaveAttribute("href", `/app/classrooms/${activeClassID}?tab=materials`);
+    expect(
+      screen.getByRole("textbox", { name: "Tin nhắn mới" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Đính kèm tệp hoặc ảnh" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Không có thành viên được hiển thị."),
+    ).toBeInTheDocument();
+  });
+
+  it("lists direct members by display name only and pins from the header", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith(`/api/v1/conversations/${directID}/messages`)) {
+        return Promise.resolve(emptyMessagePageResponse());
+      }
+      if (path.endsWith(`/api/v1/conversations/${directID}`)) {
+        return Promise.resolve(jsonResponse(directConversation));
+      }
+      if (path.endsWith("/api/v1/conversations")) {
+        return Promise.resolve(listResponse([directConversation]));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+
+    renderPage(`/app/messages/${directID}`, fetchMock);
+
+    const participants = await screen.findByRole("list", {
+      name: "Thành viên",
+    });
+    const members = within(participants).getAllByRole("listitem");
+    expect(members).toHaveLength(2);
+    expect(members[0]).toHaveTextContent("TutorHub Teacher");
+    expect(members[1]).toHaveTextContent("TutorHub Student");
+    expect(participants.textContent).not.toContain("@");
+    expect(document.body.textContent).not.toContain("teacher@example.com");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ghim cuộc trò chuyện" }),
+    );
+    expect(localStorage.getItem(preferencesKey)).toContain(directID);
+    expect(
+      screen.getByRole("button", { name: "Bỏ ghim cuộc trò chuyện" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Đã ghim/ }),
+    ).toBeInTheDocument();
   });
 
   it("conceals a foreign or missing conversation without rendering cached detail", async () => {
