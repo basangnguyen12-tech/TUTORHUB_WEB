@@ -237,28 +237,14 @@ textarea:focus-visible {
   opacity: 0.6;
 }
 
-.app-switcher__mark {
-  display: inline-grid;
+/* Real TutorHub logo (64px copy of the sign-in/favicon asset), decorative
+   here: the "TutorHub" line beside it carries the brand name. */
+.app-switcher__logo {
+  display: block;
   width: 28px;
   height: 28px;
   flex: none;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  background: var(--color-accent);
-  color: var(--color-accent-contrast);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
-.app-switcher--empty .app-switcher__mark {
-  background: var(--color-surface-subtle);
-  color: var(--color-text-muted);
-}
-
-.app-switcher__mark svg {
-  width: 16px;
-  height: 16px;
+  object-fit: contain;
 }
 
 .app-switcher__text {
@@ -605,7 +591,6 @@ textarea:focus-visible {
     outline-offset: -3px;
   }
 
-  .app-switcher__mark,
   .app-sidebar__avatar {
     border: 1px solid CanvasText;
   }

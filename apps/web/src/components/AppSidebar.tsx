@@ -31,6 +31,25 @@ import type { NavigationItem } from "../app/routes";
  */
 export const SIDEBAR_COLLAPSED_KEY = "tutorhub.sidebar-collapsed";
 
+/**
+ * TutorHub logo downscaled from `images/auth/logomoi.png` (sign-in page and
+ * favicon, 512px / 455KB) to 64px / ~9KB: sharp at 28px on 2x screens.
+ */
+const BRAND_LOGO_SRC = "/images/brand/tutorhub-logo-64.png";
+
+function BrandLogo() {
+  return (
+    <img
+      alt=""
+      className="app-switcher__logo"
+      decoding="async"
+      height={28}
+      src={BRAND_LOGO_SRC}
+      width={28}
+    />
+  );
+}
+
 function readSidebarCollapsed() {
   try {
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
@@ -153,9 +172,7 @@ export function WorkspaceSwitcher({
           title={t("shell.chooseWorkspace")}
           to="/app/home"
         >
-          <span aria-hidden="true" className="app-switcher__mark">
-            <Building2 />
-          </span>
+          <BrandLogo />
           <span className="app-switcher__text">
             <strong>{t("shell.chooseWorkspace")}</strong>
           </span>
@@ -171,9 +188,7 @@ export function WorkspaceSwitcher({
       className={`workspace-select app-switcher${canSwitch ? " app-switcher--interactive" : ""}${isPending ? " app-switcher--busy" : ""}`}
       title={activeTenant.name}
     >
-      <span aria-hidden="true" className="app-switcher__mark">
-        TH
-      </span>
+      <BrandLogo />
       <span
         aria-hidden={canSwitch ? true : undefined}
         className="app-switcher__text"

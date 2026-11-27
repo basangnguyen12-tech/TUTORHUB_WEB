@@ -268,6 +268,9 @@ describe("WorkspaceSwitcher", () => {
 
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByText("Trung tâm A")).toBeInTheDocument();
+    const logo = document.querySelector("img.app-switcher__logo");
+    expect(logo).toHaveAttribute("src", "/images/brand/tutorhub-logo-64.png");
+    expect(logo).toHaveAttribute("alt", "");
   });
 
   it("switches through the native select and locks it while pending", () => {
