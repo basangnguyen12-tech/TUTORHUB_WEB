@@ -1,0 +1,670 @@
+/*
+ * MSG-WELCOME-3D-01: Messages welcome carousel. Heights come from the shared
+ * variables on .conversation-detail-panel--welcome (ConversationsPage.css) so
+ * the Suspense fallback reserves exactly the same box. Contrast pairs are in
+ * .tmp/msg-welcome-3d-01/RESEARCH.md. Motion uses transform/opacity only.
+ */
+
+.mw {
+  --mw-stroke: #2b3240;
+  --mw-soft: #8a96a6;
+  --mw-f0: #ffffff;
+  --mw-f1: #e6ecf1;
+  --mw-f2: #c9d3dc;
+  --mw-lime: #c6f432;
+  --mw-brand: #a9cbea;
+  --mw-accent: #185d98;
+  --mw-shadow: rgb(43 50 64 / 0.2);
+  --mw-glow-a: rgb(198 244 50 / 0.2);
+  --mw-glow-b: rgb(24 93 152 / 0.1);
+  --mw-cta-hover: #d6e7f5;
+
+  display: grid;
+  width: min(100%, 40rem);
+  min-height: var(--mw-total-h, auto);
+  grid-template-rows: auto auto;
+  align-content: start;
+  row-gap: 12px;
+  color: var(--msg-ink, #1c222b);
+}
+
+[data-theme="dark"] .mw,
+.mw[data-theme="dark"] {
+  --mw-stroke: #c9d3dc;
+  --mw-soft: #8794a5;
+  --mw-f0: #2a333f;
+  --mw-f1: #222a35;
+  --mw-f2: #3a4656;
+  --mw-lime: #b7e22e;
+  --mw-brand: #2c5577;
+  --mw-accent: #79b8e8;
+  --mw-shadow: rgb(0 0 0 / 0.45);
+  --mw-glow-a: rgb(183 226 46 / 0.1);
+  --mw-glow-b: rgb(121 184 232 / 0.14);
+  --mw-cta-hover: #214a69;
+}
+
+.mw :focus-visible {
+  outline: 2px solid var(--msg-focus, #185d98);
+  outline-offset: 2px;
+}
+
+/* ---------- Frame: arrows | slides | arrows ---------- */
+.mw-frame {
+  position: relative;
+  display: grid;
+  align-items: start;
+  column-gap: 8px;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
+}
+
+.mw-viewport {
+  display: grid;
+  min-width: 0;
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.mw-viewport > *,
+.mw-slides > * {
+  grid-area: 1 / 1;
+}
+
+.mw-slides {
+  display: grid;
+  min-width: 0;
+}
+
+.mw-arrow,
+.mw-toggle,
+.mw-dot {
+  border: 0;
+  background: transparent;
+  color: var(--msg-muted, #5f6875);
+  cursor: pointer;
+  font: inherit;
+}
+
+.mw-arrow {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-self: start;
+  margin-top: calc(var(--mw-stage-h, 20rem) / 2 - 1.25rem);
+  border-radius: 999px;
+  grid-row: 1;
+  place-items: center;
+  transition: background-color 140ms ease;
+}
+
+.mw-arrow--previous {
+  grid-column: 1;
+}
+
+.mw-arrow--next {
+  grid-column: 3;
+}
+
+.mw-arrow svg {
+  width: 28px;
+  height: 28px;
+  stroke-width: 1.5;
+}
+
+.mw-arrow:hover,
+.mw-toggle:hover {
+  background: var(--msg-hover, #f3f4f6);
+  color: var(--msg-ink, #1c222b);
+}
+
+.mw-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: calc(2.5rem + 12px);
+  display: grid;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--msg-line, #eceff3);
+  border-radius: 999px;
+  background: var(--msg-surface, #ffffff);
+  place-items: center;
+  transition: background-color 140ms ease;
+}
+
+.mw-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- Slides ---------- */
+.mw-slide {
+  display: grid;
+  min-width: 0;
+  border-radius: 16px;
+  grid-template-rows: var(--mw-stage-h, 20rem) auto;
+  row-gap: 16px;
+}
+
+.mw-slide[data-state="hidden"] {
+  visibility: hidden;
+}
+
+.mw-slide[data-state="leaving"] {
+  pointer-events: none;
+}
+
+.mw-slide:focus-visible {
+  outline-offset: 4px;
+}
+
+.mw-stage {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  perspective: 1100px;
+  perspective-origin: 50% 42%;
+  place-items: center;
+}
+
+.mw-glow {
+  width: 78%;
+  height: var(--mw-stage-h, 20rem);
+  justify-self: center;
+  background:
+    radial-gradient(closest-side, var(--mw-glow-a), transparent 72%),
+    radial-gradient(closest-side at 68% 62%, var(--mw-glow-b), transparent 72%);
+  animation: mw-drift 18s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.mw-scene {
+  position: relative;
+  width: min(100%, calc(var(--mw-stage-h, 20rem) * 4 / 3));
+  aspect-ratio: 4 / 3;
+  transform: rotateX(calc(var(--mw-ty, 0) * -8deg))
+    rotateY(calc(var(--mw-tx, 0) * 8deg));
+  transform-style: preserve-3d;
+}
+
+.mw-part {
+  --shift: calc(var(--z) * 0.14);
+
+  position: absolute;
+  top: var(--y);
+  left: var(--x);
+  width: var(--w);
+  transform: translate3d(
+    calc(var(--mw-tx, 0) * var(--shift)),
+    calc(var(--mw-ty, 0) * var(--shift)),
+    var(--z)
+  );
+}
+
+.mw-part__enter {
+  position: relative;
+}
+
+.mw-part__float {
+  animation: mw-float var(--dur) ease-in-out var(--delay) infinite;
+}
+
+.mw-part__shadow {
+  position: absolute;
+  top: 100%;
+  left: 12%;
+  width: 76%;
+  height: 0;
+  padding-bottom: 16%;
+  margin-top: 6%;
+  background: radial-gradient(closest-side, var(--mw-shadow), transparent 100%);
+  animation: mw-shadow var(--dur) ease-in-out var(--delay) infinite;
+}
+
+.mw-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.mw-svg :is(polygon, polyline, path, rect, circle, ellipse) {
+  stroke: var(--mw-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.mw-svg .mw-f0 {
+  fill: var(--mw-f0);
+}
+
+.mw-svg .mw-f1 {
+  fill: var(--mw-f1);
+}
+
+.mw-svg .mw-f2 {
+  fill: var(--mw-f2);
+}
+
+.mw-svg .mw-lime {
+  fill: var(--mw-lime);
+}
+
+.mw-svg .mw-brand {
+  fill: var(--mw-brand);
+}
+
+.mw-svg .mw-accent {
+  fill: var(--mw-accent);
+}
+
+.mw-svg .mw-band {
+  fill: var(--mw-f2);
+  stroke: none;
+}
+
+.mw-svg .mw-flat {
+  stroke: none;
+}
+
+.mw-svg :is(.mw-hole, .mw-soft, .mw-glyph, .mw-ink-line, .mw-accent-line) {
+  fill: none;
+}
+
+.mw-svg .mw-soft {
+  stroke: var(--mw-soft);
+}
+
+.mw-svg :is(.mw-glyph, .mw-ink-line) {
+  stroke-width: 2;
+}
+
+.mw-svg .mw-ink-line,
+.mw-svg .mw-accent-line {
+  stroke: var(--mw-accent);
+  stroke-width: 2.25;
+}
+
+.mw-svg .mw-ghost {
+  fill: none;
+  stroke: none;
+}
+
+.mw-spin,
+.mw-spin-slow,
+.mw-swing {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mw-spin {
+  animation: mw-spin 12s linear infinite;
+}
+
+.mw-spin--reverse {
+  animation-direction: reverse;
+  animation-duration: 9s;
+}
+
+.mw-spin-slow {
+  animation: mw-spin 30s linear infinite;
+}
+
+.mw-swing {
+  transform-origin: 50% 0;
+  animation: mw-swing 3.8s ease-in-out infinite;
+}
+
+/* Rotation off, hover, hidden tab or off-screen: freeze ambient motion. */
+.mw[data-motion="paused"]
+  :is(
+    .mw-glow,
+    .mw-part__float,
+    .mw-part__shadow,
+    .mw-spin,
+    .mw-spin-slow,
+    .mw-swing
+  ) {
+  animation-play-state: paused;
+}
+
+/* ---------- Assemble / disperse between slides ---------- */
+.mw-slide[data-state="entering"] .mw-part__enter {
+  animation: mw-assemble 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i) * 75ms);
+  will-change: transform, opacity;
+}
+
+.mw-slide[data-state="leaving"] .mw-part__enter {
+  animation: mw-disperse 420ms cubic-bezier(0.4, 0, 0.8, 0.4) both;
+  animation-delay: calc(var(--i) * 40ms);
+  will-change: transform, opacity;
+}
+
+.mw-slide[data-state="entering"] .mw-copy > * {
+  animation: mw-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.mw-slide[data-state="entering"] .mw-copy > :nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.mw-slide[data-state="entering"] .mw-copy > :nth-child(n + 3) {
+  animation-delay: 120ms;
+}
+
+.mw-slide[data-state="leaving"] .mw-copy {
+  animation: mw-fade-out 140ms ease both;
+}
+
+/* ---------- Copy ---------- */
+.mw-copy {
+  display: grid;
+  width: min(100%, 30rem);
+  min-height: var(--mw-copy-h, 9.5rem);
+  align-content: start;
+  justify-items: center;
+  justify-self: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.mw-title {
+  margin: 0;
+  color: var(--color-accent, #185d98);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.mw-body {
+  margin: 0;
+  color: var(--msg-muted, #5f6875);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.mw-body strong {
+  color: var(--msg-ink, #1c222b);
+  font-weight: 650;
+}
+
+.mw-cta {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 6px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--msg-active, #e8f1f8);
+  color: var(--msg-active-ink, #124d80);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: background-color 140ms ease;
+}
+
+.mw-cta:hover:not(:disabled) {
+  background: var(--mw-cta-hover);
+}
+
+.mw-cta:disabled {
+  background: var(--msg-fill, #f5f6f8);
+  color: var(--msg-muted, #5f6875);
+  cursor: not-allowed;
+}
+
+.mw-note {
+  margin: 0;
+  color: var(--color-warning, #8a5a06);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+/* ---------- Slide picker ---------- */
+.mw-dots {
+  display: flex;
+  min-height: var(--mw-controls-h, 2.5rem);
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.mw-dot {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  place-items: center;
+}
+
+.mw-dot span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--msg-control, #7c8592);
+}
+
+.mw-dot[aria-current="true"] {
+  width: 32px;
+}
+
+.mw-dot[aria-current="true"] span {
+  width: 22px;
+  background: var(--msg-focus, #185d98);
+}
+
+/* ---------- Keyframes ---------- */
+@keyframes mw-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, var(--amp), 0);
+  }
+}
+
+@keyframes mw-shadow {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(0.78);
+  }
+}
+
+@keyframes mw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mw-swing {
+  0%,
+  100% {
+    transform: rotate(-9deg);
+  }
+
+  50% {
+    transform: rotate(9deg);
+  }
+}
+
+@keyframes mw-drift {
+  0%,
+  100% {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(3%, 3%, 0) scale(1.06);
+  }
+}
+
+@keyframes mw-assemble {
+  from {
+    opacity: 0;
+    transform: translate3d(
+        calc(var(--fx) * var(--dir, 1)),
+        var(--fy),
+        var(--fz)
+      )
+      rotate(var(--fr)) scale(0.86);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mw-disperse {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(
+        calc(var(--fx) * var(--dir, 1) * -0.7),
+        calc(var(--fy) * -0.5),
+        var(--fz)
+      )
+      rotate(calc(var(--fr) * -1)) scale(0.9);
+  }
+}
+
+@keyframes mw-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mw-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mw-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* ---------- Reduced motion: static art, 150ms cross-fade only ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .mw *,
+  .mw *::before,
+  .mw *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .mw .mw-scene {
+    transform: none;
+  }
+
+  .mw .mw-part {
+    transform: translate3d(0, 0, var(--z));
+  }
+
+  .mw .mw-slide[data-state="entering"] {
+    animation: mw-fade-in 150ms ease both !important;
+  }
+
+  .mw .mw-slide[data-state="leaving"] {
+    animation: mw-fade-out 150ms ease both !important;
+  }
+}
+
+/* ---------- Forced colors: system colors, no gradients or shadows ---------- */
+@media (forced-colors: active) {
+  /* Scoped under .mw so these outrank the palette classes above. */
+  .mw .mw-svg :is(polygon, polyline, path, rect, circle, ellipse) {
+    fill: Canvas;
+    stroke: CanvasText;
+  }
+
+  .mw
+    .mw-svg
+    :is(.mw-hole, .mw-soft, .mw-glyph, .mw-ink-line, .mw-accent-line) {
+    fill: none;
+  }
+
+  .mw .mw-svg .mw-flat {
+    fill: CanvasText;
+  }
+
+  .mw .mw-svg :is(.mw-band, .mw-ghost) {
+    stroke: none;
+  }
+
+  .mw .mw-svg .mw-ghost {
+    fill: none;
+  }
+
+  .mw-glow,
+  .mw-part__shadow {
+    display: none;
+  }
+
+  .mw-title,
+  .mw-body,
+  .mw-body strong,
+  .mw-note {
+    color: CanvasText;
+  }
+
+  .mw-arrow,
+  .mw-toggle,
+  .mw-cta {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .mw-cta:disabled {
+    border-color: GrayText;
+    color: GrayText;
+  }
+
+  .mw-dot span {
+    background: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .mw-dot[aria-current="true"] span {
+    background: Highlight;
+  }
+
+  .mw :focus-visible {
+    outline-color: Highlight;
+  }
+}

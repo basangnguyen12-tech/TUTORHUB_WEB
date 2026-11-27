@@ -4,6 +4,7 @@ import {
   type Conversation,
   type Message,
   type MessagePage,
+  type TenantCapabilities,
 } from "@tutorhub/api-client";
 import {
   Button,
@@ -36,10 +37,13 @@ import {
   X,
 } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type FocusEvent,
   type FormEvent,
   type KeyboardEvent,
@@ -69,7 +73,10 @@ import {
 } from "../app/conversations";
 import { useI18n, type TranslationKey } from "../app/i18n";
 import { useSession } from "../app/session";
-import { useTenantCapabilities } from "../app/tenantCapabilities";
+import {
+  useTenantCapabilities,
+  type TenantOperationAvailability,
+} from "../app/tenantCapabilities";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
 import {
   ConversationAvatar,
@@ -79,6 +86,34 @@ import {
 import { parseQuotedMessage } from "../components/ConversationQuote";
 import { TenantOperationNotice } from "../components/TenantOperationNotice";
 import "./ConversationsPage.css";
+
+// MSG-WELCOME-3D-01: the welcome carousel is its own chunk and is only
+// requested while the right pane is visible (desktop, >= 860px).
+const MessagesWelcomeCarousel = lazy(
+  () => import("../features/messages-welcome/MessagesWelcomeCarousel"),
+);
+
+const welcomePaneQuery = "(min-width: 860px)";
+
+function subscribeWelcomePane(onChange: () => void) {
+  if (typeof window.matchMedia !== "function") {
+    return () => undefined;
+  }
+  const query = window.matchMedia(welcomePaneQuery);
+  query.addEventListener?.("change", onChange);
+  return () => query.removeEventListener?.("change", onChange);
+}
+
+function welcomePaneSnapshot() {
+  return (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(welcomePaneQuery).matches
+  );
+}
+
+function welcomePaneServerSnapshot() {
+  return false;
+}
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -726,9 +761,14 @@ export function ConversationsPage() {
         actorID={actorID}
         conversation={conversation}
         coverFor={classroomPreferences.coverFor}
+        createAvailability={createAvailability}
         detailHeading={detailHeading}
+        features={
+          capabilities.isError ? undefined : capabilities.data?.features
+        }
         formatter={formatter}
         isPinned={conversationPreferences.isPinned}
+        onStartConversation={openCreate}
         onTogglePin={conversationPreferences.togglePin}
         selected={Boolean(conversationId)}
         tenantID={tenantID ?? ""}
@@ -815,13 +855,82 @@ function DetailBackLink() {
   );
 }
 
+/**
+ * MSG-WELCOME-3D-01: right pane before a conversation is chosen. Desktop
+ * widths get the welcome carousel (lazy chunk); narrower screens keep the
+ * original prompt, which CSS hides while the list fills the screen.
+ */
+function ConversationWelcomePane({
+  createAvailability,
+  features,
+  onStartConversation,
+}: {
+  createAvailability: TenantOperationAvailability;
+  features: TenantCapabilities["features"] | undefined;
+  onStartConversation: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const { t } = useI18n();
+  const wide = useSyncExternalStore(
+    subscribeWelcomePane,
+    welcomePaneSnapshot,
+    welcomePaneServerSnapshot,
+  );
+
+  if (!wide) {
+    return (
+      <section className="conversation-detail-panel conversation-detail-panel--prompt">
+        <EmptyState
+          description={t("conversations.detailPromptDescription")}
+          title={t("conversations.detailPromptTitle")}
+        />
+      </section>
+    );
+  }
+
+  const [titleStart, titleEnd = ""] = t("conversations.welcomeTitle").split(
+    "{brand}",
+  );
+  return (
+    <section
+      aria-labelledby="conversation-welcome-title"
+      className="conversation-detail-panel conversation-detail-panel--welcome"
+    >
+      <div className="conversation-tour__intro">
+        <h2 id="conversation-welcome-title">
+          {titleStart}
+          <strong>TutorHub</strong>
+          {titleEnd}
+        </h2>
+        <p>{t("conversations.welcomeDescription")}</p>
+      </div>
+      <Suspense
+        fallback={
+          <div aria-hidden="true" className="conversation-tour__fallback" />
+        }
+      >
+        <MessagesWelcomeCarousel
+          createAvailability={createAvailability}
+          features={features}
+          onStartConversation={onStartConversation}
+        />
+      </Suspense>
+      <p className="conversation-tour__hint">
+        {t("conversations.welcomeHint")}
+      </p>
+    </section>
+  );
+}
+
 function ConversationDetail({
   actorID,
   conversation,
   coverFor,
+  createAvailability,
   detailHeading,
+  features,
   formatter,
   isPinned,
+  onStartConversation,
   onTogglePin,
   selected,
   tenantID,
@@ -829,9 +938,12 @@ function ConversationDetail({
   actorID: string;
   conversation: ReturnType<typeof useConversation>;
   coverFor: (classID: string) => ClassCoverTheme;
+  createAvailability: TenantOperationAvailability;
   detailHeading: RefObject<HTMLHeadingElement | null>;
+  features: TenantCapabilities["features"] | undefined;
   formatter: Intl.DateTimeFormat;
   isPinned: (conversationID: string) => boolean;
+  onStartConversation: (event: MouseEvent<HTMLButtonElement>) => void;
   onTogglePin: (conversationID: string) => void;
   selected: boolean;
   tenantID: string;
@@ -841,12 +953,11 @@ function ConversationDetail({
 
   if (!selected) {
     return (
-      <section className="conversation-detail-panel conversation-detail-panel--prompt">
-        <EmptyState
-          description={t("conversations.detailPromptDescription")}
-          title={t("conversations.detailPromptTitle")}
-        />
-      </section>
+      <ConversationWelcomePane
+        createAvailability={createAvailability}
+        features={features}
+        onStartConversation={onStartConversation}
+      />
     );
   }
 

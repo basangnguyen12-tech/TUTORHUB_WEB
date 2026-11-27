@@ -842,6 +842,65 @@
   justify-content: flex-start;
 }
 
+/* MSG-WELCOME-3D-01: welcome carousel pane (desktop, no conversation open).
+   The height variables are shared with the lazy carousel so the Suspense
+   fallback reserves the same box and nothing shifts when the chunk lands. */
+.conversation-detail-panel--welcome {
+  --mw-stage-h: clamp(13.5rem, 38vh, 23.75rem);
+  --mw-copy-h: 9.5rem;
+  --mw-controls-h: 2.5rem;
+  --mw-total-h: calc(
+    var(--mw-stage-h) + var(--mw-copy-h) + var(--mw-controls-h) + 1.75rem
+  );
+
+  align-items: center;
+  gap: 18px;
+  padding: 24px 24px 18px;
+  overflow-y: auto;
+}
+
+.conversation-tour__intro {
+  display: grid;
+  max-width: 42rem;
+  margin-top: auto;
+  gap: 6px;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.conversation-tour__intro h2 {
+  margin: 0;
+  color: var(--msg-ink);
+  font-size: 1.5rem;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.conversation-tour__intro h2 strong {
+  font-weight: 700;
+}
+
+.conversation-tour__intro p {
+  margin: 0;
+  color: var(--msg-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.conversation-tour__fallback {
+  width: min(100%, 40rem);
+  height: var(--mw-total-h);
+  flex: 0 0 auto;
+}
+
+.conversation-tour__hint {
+  margin: 0 0 auto;
+  color: var(--msg-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .conversation-detail-panel__back {
   display: none;
   align-items: center;

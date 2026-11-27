@@ -658,4 +658,157 @@ describe("ConversationsPage", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("TutorHub Teacher")).not.toBeInTheDocument();
   });
+
+  describe("MSG-WELCOME-3D-01 welcome carousel", () => {
+    const carouselName = "Giới thiệu tính năng TutorHub";
+
+    function stubViewport(wide: boolean) {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        addEventListener: vi.fn(),
+        addListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        matches: query === "(min-width: 860px)" ? wide : false,
+        media: query,
+        onchange: null,
+        removeEventListener: vi.fn(),
+        removeListener: vi.fn(),
+      }));
+    }
+
+    function slideLabels(carousel: HTMLElement) {
+      return within(carousel)
+        .getAllByRole("group", { hidden: true })
+        .filter(
+          (group) => group.getAttribute("aria-roledescription") === "slide",
+        )
+        .map((group) => group.getAttribute("aria-label"));
+    }
+
+    it("welcomes desktop users with real, capability-filtered features while no conversation is open", async () => {
+      stubViewport(true);
+      renderPage("/app/messages", vi.fn().mockResolvedValue(listResponse()));
+
+      const carousel = await screen.findByRole("region", {
+        name: carouselName,
+      });
+      expect(
+        screen.getByRole("heading", {
+          level: 2,
+          name: "Chào mừng đến với TutorHub!",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Chọn một cuộc trò chuyện ở danh sách bên trái để bắt đầu nhắn tin.",
+        ),
+      ).toBeInTheDocument();
+      // The fixture enables the Code tool but not whiteboards or files.
+      expect(slideLabels(carousel)).toEqual([
+        "1 / 4: Nhắn tin lớp học & trò chuyện riêng",
+        "2 / 4: Phòng học trực tuyến",
+        "3 / 4: Lịch học & nhắc lịch",
+        "4 / 4: Code cùng nhau trong lớp",
+      ]);
+      expect(
+        within(carousel).queryByText("Bảng trắng cộng tác"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(carousel).queryByText("Tài liệu & trình chiếu PDF"),
+      ).not.toBeInTheDocument();
+      expect(localStorage.length).toBe(0);
+    });
+
+    it("keeps the compact prompt and skips the carousel below 860px", async () => {
+      stubViewport(false);
+      renderPage("/app/messages", vi.fn().mockResolvedValue(listResponse()));
+
+      expect(await screen.findByText("TutorHub Student")).toBeInTheDocument();
+      expect(screen.getByText("Chọn một cuộc trò chuyện")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: carouselName }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("opens the existing create dialog from the carousel and returns focus to it", async () => {
+      stubViewport(true);
+      renderPage("/app/messages", vi.fn().mockResolvedValue(listResponse()));
+
+      const carousel = await screen.findByRole("region", {
+        name: carouselName,
+      });
+      const cta = within(carousel).getByRole("button", {
+        name: "Bắt đầu trò chuyện",
+      });
+      fireEvent.click(cta);
+
+      const email = await screen.findByRole("textbox", {
+        name: "Email thành viên",
+      });
+      await waitFor(() => expect(email).toHaveFocus());
+      fireEvent.keyDown(email, { code: "Escape", key: "Escape" });
+
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      expect(cta).toHaveFocus();
+    });
+
+    it("blocks the carousel start action with the same reason as the header", async () => {
+      stubViewport(true);
+      const base = availableTenantCapabilities(tenantID);
+      renderPage("/app/messages", vi.fn().mockResolvedValue(listResponse()), {
+        ...base,
+        operations: {
+          ...base.operations,
+          create_conversation: {
+            available: false,
+            reason: "feature_disabled",
+          },
+        },
+      });
+
+      const carousel = await screen.findByRole("region", {
+        name: carouselName,
+      });
+      const cta = within(carousel).getByRole("button", {
+        name: "Bắt đầu trò chuyện",
+      });
+      expect(cta).toBeDisabled();
+      expect(cta).toHaveAccessibleDescription(
+        "Tính năng này đang bị tắt cho workspace hiện tại.",
+      );
+    });
+
+    it("does not show the carousel once a conversation is selected", async () => {
+      stubViewport(true);
+      const fetchMock = vi.fn().mockImplementation((request: Request) => {
+        const path = new URL(request.url).pathname;
+        if (path.endsWith(`/api/v1/conversations/${directID}/messages`)) {
+          return Promise.resolve(emptyMessagePageResponse());
+        }
+        if (path.endsWith(`/api/v1/conversations/${directID}`)) {
+          return Promise.resolve(jsonResponse(directConversation));
+        }
+        if (path.endsWith("/api/v1/conversations")) {
+          return Promise.resolve(listResponse([directConversation]));
+        }
+        return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+      });
+
+      renderPage(`/app/messages/${directID}`, fetchMock);
+
+      expect(
+        await screen.findByRole("heading", {
+          level: 2,
+          name: "TutorHub Student",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("region", { name: carouselName }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Chào mừng đến với", { exact: false }),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

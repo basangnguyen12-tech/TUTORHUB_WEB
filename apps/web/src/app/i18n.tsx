@@ -596,6 +596,42 @@ const messages = {
     "conversations.detailPromptTitle": "Chọn một cuộc trò chuyện",
     "conversations.detailPromptDescription":
       "Chọn từ danh sách để xem thông tin và thành viên.",
+    "conversations.welcomeTitle": "Chào mừng đến với {brand}!",
+    "conversations.welcomeDescription":
+      "Khám phá những công cụ giúp bạn trò chuyện, giảng dạy và học tập cùng lớp học trực tuyến.",
+    "conversations.welcomeHint":
+      "Chọn một cuộc trò chuyện ở danh sách bên trái để bắt đầu nhắn tin.",
+    "messagesWelcome.label": "Giới thiệu tính năng TutorHub",
+    "messagesWelcome.carousel": "trình chiếu",
+    "messagesWelcome.slide": "slide",
+    "messagesWelcome.slideLabel": "{index} / {total}: {title}",
+    "messagesWelcome.previous": "Slide trước",
+    "messagesWelcome.next": "Slide tiếp theo",
+    "messagesWelcome.picker": "Chọn slide",
+    "messagesWelcome.goTo": "Đến slide {index}: {title}",
+    "messagesWelcome.pause": "Tạm dừng trình chiếu",
+    "messagesWelcome.play": "Phát trình chiếu",
+    "messagesWelcome.chatTitle": "Nhắn tin lớp học & trò chuyện riêng",
+    "messagesWelcome.chatBody":
+      "Trao đổi cùng cả lớp trong **kênh lớp học** hoặc nhắn riêng cho **thầy cô, bạn học** chỉ bằng email.",
+    "messagesWelcome.roomTitle": "Phòng học trực tuyến",
+    "messagesWelcome.roomBody":
+      "Học trực tiếp với **video, âm thanh** và **chia sẻ màn hình** ngay trên trình duyệt.",
+    "messagesWelcome.roomAction": "Vào lớp học",
+    "messagesWelcome.whiteboardTitle": "Bảng trắng cộng tác",
+    "messagesWelcome.whiteboardBody":
+      "Cùng **vẽ, ghi chú và giải bài** theo thời gian thực trên bảng trắng chung của phòng học.",
+    "messagesWelcome.filesTitle": "Tài liệu & trình chiếu PDF",
+    "messagesWelcome.filesBody":
+      "Tải tài liệu lên phòng học, **trình chiếu PDF** cho cả lớp và **chú thích** ngay trên từng trang.",
+    "messagesWelcome.calendarTitle": "Lịch học & nhắc lịch",
+    "messagesWelcome.calendarBody":
+      "Xem **lịch học** của mọi lớp ở một nơi và nhận **lời nhắc** trước giờ vào học.",
+    "messagesWelcome.calendarAction": "Xem lịch học",
+    "messagesWelcome.codeTitle": "Code cùng nhau trong lớp",
+    "messagesWelcome.codeBody":
+      "Viết và **chạy mã** Python, JavaScript, SQL… ngay trong phòng học, không cần cài đặt thêm.",
+    "messagesWelcome.classesAction": "Mở lớp học",
     "conversations.detailLoading": "Đang tải cuộc trò chuyện",
     "conversations.detailErrorTitle": "Chưa thể mở cuộc trò chuyện",
     "conversations.detailErrorDescription":
@@ -4842,6 +4878,42 @@ const messages = {
     "conversations.detailPromptTitle": "Choose a conversation",
     "conversations.detailPromptDescription":
       "Choose one from the list to view its details and members.",
+    "conversations.welcomeTitle": "Welcome to {brand}!",
+    "conversations.welcomeDescription":
+      "Explore the tools that help you chat, teach and learn together in your online classes.",
+    "conversations.welcomeHint":
+      "Choose a conversation from the list on the left to start messaging.",
+    "messagesWelcome.label": "TutorHub feature tour",
+    "messagesWelcome.carousel": "carousel",
+    "messagesWelcome.slide": "slide",
+    "messagesWelcome.slideLabel": "{index} / {total}: {title}",
+    "messagesWelcome.previous": "Previous slide",
+    "messagesWelcome.next": "Next slide",
+    "messagesWelcome.picker": "Choose a slide",
+    "messagesWelcome.goTo": "Go to slide {index}: {title}",
+    "messagesWelcome.pause": "Pause slideshow",
+    "messagesWelcome.play": "Play slideshow",
+    "messagesWelcome.chatTitle": "Class chat & direct messages",
+    "messagesWelcome.chatBody":
+      "Talk with the whole class in its **class channel**, or message **teachers and classmates** directly by email.",
+    "messagesWelcome.roomTitle": "Online classrooms",
+    "messagesWelcome.roomBody":
+      "Learn live with **video, audio** and **screen sharing**, right in your browser.",
+    "messagesWelcome.roomAction": "Go to classes",
+    "messagesWelcome.whiteboardTitle": "Collaborative whiteboard",
+    "messagesWelcome.whiteboardBody":
+      "**Draw, annotate and solve problems** together in real time on the room's shared whiteboard.",
+    "messagesWelcome.filesTitle": "Documents & PDF presenting",
+    "messagesWelcome.filesBody":
+      "Upload documents to a room, **present PDFs** to the class and **annotate** every page.",
+    "messagesWelcome.calendarTitle": "Schedule & reminders",
+    "messagesWelcome.calendarBody":
+      "See **every class session** in one calendar and get a **reminder** before class starts.",
+    "messagesWelcome.calendarAction": "Open calendar",
+    "messagesWelcome.codeTitle": "Code together in class",
+    "messagesWelcome.codeBody":
+      "Write and **run** Python, JavaScript, SQL… code right inside the room, with nothing to install.",
+    "messagesWelcome.classesAction": "Open classes",
     "conversations.detailLoading": "Loading conversation",
     "conversations.detailErrorTitle": "Conversation unavailable",
     "conversations.detailErrorDescription":
