@@ -986,6 +986,7 @@ describe("web shell", () => {
 
     await screen.findByText("Workspace chưa có lớp học");
     fireEvent.click(screen.getByRole("button", { name: "Tạo lớp học" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tùy chọn nâng cao" }));
     fireEvent.change(screen.getByRole("textbox", { name: /^Mã lớp/ }), {
       target: { value: "net201" },
     });

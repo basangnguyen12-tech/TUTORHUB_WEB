@@ -16,6 +16,7 @@ import {
   EmptyState,
   ErrorState,
   ForbiddenState,
+  IconButton,
   OfflineState,
   Skeleton,
   SkeletonGroup,
@@ -23,8 +24,19 @@ import {
   TextAreaField,
   TextField,
 } from "@tutorhub/ui";
-import { CalendarClock, Pencil, Plus, RotateCw, X } from "lucide-react";
+import {
+  ArrowUpDown,
+  CalendarClock,
+  CalendarPlus,
+  FolderOpen,
+  Pencil,
+  Plus,
+  RotateCw,
+  Video,
+  X,
+} from "lucide-react";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router";
 import {
   civilInputFromInstant,
   isOrderedSessionRange,
@@ -46,7 +58,26 @@ import { MediaSpaceLaunchAction } from "./MediaSpaceLaunchAction";
 interface ClassSessionPanelProps {
   classroom: ClassroomClass;
   mediaRoomsEnabled?: boolean;
+  /** Shows the ClassIn-style shortcut cards (ref-08) when provided. */
+  onOpenMaterials?: () => void;
   schedulingAvailability: TenantOperationAvailability;
+}
+
+type SessionFilter = "all" | "upcoming" | "ended";
+const sessionFilters = [
+  ["all", "classSession.filterAll"],
+  ["upcoming", "classSession.filterUpcoming"],
+  ["ended", "classSession.filterEnded"],
+] as const satisfies readonly (readonly [SessionFilter, TranslationKey])[];
+
+function matchesSessionFilter(session: ClassSession, filter: SessionFilter) {
+  if (filter === "upcoming") {
+    return session.status === "scheduled" || session.status === "live";
+  }
+  if (filter === "ended") {
+    return session.status === "ended";
+  }
+  return true;
 }
 
 const rangeWindow = () => {
@@ -99,6 +130,7 @@ function formatSessionRange(
 export function ClassSessionPanel({
   classroom,
   mediaRoomsEnabled = false,
+  onOpenMaterials,
   schedulingAvailability,
 }: ClassSessionPanelProps) {
   const { language, t } = useI18n();
@@ -120,6 +152,8 @@ export function ClassSessionPanel({
   const [editing, setEditing] = useState<ClassSession | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<ClassSession | null>(null);
+  const [filter, setFilter] = useState<SessionFilter>("all");
+  const [newestFirst, setNewestFirst] = useState(false);
 
   const items = useMemo(() => {
     const seen = new Set<string>();
@@ -133,6 +167,13 @@ export function ClassSessionPanel({
         return true;
       });
   }, [sessionsQuery.data?.pages]);
+  const visibleItems = useMemo(() => {
+    const filtered = items.filter((item) => matchesSessionFilter(item, filter));
+    const sorted = [...filtered].sort(
+      (left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at),
+    );
+    return newestFirst ? sorted.reverse() : sorted;
+  }, [filter, items, newestFirst]);
 
   const canSchedule =
     schedulingAvailability.available &&
@@ -151,18 +192,110 @@ export function ClassSessionPanel({
       className="classroom-detail__section class-session-panel"
     >
       <div className="class-session-panel__heading">
-        <div>
+        <div className="visually-hidden">
           <h2 id="class-session-heading">
             <CalendarClock aria-hidden="true" /> {t("classSession.title")}
           </h2>
           <p>{t("classSession.description")}</p>
         </div>
-        {canSchedule && (
-          <Button leadingIcon={<Plus />} onClick={openCreate}>
-            {t("classSession.scheduleAction")}
-          </Button>
-        )}
+        <div
+          aria-label={t("classSession.filterLabel")}
+          className="classin-chip-group"
+          role="group"
+        >
+          {sessionFilters.map(([value, labelKey]) => (
+            <button
+              aria-pressed={filter === value}
+              className="classin-chip"
+              key={value}
+              onClick={() => setFilter(value)}
+              type="button"
+            >
+              {t(labelKey)}
+            </button>
+          ))}
+        </div>
+        <div className="class-session-panel__tools">
+          <IconButton
+            className="classin-icon-button"
+            label={
+              newestFirst
+                ? t("classSession.sortNewest")
+                : t("classSession.sortOldest")
+            }
+            onClick={() => setNewestFirst((current) => !current)}
+            size="sm"
+          >
+            <ArrowUpDown />
+          </IconButton>
+          {canSchedule && (
+            <Button
+              className="classin-cta"
+              leadingIcon={<Plus />}
+              onClick={openCreate}
+              size="sm"
+            >
+              {t("classSession.scheduleAction")}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {onOpenMaterials && classroom.status === "active" && (
+        <ul
+          aria-label={t("classSession.quickActionsLabel")}
+          className="class-quick-cards"
+        >
+          <li>
+            {canSchedule ? (
+              <button
+                className="class-quick-card"
+                data-tone="ice"
+                onClick={openCreate}
+                type="button"
+              >
+                <span aria-hidden="true" className="class-quick-card__icon">
+                  <CalendarPlus />
+                </span>
+                <span className="class-quick-card__text">
+                  <strong>{t("classSession.quickScheduleTitle")}</strong>
+                  <span>{t("classSession.quickScheduleDescription")}</span>
+                </span>
+              </button>
+            ) : (
+              <Link
+                className="class-quick-card"
+                data-tone="ice"
+                to="/app/calendar"
+              >
+                <span aria-hidden="true" className="class-quick-card__icon">
+                  <CalendarClock />
+                </span>
+                <span className="class-quick-card__text">
+                  <strong>{t("classSession.quickCalendarTitle")}</strong>
+                  <span>{t("classSession.quickCalendarDescription")}</span>
+                </span>
+              </Link>
+            )}
+          </li>
+          <li>
+            <button
+              className="class-quick-card"
+              data-tone="lilac"
+              onClick={onOpenMaterials}
+              type="button"
+            >
+              <span aria-hidden="true" className="class-quick-card__icon">
+                <FolderOpen />
+              </span>
+              <span className="class-quick-card__text">
+                <strong>{t("classSession.quickMaterialsTitle")}</strong>
+                <span>{t("classSession.quickMaterialsDescription")}</span>
+              </span>
+            </button>
+          </li>
+        </ul>
+      )}
 
       {sessionsQuery.isPending && (
         <SkeletonGroup
@@ -258,9 +391,15 @@ export function ClassSessionPanel({
           />
         )}
 
-      {!concealed && items.length > 0 && (
+      {!concealed && items.length > 0 && visibleItems.length === 0 && (
+        <p className="class-session-panel__filtered-empty" role="status">
+          {t("classSession.filteredEmpty")}
+        </p>
+      )}
+
+      {!concealed && visibleItems.length > 0 && (
         <div className="class-session-list">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const rangeText = formatSessionRange(item, viewerTimezone, locale);
             const editable = canSchedule && item.viewer_access.can_update;
             const cancellable = canSchedule && item.viewer_access.can_cancel;
@@ -269,11 +408,25 @@ export function ClassSessionPanel({
               classroom.status === "active" &&
               (item.status === "scheduled" || item.status === "live");
             const canStartMedia = item.viewer_access.can_update;
+            const minutes = Math.max(
+              0,
+              Math.round(
+                (Date.parse(item.ends_at) - Date.parse(item.starts_at)) /
+                  60_000,
+              ),
+            );
             return (
-              <article className="class-session-card" key={item.id}>
+              <article
+                className="class-session-card"
+                data-status={item.status}
+                key={item.id}
+              >
+                <span aria-hidden="true" className="class-session-card__icon">
+                  {item.status === "live" ? <Video /> : <CalendarClock />}
+                </span>
                 <div className="class-session-card__body">
-                  <div className="class-session-card__title-row">
-                    <h3>{item.title}</h3>
+                  <h3>{item.title}</h3>
+                  <p className="class-session-card__meta">
                     <StatusBadge
                       tone={
                         item.status === "cancelled"
@@ -291,11 +444,14 @@ export function ClassSessionPanel({
                             ? t("classSession.ended")
                             : t("classSession.scheduled")}
                     </StatusBadge>
-                  </div>
-                  <time dateTime={item.starts_at}>{rangeText.viewer}</time>
-                  <small>{t("classSession.viewerTime")}</small>
+                    <time dateTime={item.starts_at}>{rangeText.viewer}</time>
+                    <span>
+                      {t("classSession.durationMinutes", { minutes })}
+                    </span>
+                    <small>{t("classSession.viewerTime")}</small>
+                  </p>
                   {rangeText.classTime && (
-                    <small>
+                    <small className="class-session-card__class-time">
                       {t("classSession.classTime", {
                         timezone: item.timezone,
                       })}

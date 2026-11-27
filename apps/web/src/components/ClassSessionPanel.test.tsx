@@ -106,6 +106,7 @@ function jsonResponse(body: unknown) {
 function renderPanel(
   fetchMock: ReturnType<typeof vi.fn>,
   mediaRoomsEnabled = false,
+  onOpenMaterials?: () => void,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -122,6 +123,7 @@ function renderPanel(
             <ClassSessionPanel
               classroom={classroom}
               mediaRoomsEnabled={mediaRoomsEnabled}
+              onOpenMaterials={onOpenMaterials}
               schedulingAvailability={availableOperation}
             />
           </MemoryRouter>
@@ -223,5 +225,70 @@ describe("ClassSessionPanel", () => {
     expect(
       await screen.findByRole("button", { name: "Start classroom" }),
     ).toBeVisible();
+  });
+
+  it("filters, reorders and offers the ClassIn shortcut cards", async () => {
+    const ended: ClassSession = {
+      ...classSession,
+      id: "2b3c4d5e-6f70-4812-9a3b-4c5d6e7f8091",
+      title: "Finished review",
+      status: "ended",
+      starts_at: "2026-07-20T02:00:00Z",
+      ends_at: "2026-07-20T03:00:00Z",
+    };
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      if (
+        new URL(request.url).pathname ===
+          `/api/v1/classes/${classID}/sessions` &&
+        request.method === "GET"
+      ) {
+        return Promise.resolve(
+          jsonResponse({ items: [classSession, ended], next_cursor: null }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    const onOpenMaterials = vi.fn();
+    renderPanel(fetchMock, false, onOpenMaterials);
+
+    await screen.findByRole("heading", { name: classSession.title });
+    const titles = () =>
+      screen
+        .getAllByRole("article")
+        .map((card) => within(card).getByRole("heading").textContent);
+    expect(titles()).toEqual([ended.title, classSession.title]);
+    expect(screen.getByText("90 min")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Sorted earliest first. Switch to newest first",
+      }),
+    );
+    expect(titles()).toEqual([classSession.title, ended.title]);
+
+    const filters = screen.getByRole("group", { name: "Filter sessions" });
+    fireEvent.click(within(filters).getByRole("button", { name: "Ended" }));
+    expect(
+      within(filters).getByRole("button", { name: "Ended" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(titles()).toEqual([ended.title]);
+    fireEvent.click(
+      within(filters).getByRole("button", { name: "Upcoming & live" }),
+    );
+    expect(titles()).toEqual([classSession.title]);
+
+    const shortcuts = screen.getByRole("list", { name: "Class shortcuts" });
+    fireEvent.click(
+      within(shortcuts).getByRole("button", { name: /^Open class materials/ }),
+    );
+    expect(onOpenMaterials).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      within(shortcuts).getByRole("button", {
+        name: /^Schedule a new session/,
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Schedule a session" }),
+    ).toBeInTheDocument();
   });
 });

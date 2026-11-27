@@ -2,16 +2,13 @@ import { APIRequestError, type ClassroomClass } from "@tutorhub/api-client";
 import {
   Button,
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogTitle,
   DialogTrigger,
-  TextField,
 } from "@tutorhub/ui";
-import { UserPlus } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { KeyRound, Search, UserPlus } from "lucide-react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { parseClassInvitationToken } from "../app/classInvitationToken";
 import { useJoinClassInvitation } from "../app/classEnrollments";
 import { useI18n, type TranslationKey } from "../app/i18n";
@@ -50,17 +47,34 @@ function joinErrorKey(error: Error | null): TranslationKey {
   return "classInvitation.joinError";
 }
 
+interface ClassJoinDialogProps {
+  availability: TenantOperationAvailability;
+  onJoined: (classroom: ClassroomClass, tenantID: string) => void;
+  /** Controlled mode (e.g. opened from the quick-actions menu). */
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
+  /** Render the stand-alone "Join with a code" trigger button. */
+  showTrigger?: boolean;
+  tenantID: string;
+}
+
+/**
+ * CLASS-CLASSIN-UI-01 (ClassIn ref-05): a white dialog with a pill search bar.
+ * The invitation token only lives in a ref and the POST body; it never
+ * reaches the URL, web storage or the query/mutation caches.
+ */
 export function ClassJoinDialog({
   availability,
   onJoined,
+  onOpenChange,
+  open: controlledOpen,
+  showTrigger = true,
   tenantID,
-}: {
-  availability: TenantOperationAvailability;
-  onJoined: (classroom: ClassroomClass, tenantID: string) => void;
-  tenantID: string;
-}) {
+}: ClassJoinDialogProps) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  const inputID = useId();
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
   const [input, setInput] = useState("");
   const [validationError, setValidationError] = useState(false);
   const token = useRef<string | null>(null);
@@ -70,6 +84,15 @@ export function ClassJoinDialog({
     : joinInvitation.isError
       ? t(joinErrorKey(joinInvitation.error))
       : undefined;
+  const hintID = `${inputID}-hint`;
+  const errorID = `${inputID}-error`;
+
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) {
+      setUncontrolledOpen(nextOpen);
+    }
+    onOpenChange?.(nextOpen);
+  };
 
   const reset = () => {
     token.current = null;
@@ -118,64 +141,82 @@ export function ClassJoinDialog({
       }}
       open={open}
     >
-      <DialogTrigger asChild>
-        <Button
-          disabled={!availability.available}
-          leadingIcon={<UserPlus />}
-          variant="secondary"
-        >
-          {t("classInvitation.openDialog")}
-        </Button>
-      </DialogTrigger>
-      <DialogContent closeLabel={t("classInvitation.closeDialog")}>
+      {showTrigger && (
+        <DialogTrigger asChild>
+          <Button
+            className="classin-secondary-pill"
+            disabled={!availability.available}
+            leadingIcon={<UserPlus />}
+            variant="secondary"
+          >
+            {t("classInvitation.openDialog")}
+          </Button>
+        </DialogTrigger>
+      )}
+      <DialogContent
+        className="classin-dialog classin-join-dialog"
+        closeLabel={t("classInvitation.closeDialog")}
+      >
         <DialogTitle>{t("classInvitation.title")}</DialogTitle>
         <DialogDescription>
           {t("classInvitation.description")}
         </DialogDescription>
         <form
-          className="class-join-form"
+          className="classin-join-form"
           onSubmit={(event) => void submit(event)}
         >
-          <TextField
-            autoCapitalize="none"
-            autoComplete="off"
-            error={errorMessage}
-            hint={t("classInvitation.tokenHint")}
-            label={t("classInvitation.tokenLabel")}
-            maxLength={2048}
-            onChange={(event) => {
-              token.current = null;
-              setInput(event.target.value);
-              setValidationError(false);
-              joinInvitation.reset();
-            }}
-            placeholder={t("classInvitation.tokenPlaceholder")}
-            required={!joinInvitation.isError}
-            spellCheck={false}
-            type="password"
-            value={input}
-          />
-          <DialogFooter className="class-join-form__actions">
-            <DialogClose asChild>
-              <Button
-                disabled={joinInvitation.isPending}
-                type="button"
-                variant="secondary"
-              >
-                {t("classroom.cancelAction")}
-              </Button>
-            </DialogClose>
+          <div
+            className="classin-pill-bar"
+            data-invalid={errorMessage ? "true" : undefined}
+          >
+            <Search aria-hidden="true" className="classin-pill-bar__icon" />
+            <label className="visually-hidden" htmlFor={inputID}>
+              {t("classInvitation.tokenLabel")}
+            </label>
+            <input
+              aria-describedby={errorMessage ? `${errorID} ${hintID}` : hintID}
+              aria-invalid={errorMessage ? true : undefined}
+              autoCapitalize="none"
+              autoComplete="off"
+              className="classin-pill-bar__input"
+              id={inputID}
+              maxLength={2048}
+              onChange={(event) => {
+                token.current = null;
+                setInput(event.target.value);
+                setValidationError(false);
+                joinInvitation.reset();
+              }}
+              placeholder={t("classInvitation.tokenPlaceholder")}
+              required={!joinInvitation.isError}
+              spellCheck={false}
+              type="password"
+              value={input}
+            />
             <Button
+              className="classin-pill-bar__submit"
               disabled={!availability.available}
               loading={joinInvitation.isPending}
               loadingLabel={t("classInvitation.joining")}
+              size="sm"
               type="submit"
             >
               {joinInvitation.isError
                 ? t("classInvitation.retryJoin")
                 : t("classInvitation.joinAction")}
             </Button>
-          </DialogFooter>
+          </div>
+          {errorMessage && (
+            <p className="classin-form-error" id={errorID} role="alert">
+              {errorMessage}
+            </p>
+          )}
+          <div className="classin-join-form__guide">
+            <span aria-hidden="true" className="classin-join-form__glyph">
+              <KeyRound />
+            </span>
+            <p id={hintID}>{t("classInvitation.tokenHint")}</p>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

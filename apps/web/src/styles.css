@@ -1483,6 +1483,23 @@ textarea:focus-visible {
   max-width: 1180px;
 }
 
+/* CLASS-CLASSIN-UI-01: ClassIn white plane, only while /app/classrooms or
+   /app/classrooms/:classId is open (other routes keep the canvas). */
+.app-workspace:has(.classroom-page, .classroom-detail) {
+  background: #ffffff;
+}
+
+[data-theme="dark"] .app-workspace:has(.classroom-page, .classroom-detail),
+.app-workspace[data-theme="dark"]:has(.classroom-page, .classroom-detail) {
+  background: var(--color-surface);
+}
+
+@media (forced-colors: active) {
+  .app-workspace:has(.classroom-page, .classroom-detail) {
+    background: Canvas;
+  }
+}
+
 .classroom-heading {
   display: flex;
   align-items: flex-start;

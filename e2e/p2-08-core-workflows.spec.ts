@@ -461,8 +461,15 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
       const createClassDialog = teacherPage.getByRole("dialog", {
         name: "Create a class",
       });
-      await createClassDialog.getByLabel("Class code").fill(classCode);
       await createClassDialog.getByLabel("Class name").fill(className);
+      // CLASS-CLASSIN-UI-01: the code, timezone, description and draft
+      // opt-out live under the collapsed "Advanced options" disclosure.
+      const advancedOptions = createClassDialog.getByRole("button", {
+        name: "Advanced options",
+      });
+      await expect(advancedOptions).toHaveAttribute("aria-expanded", "false");
+      await advancedOptions.click();
+      await createClassDialog.getByLabel("Class code").fill(classCode);
       await createClassDialog
         .getByLabel("Description")
         .fill("A complete P2-08 browser workflow.");

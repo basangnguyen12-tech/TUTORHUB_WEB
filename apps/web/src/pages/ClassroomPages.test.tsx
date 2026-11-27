@@ -281,6 +281,7 @@ describe("ClassroomPages P2-04", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
   });
 
   it("filters by status and loads cursor pages without losing the first page", async () => {
@@ -438,6 +439,11 @@ describe("ClassroomPages P2-04", () => {
 
     await screen.findByText("Workspace chưa có lớp học");
     fireEvent.click(screen.getByRole("button", { name: "Tạo lớp học" }));
+    const advanced = screen.getByRole("button", { name: "Tùy chọn nâng cao" });
+    expect(advanced).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("textbox", { name: /^Mã lớp/ })).toBeNull();
+    fireEvent.click(advanced);
+    expect(advanced).toHaveAttribute("aria-expanded", "true");
     const timezoneInput = screen.getByRole("textbox", {
       name: /^Múi giờ lớp học/,
     });
@@ -925,6 +931,7 @@ describe("ClassroomPages P2-04", () => {
 
     await screen.findByText("Workspace chưa có lớp học");
     fireEvent.click(screen.getByRole("button", { name: "Tạo lớp học" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tùy chọn nâng cao" }));
     fireEvent.change(screen.getByRole("textbox", { name: /^Mã lớp/ }), {
       target: { value: "sec101" },
     });
@@ -1011,6 +1018,7 @@ describe("ClassroomPages P2-04", () => {
 
     await screen.findByText("Workspace chưa có lớp học");
     fireEvent.click(screen.getByRole("button", { name: "Tạo lớp học" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tùy chọn nâng cao" }));
     fireEvent.change(screen.getByRole("textbox", { name: /^Mã lớp/ }), {
       target: { value: "sec101" },
     });
@@ -1328,5 +1336,444 @@ describe("ClassroomPages P2-04", () => {
     expect(
       within(materials).queryByRole("button", { name: "Thử lại" }),
     ).toBeNull();
+  });
+});
+
+describe("ClassroomPages CLASS-CLASSIN-UI-01", () => {
+  const secondClass: ClassroomClass = {
+    ...classroom,
+    id: "f24d8c4b-b141-475f-b20a-ed0bfe96da6b",
+    code: "SEC102",
+    title: "An toàn ứng dụng",
+    description: "Lập trình an toàn",
+    version: 1,
+  };
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  function cardTitles() {
+    return screen
+      .getAllByRole("article")
+      .map((card) => within(card).getByRole("heading").textContent);
+  }
+
+  function openMenu(trigger: HTMLElement) {
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+  }
+
+  it("creates a class in one step from its name and retries a duplicate derived code once", async () => {
+    const title = "Lớp 11 - Tiếng Anh (3)";
+    const draft = {
+      ...classroom,
+      code: "LOP-11-TIENG-ANH-3-K7QX",
+      title,
+      description: "",
+      status: "draft" as const,
+      version: 1,
+    };
+    let posts = 0;
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/tenants/${tenantID}`)) {
+        return Promise.resolve(jsonResponse({ timezone: classroom.timezone }));
+      }
+      if (path.endsWith("/api/v1/auth/csrf")) {
+        return Promise.resolve(jsonResponse({ csrf_token: "class-csrf" }));
+      }
+      if (path.endsWith("/api/v1/classes") && request.method === "POST") {
+        posts += 1;
+        return Promise.resolve(
+          posts === 1
+            ? jsonResponse(
+                {
+                  type: "urn:tutorhub:problem:conflict",
+                  title: "Class code already exists",
+                  status: 409,
+                },
+                409,
+              )
+            : jsonResponse(draft, 201),
+        );
+      }
+      if (
+        path.endsWith(`/api/v1/classes/${classID}`) &&
+        request.method === "PATCH"
+      ) {
+        return Promise.resolve(
+          jsonResponse({ ...draft, status: "active", version: 2 }),
+        );
+      }
+      if (path.endsWith("/api/v1/classes") && request.method === "GET") {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    const queryClient = renderClassRoute("/app/classrooms", fetchMock);
+
+    await screen.findByText("Workspace chưa có lớp học");
+    fireEvent.click(screen.getByRole("button", { name: "Tạo lớp học" }));
+    // The hidden timezone field follows the workspace once it has loaded.
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["tenants", "detail", tenantID])).toEqual(
+        { timezone: classroom.timezone },
+      ),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Tạo lớp học mới" });
+    const submit = within(dialog).getByRole("button", { name: "Tạo lớp" });
+    expect(submit).toHaveAttribute("data-ready", "false");
+    expect(
+      within(dialog).getByRole("button", { name: "Tùy chọn nâng cao" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Tên lớp" }), {
+      target: { value: title },
+    });
+    expect(submit).toHaveAttribute("data-ready", "true");
+    expect(
+      within(dialog).getByText("Tự tạo từ tên lớp: LOP-11-TIENG-ANH-3"),
+    ).toBeInTheDocument();
+    fireEvent.click(submit);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: title }),
+    ).toBeInTheDocument();
+    const creates = requestsOf(fetchMock).filter(
+      (request) =>
+        request.method === "POST" &&
+        pathOf(request).endsWith("/api/v1/classes"),
+    );
+    expect(creates).toHaveLength(2);
+    await expect(creates[0]!.clone().json()).resolves.toEqual({
+      code: "LOP-11-TIENG-ANH-3",
+      description: "",
+      timezone: classroom.timezone,
+      title,
+    });
+    const retried = (await creates[1]!.clone().json()) as { code: string };
+    expect(retried.code).toMatch(/^LOP-11-TIENG-ANH-3-[A-Z2-9]{4}$/);
+    const patch = requestsOf(fetchMock).find(
+      (request) => request.method === "PATCH",
+    );
+    await expect(patch?.clone().json()).resolves.toEqual({
+      expected_version: 1,
+      status: "active",
+    });
+    // No cover was picked, so nothing is written to the device.
+    expect(window.localStorage).toHaveLength(0);
+  });
+
+  it("pins a class from its ⋯ menu, filters pinned classes and searches without diacritics", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      if (
+        pathOf(request).endsWith("/api/v1/classes") &&
+        request.method === "GET"
+      ) {
+        return Promise.resolve(
+          jsonResponse({ items: [classroom, secondClass], next_cursor: null }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute("/app/classrooms", fetchMock);
+
+    await screen.findByRole("link", { name: secondClass.title });
+    expect(cardTitles()).toEqual([classroom.title, secondClass.title]);
+    expect(screen.queryByText(/to-?do/i)).toBeNull();
+    expect(window.localStorage).toHaveLength(0);
+
+    openMenu(
+      screen.getByRole("button", {
+        name: `Tùy chọn lớp ${secondClass.title}`,
+      }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Ghim" }));
+    await waitFor(() =>
+      expect(cardTitles()).toEqual([secondClass.title, classroom.title]),
+    );
+    expect(
+      within(screen.getAllByRole("article")[0]!).getByText("Đã ghim"),
+    ).toBeInTheDocument();
+    expect(
+      window.localStorage.getItem(
+        `tutorhub.classroom-prefs:${tenantID}:${ownerID}`,
+      ),
+    ).toBe(JSON.stringify({ pinned: [secondClass.id], covers: {} }));
+
+    const statusTrigger = screen.getByRole("combobox", {
+      name: "Lọc theo trạng thái",
+    });
+    fireEvent.keyDown(statusTrigger, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Đã ghim" }));
+    await waitFor(() => expect(cardTitles()).toEqual([secondClass.title]));
+    expect(
+      requestsOf(fetchMock).every(
+        (request) => !new URL(request.url).searchParams.has("status"),
+      ),
+    ).toBe(true);
+
+    openMenu(
+      screen.getByRole("button", {
+        name: `Tùy chọn lớp ${secondClass.title}`,
+      }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Bỏ ghim" }));
+    expect(await screen.findByText("Chưa ghim lớp nào")).toBeInTheDocument();
+    expect(window.localStorage).toHaveLength(0);
+
+    fireEvent.keyDown(statusTrigger, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Tất cả" }));
+    const search = screen.getByRole("searchbox", { name: "Tìm lớp học" });
+    fireEvent.change(search, { target: { value: "ung dung" } });
+    await waitFor(() => expect(cardTitles()).toEqual([secondClass.title]));
+    fireEvent.change(search, { target: { value: "không có lớp này" } });
+    expect(
+      await screen.findByText("Không tìm thấy lớp phù hợp"),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Xóa từ khóa tìm kiếm" }),
+    );
+    await waitFor(() =>
+      expect(cardTitles()).toEqual([classroom.title, secondClass.title]),
+    );
+  });
+
+  it("opens the join and public-session dialogs from the ⊕ quick actions menu", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith("/api/v1/classes") && request.method === "GET") {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      if (path.endsWith("/api/v1/calendar/study-meetings")) {
+        return Promise.resolve(jsonResponse({ meetings: [] }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute("/app/classrooms", fetchMock);
+
+    await screen.findByText("Workspace chưa có lớp học");
+    openMenu(screen.getByRole("button", { name: "Thao tác nhanh" }));
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Tham gia lớp bằng mã",
+      "Tham gia buổi học công khai",
+      "Tạo buổi học công khai",
+    ]);
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Tham gia lớp bằng mã" }),
+    );
+    const joinDialog = await screen.findByRole("dialog", {
+      name: "Tham gia lớp học",
+    });
+    expect(
+      within(joinDialog).getByLabelText("Mã hoặc liên kết tham gia"),
+    ).toHaveAttribute("type", "password");
+    fireEvent.click(
+      within(joinDialog).getByRole("button", {
+        name: "Đóng biểu mẫu tham gia lớp",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Tham gia lớp học" }),
+      ).toBeNull(),
+    );
+
+    openMenu(screen.getByRole("button", { name: "Thao tác nhanh" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Tham gia buổi học công khai",
+      }),
+    );
+    const publicDialog = await screen.findByRole(
+      "dialog",
+      { name: "Tham gia buổi học công khai" },
+      { timeout: 4000 },
+    );
+    expect(
+      await within(publicDialog).findByText(
+        "Bạn chưa có buổi học công khai nào sắp diễn ra.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("invites a member from the card ⋯ menu through the quick invite dialog", async () => {
+    const managed: ClassroomClass = {
+      ...classroom,
+      viewer_access: {
+        ...classroom.viewer_access,
+        can_manage_enrollments: true,
+      },
+    };
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith("/api/v1/classes") && request.method === "GET") {
+        return Promise.resolve(
+          jsonResponse({ items: [managed], next_cursor: null }),
+        );
+      }
+      if (path.endsWith("/api/v1/auth/csrf")) {
+        return Promise.resolve(jsonResponse({ csrf_token: "invite-csrf" }));
+      }
+      if (
+        path.endsWith(`/api/v1/classes/${classID}/enrollments`) &&
+        request.method === "POST"
+      ) {
+        return Promise.resolve(
+          jsonResponse(
+            {
+              id: "63af7268-58db-4d40-a96f-c4f473a92350",
+              class_id: classID,
+              user_id: "1d7d65eb-904e-4a0d-bd24-a8ec1b453d64",
+              class_role: "student",
+              status: "active",
+              enrolled_by: ownerID,
+              joined_at: classroom.updated_at,
+              suspended_at: null,
+              left_at: null,
+              removed_at: null,
+              created_at: classroom.updated_at,
+              updated_at: classroom.updated_at,
+            },
+            201,
+          ),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute("/app/classrooms", fetchMock);
+
+    openMenu(
+      await screen.findByRole("button", {
+        name: `Tùy chọn lớp ${classroom.title}`,
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "Mời thành viên" }),
+    );
+    const dialog = await screen.findByRole(
+      "dialog",
+      { name: "Mời thành viên vào lớp" },
+      { timeout: 4000 },
+    );
+    fireEvent.change(within(dialog).getByLabelText("Email thành viên"), {
+      target: { value: " Learner@Example.com " },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Thêm" }));
+
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "Đã thêm học viên vào lớp.",
+    );
+    const enroll = requestsOf(fetchMock).find((request) =>
+      pathOf(request).endsWith("/enrollments"),
+    );
+    expect(enroll?.headers.get("X-CSRF-Token")).toBe("invite-csrf");
+    await expect(enroll?.clone().json()).resolves.toEqual({
+      member_email: "learner@example.com",
+    });
+    expect(
+      within(dialog).getByRole("button", { name: "Tạo liên kết mời" }),
+    ).toBeEnabled();
+  });
+
+  it("renders the three-column class detail with a right rail and no to-do list", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(classroom));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute(`/app/classrooms/${classID}`, fetchMock);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: classroom.title }),
+    ).toBeInTheDocument();
+    const rail = screen.getByRole("complementary", {
+      name: "Thông tin nhanh của lớp",
+    });
+    expect(
+      within(rail)
+        .getAllByRole("heading")
+        .map((heading) => heading.textContent),
+    ).toEqual(["Thành viên", "Thông tin lớp", "Trao đổi lớp học"]);
+    expect(within(rail).getByText(classroom.code)).toBeInTheDocument();
+    expect(
+      within(rail).getByRole("button", { name: "Mở trao đổi lớp" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/to-?do/i)).toBeNull();
+    expect(
+      requestsOf(fetchMock).some((request) =>
+        pathOf(request).endsWith("/roster"),
+      ),
+    ).toBe(false);
+
+    expect(
+      screen.getByRole("button", { name: /^Lên lịch buổi học mới/ }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Mở kho tài liệu lớp/ }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "?tab=materials",
+      ),
+    );
+
+    const materialsTab = screen.getByRole("tab", { name: "Tài liệu" });
+    act(() => materialsTab.focus());
+    fireEvent.keyDown(materialsTab, { key: "ArrowDown" });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Thành viên" })).toHaveFocus(),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("?tab=members"),
+    );
+  });
+
+  it("shows a learner their class role in the rail without loading the roster", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = pathOf(request);
+      if (path.endsWith(`/api/v1/classes/${classID}`)) {
+        return Promise.resolve(jsonResponse(learnerView));
+      }
+      if (path.endsWith(`/api/v1/classes/${classID}/sessions`)) {
+        return Promise.resolve(jsonResponse({ items: [], next_cursor: null }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${request.url}`));
+    });
+    renderClassRoute(`/app/classrooms/${classID}`, fetchMock);
+
+    const rail = await screen.findByRole("complementary", {
+      name: "Thông tin nhanh của lớp",
+    });
+    expect(
+      within(rail).getByText("Vai trò của bạn: Học viên"),
+    ).toBeInTheDocument();
+    expect(
+      within(rail).queryByRole("button", { name: "Mời thành viên vào lớp" }),
+    ).toBeNull();
+    // Learners get the calendar shortcut instead of the schedule card.
+    expect(
+      screen.getByRole("link", { name: /^Xem lịch học của bạn/ }),
+    ).toHaveAttribute("href", "/app/calendar");
+    expect(
+      requestsOf(fetchMock).some((request) =>
+        pathOf(request).endsWith("/roster"),
+      ),
+    ).toBe(false);
   });
 });

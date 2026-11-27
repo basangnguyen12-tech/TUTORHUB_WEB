@@ -164,6 +164,29 @@ export function clearCodeDraftStorage(
 }
 
 /**
+ * CLASS-CLASSIN-UI-01: pinned classes and cover choices live in localStorage
+ * under `tutorhub.classroom-prefs:<tenant>:<user>`. Cleared on sign-out so a
+ * shared classroom computer leaves no class IDs behind.
+ */
+export const CLASSROOM_PREFERENCES_STORAGE_PREFIX = "tutorhub.classroom-prefs:";
+
+export function clearClassroomPreferencesStorage(
+  storage: Storage | null = defaultChatEmojiStorage(),
+) {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(CLASSROOM_PREFERENCES_STORAGE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // Storage may be blocked; preferences stay scoped per (tenant, user).
+  }
+}
+
+/**
  * ROOM-TOOLS-FILES-01B (ADR-0045 §3): in-memory private data owned by lazily
  * loaded tools (the classroom Documents tool keeps PDF bytes in RAM only).
  * A tool registers a wipe callback here, so sign-out releases that memory
@@ -197,6 +220,7 @@ export async function clearPrivateSessionCache(queryClient: QueryClient) {
   clearMediaRoomEscrow();
   clearChatEmojiRecentStorage();
   clearCodeDraftStorage();
+  clearClassroomPreferencesStorage();
   // ADR-0041: personal backgrounds (IndexedDB) and the effect preference are
   // device-local and scoped per (tenant, user); none of it outlives sign-out.
   await Promise.all([

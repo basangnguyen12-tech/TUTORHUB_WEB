@@ -22,7 +22,9 @@ import type { ClassroomCodeWorkspaceSnapshot } from "../features/classroom-tools
 import { createTutorHubQueryClient } from "./queryClient";
 import {
   CHAT_EMOJI_RECENT_STORAGE_PREFIX,
+  CLASSROOM_PREFERENCES_STORAGE_PREFIX,
   clearChatEmojiRecentStorage,
+  clearClassroomPreferencesStorage,
   clearCodeDraftStorage,
   clearPrivateSessionCache,
   CODE_DRAFT_STORAGE_PREFIX,
@@ -357,6 +359,36 @@ describe("remote session provider", () => {
       },
     } as unknown as Storage;
     expect(() => clearChatEmojiRecentStorage(blocked)).not.toThrow();
+  });
+
+  it("removes every classroom preference key on sign-out (CLASS-CLASSIN-UI-01)", async () => {
+    const queryClient = new QueryClient();
+    localStorage.setItem(
+      `${CLASSROOM_PREFERENCES_STORAGE_PREFIX}tenant-a:user-a`,
+      JSON.stringify({ pinned: ["class-1"], covers: {} }),
+    );
+    localStorage.setItem(
+      `${CLASSROOM_PREFERENCES_STORAGE_PREFIX}tenant-b:user-b`,
+      JSON.stringify({ pinned: [], covers: { "class-2": "alpine-lake" } }),
+    );
+    localStorage.setItem("tutorhub:unrelated-preference", "keep");
+
+    await clearPrivateSessionCache(queryClient);
+
+    expect(
+      Object.keys(localStorage).filter((key) =>
+        key.startsWith(CLASSROOM_PREFERENCES_STORAGE_PREFIX),
+      ),
+    ).toEqual([]);
+    expect(localStorage.getItem("tutorhub:unrelated-preference")).toBe("keep");
+    localStorage.clear();
+
+    const blocked = {
+      get length(): number {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    } as unknown as Storage;
+    expect(() => clearClassroomPreferencesStorage(blocked)).not.toThrow();
   });
 
   it("wipes every classroom Code draft on sign-out (ROOM-TOOLS-CODE-01)", async () => {
