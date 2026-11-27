@@ -188,6 +188,26 @@ describe("ClassroomPeoplePanel (ROOM-PEOPLE-03)", () => {
     expect(document.body.textContent).not.toMatch(/\b1\.\s/u);
   });
 
+  it("ROOM-TILE-TEAMS-01 shows the video tile's Teams initials on each flat avatar", () => {
+    renderPanel();
+    const avatarOf = (name: string) =>
+      screen
+        .getByText(name)
+        .closest("li")
+        ?.querySelector<HTMLElement>(".media-p406-people-avatar");
+    for (const [name, initials] of [
+      ["Thu Hà", "TH"],
+      ["Phạm Quỳnh Như", "PN"],
+      ["Đức Huy", "ĐH"],
+      ["Gia Bảo", "GB"],
+    ] as const) {
+      const avatar = avatarOf(name);
+      expect(avatar).toHaveAttribute("aria-hidden", "true");
+      expect(avatar?.textContent).toBe(initials);
+      expect(avatar?.getAttribute("data-tone")).toMatch(/^[0-7]$/);
+    }
+  });
+
   it("merges a single-role class into one Participants group", () => {
     renderPanel({
       signals: signals({

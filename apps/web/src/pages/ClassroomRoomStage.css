@@ -811,92 +811,106 @@
 
 /* ---- Video tiles ---------------------------------------------------- */
 
+/*
+ * ROOM-TILE-TEAMS-01: flat tiles, no gradient, sheen or lifted shadow. A
+ * screen share (no data-tone) sits on the same #0b0d13 ground as its <video>,
+ * so shared pixels are never tinted.
+ */
 .media-p405-room .media-p405-tile {
-  border: 1px solid rgb(255 255 255 / 11%);
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 16px;
-  /* Camera off: a deep silk surface lit from above. */
-  background: radial-gradient(
-    120% 100% at 50% 0%,
-    #272e3f 0%,
-    #171b25 70%,
-    #13161f 100%
-  );
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 13%),
-    0 20px 44px -12px rgb(0 0 0 / 58%);
+  background: #0b0d13;
+  box-shadow: none;
   container-type: inline-size;
-  transition:
-    border-color 200ms var(--room-ease-spring),
-    box-shadow 200ms var(--room-ease-spring);
+  transition: border-color 200ms var(--room-ease-spring);
 }
 
 /*
- * ROOM-STAGE-POLISH-04: Google Meet style camera-off surfaces. Each person's
- * tile (never a screen share, which has no data-tone) gets one of eight deep,
- * low-chroma tones with a very soft ambient lift behind the medallion — calm
- * enough for a 90 minute lesson. A live <video> covers the whole tile on its
- * own #0b0d13 ground, so a tone never tints camera or shared-screen pixels.
- * White text on every tile stop reads >= 9.3:1 (contrast.mjs in the task's
- * .tmp folder).
+ * ROOM-TILE-TEAMS-01: Microsoft Teams (Fluent 2) light stage. Each person's
+ * tile gets one flat, very light pastel (relative luminance 0.84–0.87, calm
+ * for a 90 minute lesson) with a flat avatar pair of the same hue: dark
+ * initials on a soft tint, >= 5.79:1 on every tone. The slot still comes from
+ * mediaTileTone, so the People panel shows the very same pair. A live <video>
+ * covers the whole tile on its own #0b0d13 ground. Measured contrast table:
+ * .tmp/room-tile-teams-01/RESEARCH.md.
  */
+
+/* 0 Mint Mist */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="0"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="0"] {
+  --tile-bg: #e6f3ed;
+  --avatar-bg: #c6e9d7;
+  --avatar-fg: #1c5a3c;
+}
+
+/* 1 Rose Tint */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="1"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="1"] {
+  --tile-bg: #f8e9e7;
+  --avatar-bg: #f3d2cc;
+  --avatar-fg: #8a2b1f;
+}
+
+/* 2 Sage Mist */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="2"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="2"] {
+  --tile-bg: #ebeee7;
+  --avatar-bg: #dbe0d3;
+  --avatar-fg: #39452e;
+}
+
+/* 3 Lavender Tint */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="3"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="3"] {
+  --tile-bg: #edebf8;
+  --avatar-bg: #dad5f2;
+  --avatar-fg: #3a2e7f;
+}
+
+/* 4 Ice Blue */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="4"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="4"] {
+  --tile-bg: #e6eff8;
+  --avatar-bg: #cde0f3;
+  --avatar-fg: #1c4977;
+}
+
+/* 5 Warm Alabaster */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="5"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="5"] {
+  --tile-bg: #f6efe4;
+  --avatar-bg: #f0ddc1;
+  --avatar-fg: #784811;
+}
+
+/* 6 Aqua Tint */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="6"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="6"] {
+  --tile-bg: #e3f2f3;
+  --avatar-bg: #c5e7e9;
+  --avatar-fg: #145a61;
+}
+
+/* 7 Blush Mist */
+.media-p405-room :is(.media-p405-tile, .media-p405-avatar)[data-tone="7"],
+.media-p406-roster-drawer .media-p406-people-avatar[data-tone="7"] {
+  --tile-bg: #f7eaf0;
+  --avatar-bg: #f0d1df;
+  --avatar-fg: #7c234e;
+}
+
+/* A clean 1px hairline of the tone's own ink separates tiles on the floor. */
 .media-p405-room .media-p405-tile[data-tone] {
-  --tile-from: #2c4b54;
-  --tile-to: #1d353c;
-  background:
-    radial-gradient(
-      85% 70% at 50% 44%,
-      rgb(255 255 255 / 7%) 0%,
-      rgb(255 255 255 / 0%) 72%
-    ),
-    linear-gradient(160deg, var(--tile-from) 0%, var(--tile-to) 100%);
+  border-color: color-mix(in srgb, var(--avatar-fg) 16%, var(--tile-bg));
+  background: var(--tile-bg);
 }
 
-/* 0 Deep Slate Teal — the Meet reference surface. */
-.media-p405-room .media-p405-tile[data-tone="0"] {
-  --tile-from: #2c4b54;
-  --tile-to: #1d353c;
-}
-
-/* 1 Royal Indigo */
-.media-p405-room .media-p405-tile[data-tone="1"] {
-  --tile-from: #2c3a72;
-  --tile-to: #1d264f;
-}
-
-/* 2 Warm Terracotta */
-.media-p405-room .media-p405-tile[data-tone="2"] {
-  --tile-from: #5a2e23;
-  --tile-to: #3e1f18;
-}
-
-/* 3 Forest Emerald */
-.media-p405-room .media-p405-tile[data-tone="3"] {
-  --tile-from: #1f4739;
-  --tile-to: #163328;
-}
-
-/* 4 Mulberry Plum */
-.media-p405-room .media-p405-tile[data-tone="4"] {
-  --tile-from: #4b2a56;
-  --tile-to: #341d3c;
-}
-
-/* 5 Warm Bronze */
-.media-p405-room .media-p405-tile[data-tone="5"] {
-  --tile-from: #4b3c29;
-  --tile-to: #362b1d;
-}
-
-/* 6 Ocean Petrol */
-.media-p405-room .media-p405-tile[data-tone="6"] {
-  --tile-from: #223f5e;
-  --tile-to: #182d44;
-}
-
-/* 7 Deep Rosewood */
-.media-p405-room .media-p405-tile[data-tone="7"] {
-  --tile-from: #53273b;
-  --tile-to: #3b1b2a;
+/*
+ * Live microphone (ref-3): the rim turns a crisp slate (>= 4.92:1 on every
+ * tone). Only its colour changes, so the tile's box never moves.
+ */
+.media-p405-room .media-p405-tile[data-mic-state="on"] {
+  border-color: #5f6670;
 }
 
 /* FaceTime framing: one or two people get softer 20px corners. */
@@ -907,28 +921,31 @@
   border-radius: 20px;
 }
 
-/* The speaking ring sits above the video, not behind it. */
+/*
+ * The speaking ring sits above the video, not behind it. ROOM-TILE-TEAMS-01:
+ * a flat Teams ring — the 1px rim plus a 1px inner line in #5b5fc7
+ * (>= 4.56:1 on every tone, 3.61:1 on the floor), no glow, no layout shift.
+ */
 .media-p405-room .media-p405-tile::after {
   position: absolute;
   z-index: 3;
   inset: 0;
-  border: 2px solid transparent;
+  border: 1px solid transparent;
   border-radius: inherit;
   content: "";
   pointer-events: none;
   transition: border-color 200ms var(--room-ease-spring);
 }
 
-.media-p405-room .media-p405-tile[data-lk-speaking="true"] {
-  border-color: rgb(52 211 153 / 85%);
-  box-shadow:
-    0 0 0 1px rgb(52 211 153 / 50%),
-    0 12px 32px -6px rgb(16 185 129 / 28%),
-    0 20px 44px -12px rgb(0 0 0 / 58%);
-}
-
-.media-p405-room .media-p405-tile[data-lk-speaking="true"]::after {
-  border-color: rgb(52 211 153 / 85%);
+.media-p405-room
+  .media-p405-tile:is([data-lk-speaking="true"], [data-speaking="true"]),
+.media-p405-room
+  .media-p405-tile:is(
+    [data-lk-speaking="true"],
+    [data-speaking="true"]
+  )::after {
+  border-color: #5b5fc7;
+  box-shadow: none;
 }
 
 .media-p405-room .media-p405-tile video {
@@ -936,80 +953,44 @@
 }
 
 /*
- * Anodized medallion (Apple Contacts / FaceTime): a tone gradient, a soft
- * top-left sheen that fades before the initial (white text stays >= 5:1),
- * an inner specular rim and a thin glass halo.
+ * ROOM-TILE-TEAMS-01: a perfectly flat Teams avatar — the tone's soft tint
+ * with dark initials of the same hue, no sheen, rim, halo, drop shadow or
+ * text shadow. Two initials step the type down so both fit at every size.
  */
 .media-p405-room .media-p405-avatar {
-  --avatar-from: #2f63d8;
-  --avatar-to: #5b3fd6;
   width: clamp(36px, 20cqi, 112px);
-  background:
-    radial-gradient(
-      110% 80% at 32% 12%,
-      rgb(255 255 255 / 20%) 0%,
-      rgb(255 255 255 / 0%) 40%
-    ),
-    linear-gradient(180deg, rgb(0 0 0 / 0%) 55%, rgb(0 0 0 / 16%) 100%),
-    linear-gradient(160deg, var(--avatar-from) 0%, var(--avatar-to) 100%);
-  box-shadow:
-    inset 0 1.5px 1px rgb(255 255 255 / 34%),
-    inset 0 -1px 1px rgb(0 0 0 / 18%),
-    0 0 0 6px rgb(255 255 255 / 4%),
-    0 14px 30px rgb(0 0 0 / 42%);
-  color: #fff;
-  font-size: clamp(15px, 8cqi, 44px);
+  background: var(--avatar-bg, #dfe3ea);
+  box-shadow: none;
+  color: var(--avatar-fg, #2b3340);
+  font-size: clamp(15px, 8.4cqi, 46px);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-shadow: none;
+  transition:
+    background-color 180ms var(--room-ease-spring),
+    color 180ms var(--room-ease-spring);
+}
+
+.media-p405-room .media-p405-avatar[data-initials="2"] {
+  font-size: clamp(14px, 7.2cqi, 40px);
 }
 
 /*
- * ROOM-STAGE-POLISH-04: eight medallion tones paired with the tile surface —
- * the same hue, a step lighter, like Meet. White initials stay >= 5.35:1 on
- * every stop (worst: tone 0 Deep Slate Teal).
+ * Microphone live (ref-3): a flat neutral slate circle with a white person
+ * glyph about half its diameter (white on #7d838d reads 3.82:1).
  */
-.media-p405-room .media-p405-avatar[data-tone="0"] {
-  --avatar-from: #457180;
-  --avatar-to: #365e6a;
+.media-p405-room .media-p405-avatar[data-mic-state="on"] {
+  background: #7d838d;
+  color: #fff;
 }
 
-.media-p405-room .media-p405-avatar[data-tone="1"] {
-  --avatar-from: #5262b0;
-  --avatar-to: #42509a;
+.media-p405-room .media-p405-avatar > svg {
+  width: 50%;
+  height: 50%;
 }
 
-.media-p405-room .media-p405-avatar[data-tone="2"] {
-  --avatar-from: #9b5442;
-  --avatar-to: #814232;
-}
-
-.media-p405-room .media-p405-avatar[data-tone="3"] {
-  --avatar-from: #3a725c;
-  --avatar-to: #2d604b;
-}
-
-.media-p405-room .media-p405-avatar[data-tone="4"] {
-  --avatar-from: #80529a;
-  --avatar-to: #69407f;
-}
-
-.media-p405-room .media-p405-avatar[data-tone="5"] {
-  --avatar-from: #7c6442;
-  --avatar-to: #665235;
-}
-
-.media-p405-room .media-p405-avatar[data-tone="6"] {
-  --avatar-from: #41699a;
-  --avatar-to: #345a85;
-}
-
-.media-p405-room .media-p405-avatar[data-tone="7"] {
-  --avatar-from: #924a6a;
-  --avatar-to: #7a3a56;
-}
-
-/* HUD: frosted name pill bottom-left, round pin button bottom-right. */
+/* HUD: flat name label bottom-left, round pin button bottom-right. */
 .media-p405-room .media-p405-tile-meta {
   right: 12px;
   bottom: 12px;
@@ -1021,21 +1002,37 @@
   pointer-events: none;
 }
 
+/*
+ * ROOM-TILE-TEAMS-01: the Teams name label — one flat charcoal fill, white
+ * text and glyph, no blur or glass rim. White reads >= 7.21:1 over any tile
+ * or camera frame (7.60:1 on the lightest tone, 16.5:1 on black video).
+ */
 .media-p405-room .media-p405-tile-meta > span {
   max-width: calc(100% - 44px);
-  padding: 5px 11px;
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-radius: 999px;
-  background: rgb(15 18 26 / 62%);
-  -webkit-backdrop-filter: blur(16px) saturate(170%);
-  backdrop-filter: blur(16px) saturate(170%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 12%);
-  color: #f3f4f6;
+  padding: 4px 9px 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: rgb(36 40 48 / 78%);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+  color: #fff;
   font-size: 12.5px;
   font-weight: 500;
   letter-spacing: -0.003em;
   line-height: 1.25;
   pointer-events: auto;
+}
+
+/*
+ * The decorative Mic / MicOff glyph floats after the name, inside the same
+ * span, so the name truncates with an ellipsis and the glyph stays visible.
+ */
+.media-p405-room .media-p405-tile-meta > span > .media-p405-tile-mic {
+  float: right;
+  width: 13px;
+  height: 13px;
+  margin: 1.5px 0 0 6px;
 }
 
 .media-p405-room .media-p405-tile-meta .th-button {
@@ -1092,8 +1089,14 @@
   }
 
   .media-p405-room .media-p405-tile-meta > span {
-    padding: 3px 9px;
+    padding: 3px 8px 3px 9px;
     font-size: 12px;
+  }
+
+  .media-p405-room .media-p405-tile-meta > span > .media-p405-tile-mic {
+    width: 12px;
+    height: 12px;
+    margin: 1.5px 0 0 5px;
   }
 
   .media-p405-room .media-p405-tile-meta .th-button {
@@ -1880,18 +1883,17 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
 }
 
+/*
+ * ROOM-TILE-TEAMS-01: the same flat Teams pair as the person's video tile
+ * (tone variables are declared next to the tile tones), two initials fit.
+ */
 .media-p406-roster-drawer .media-p406-people-avatar {
-  background:
-    radial-gradient(
-      110% 80% at 32% 12%,
-      rgb(255 255 255 / 20%) 0%,
-      rgb(255 255 255 / 0%) 42%
-    ),
-    linear-gradient(160deg, var(--avatar-from) 0%, var(--avatar-to) 100%);
-  box-shadow:
-    inset 0 1px 0.5px rgb(255 255 255 / 32%),
-    0 0 0 1px rgb(255 255 255 / 6%);
-  text-shadow: 0 1px 1px rgb(0 0 0 / 18%);
+  background: var(--avatar-bg, #dfe3ea);
+  box-shadow: none;
+  color: var(--avatar-fg, #2b3340);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  text-shadow: none;
 }
 
 .media-p406-roster-drawer .media-p406-people-row__name {
@@ -2367,8 +2369,8 @@
   gap: 8px;
 }
 
+/* ROOM-TILE-TEAMS-01: the strip keeps each tile's own tone / mic rim. */
 .media-p405-room .media-p405-classroom--tool-stage .media-p405-tile {
-  border-color: rgb(147 197 253 / 22%);
   border-radius: 14px;
   aspect-ratio: 16 / 9;
 }
@@ -2991,8 +2993,22 @@
     box-shadow: none;
   }
 
-  .media-p405-room .media-p405-tile[data-lk-speaking="true"] {
+  .media-p405-room
+    .media-p405-tile:is([data-lk-speaking="true"], [data-speaking="true"]) {
     outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+
+  /*
+   * ROOM-TILE-TEAMS-01: a live microphone keeps a visible cue without
+   * colour — the person glyph (CanvasText) and a 2px system outline.
+   */
+  .media-p405-room
+    .media-p405-tile[data-mic-state="on"]:not(
+      [data-lk-speaking="true"],
+      [data-speaking="true"]
+    ) {
+    outline: 2px solid CanvasText;
     outline-offset: -3px;
   }
 
@@ -3108,6 +3124,7 @@
   .media-p405-room .media-p405-shell.media-p405-shell--effects-open,
   .media-p405-room .media-p405-tile,
   .media-p405-room .media-p405-tile::after,
+  .media-p405-room .media-p405-avatar,
   .media-p405-room .media-p405-tile-meta .th-button,
   .media-p405-room .media-p405-device-panel select,
   .media-p406-reaction-menu .th-menu-item,

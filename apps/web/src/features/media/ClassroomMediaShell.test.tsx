@@ -58,7 +58,7 @@ const liveKitState = vi.hoisted(() => {
     audiooutput: vi.fn().mockResolvedValue(undefined),
     videoinput: vi.fn().mockResolvedValue(undefined),
   };
-  const mediaState = { cameraEnabled: false };
+  const mediaState = { cameraEnabled: false, microphoneEnabled: false };
   const localParticipant = {
     connectionQuality: "excellent",
     off: vi.fn((event: string, handler: (quality: string) => void) => {
@@ -134,6 +134,11 @@ vi.mock("livekit-client", () => ({
   },
   ParticipantEvent: {
     ConnectionQualityChanged: "connectionQualityChanged",
+    IsSpeakingChanged: "isSpeakingChanged",
+    TrackMuted: "trackMuted",
+    TrackPublished: "trackPublished",
+    TrackUnmuted: "trackUnmuted",
+    TrackUnpublished: "trackUnpublished",
   },
   RemoteTrackPublication: liveKitState.MockRemoteTrackPublication,
   Track: {
@@ -183,7 +188,7 @@ vi.mock("@livekit/components-react", () => ({
   useLocalParticipant: () => ({
     cameraTrack: liveKitState.cameraPublication,
     isCameraEnabled: liveKitState.mediaState.cameraEnabled,
-    isMicrophoneEnabled: false,
+    isMicrophoneEnabled: liveKitState.mediaState.microphoneEnabled,
     isScreenShareEnabled: false,
     localParticipant: liveKitState.localParticipant,
   }),
@@ -233,6 +238,7 @@ describe("ClassroomMediaShell", () => {
     liveKitState.speakingParticipants = [];
     liveKitState.localParticipant.connectionQuality = "excellent";
     liveKitState.mediaState.cameraEnabled = false;
+    liveKitState.mediaState.microphoneEnabled = false;
     liveKitState.cameraPublication = undefined;
     liveKitState.localParticipant.on.mockClear();
     liveKitState.localParticipant.off.mockClear();
@@ -2937,6 +2943,222 @@ describe("ClassroomMediaShell", () => {
       expect(
         refreshed[1]!.querySelector(".media-p406-reaction-count"),
       ).toHaveTextContent("×4");
+    });
+  });
+
+  describe("ROOM-TILE-TEAMS-01 flat Teams tiles and microphone avatars", () => {
+    /** A remote participant that emits LiveKit-like participant events. */
+    function withParticipantEvents(participant: MockParticipant) {
+      const listeners = new Map<string, Set<() => void>>();
+      return Object.assign(participant, {
+        emit(event: string) {
+          for (const listener of listeners.get(event) ?? []) listener();
+        },
+        isMicrophoneEnabled: false,
+        isSpeaking: false,
+        off: vi.fn((event: string, listener: () => void) => {
+          listeners.get(event)?.delete(listener);
+        }),
+        on: vi.fn((event: string, listener: () => void) => {
+          const set = listeners.get(event) ?? new Set<() => void>();
+          set.add(listener);
+          listeners.set(event, set);
+        }),
+      });
+    }
+
+    function cameraTile(container: HTMLElement, name: string) {
+      const tile = Array.from(
+        container.querySelectorAll<HTMLElement>(".media-p405-tile"),
+      ).find(
+        (candidate) =>
+          candidate.querySelector(".media-p405-tile-meta > span")
+            ?.textContent === name &&
+          candidate.getAttribute("data-lk-source") === "camera",
+      );
+      if (!tile) throw new Error(`No camera tile for ${name}.`);
+      return tile;
+    }
+
+    function avatarOf(tile: HTMLElement) {
+      const avatar = tile.querySelector<HTMLElement>(".media-p405-avatar");
+      if (!avatar) throw new Error("The tile has no avatar.");
+      return avatar;
+    }
+
+    function micGlyphOf(tile: HTMLElement) {
+      return tile.querySelector(".media-p405-tile-meta > span > svg");
+    }
+
+    it("flips self and others between flat initials and a person glyph at once without remounting a <video>", () => {
+      liveKitState.cameraTrackRefs = createCameraTracks(3);
+      const remote = withParticipantEvents(
+        liveKitState.cameraTrackRefs[1]!.participant,
+      );
+      const view = renderShell();
+      const self = cameraTile(view.container, "Learner 1");
+      const other = cameraTile(view.container, "Learner 2");
+      const selfVideo = self.querySelector("video");
+      const otherVideo = other.querySelector("video");
+      expect(selfVideo).not.toBeNull();
+      expect(otherVideo).not.toBeNull();
+
+      // Microphones off: Teams initials on the tone's flat tint, and a
+      // decorative MicOff glyph that leaves the name span's text untouched.
+      for (const [tile, initials] of [
+        [self, "L1"],
+        [other, "L2"],
+      ] as const) {
+        expect(tile).toHaveAttribute("data-mic-state", "off");
+        expect(tile).not.toHaveAttribute("data-speaking");
+        const avatar = avatarOf(tile);
+        expect(avatar).toHaveAttribute("aria-hidden", "true");
+        expect(avatar).toHaveAttribute("data-mic-state", "off");
+        expect(avatar).toHaveAttribute("data-initials", "2");
+        expect(avatar.textContent).toBe(initials);
+        expect(avatar.querySelector("svg")).toBeNull();
+        expect(micGlyphOf(tile)).toHaveAttribute("aria-hidden", "true");
+        expect(micGlyphOf(tile)).toHaveAttribute("data-mic-state", "off");
+      }
+      expect(remote.on).toHaveBeenCalledWith(
+        "trackUnmuted",
+        expect.any(Function),
+      );
+      expect(remote.on).toHaveBeenCalledWith(
+        "isSpeakingChanged",
+        expect.any(Function),
+      );
+
+      // Self: the local hook (the Dock key) flips the tile on its own.
+      liveKitState.mediaState.microphoneEnabled = true;
+      view.rerender(shellElement());
+      expect(self).toHaveAttribute("data-mic-state", "on");
+      expect(avatarOf(self)).toHaveAttribute("data-mic-state", "on");
+      expect(avatarOf(self).textContent).toBe("");
+      expect(avatarOf(self).querySelector("svg")).toHaveAttribute(
+        "aria-hidden",
+        "true",
+      );
+      expect(micGlyphOf(self)).toHaveAttribute("data-mic-state", "on");
+      expect(
+        self.querySelector(".media-p405-tile-meta > span")?.textContent,
+      ).toBe("Learner 1");
+      expect(other).toHaveAttribute("data-mic-state", "off");
+
+      // Others: one LiveKit unmute event re-reads the participant at once.
+      act(() => {
+        remote.isMicrophoneEnabled = true;
+        remote.emit("trackUnmuted");
+      });
+      expect(other).toHaveAttribute("data-mic-state", "on");
+      expect(avatarOf(other).querySelector("svg")).not.toBeNull();
+
+      // Speaking draws the flat ring only while the microphone is live.
+      act(() => {
+        remote.isSpeaking = true;
+        remote.emit("isSpeakingChanged");
+      });
+      expect(other).toHaveAttribute("data-speaking", "true");
+      act(() => {
+        remote.isMicrophoneEnabled = false;
+        remote.emit("trackMuted");
+      });
+      expect(other).toHaveAttribute("data-mic-state", "off");
+      expect(other).not.toHaveAttribute("data-speaking");
+      expect(avatarOf(other).textContent).toBe("L2");
+
+      liveKitState.mediaState.microphoneEnabled = false;
+      view.rerender(shellElement());
+      expect(avatarOf(self).textContent).toBe("L1");
+
+      // Same tiles, same <video> nodes: nothing was remounted.
+      expect(cameraTile(view.container, "Learner 1")).toBe(self);
+      expect(cameraTile(view.container, "Learner 2")).toBe(other);
+      expect(self.querySelector("video")).toBe(selfVideo);
+      expect(other.querySelector("video")).toBe(otherVideo);
+
+      view.unmount();
+      expect(remote.off).toHaveBeenCalledWith(
+        "trackUnmuted",
+        expect.any(Function),
+      );
+    });
+
+    it("reads an unmuted remote microphone publication and LiveKit's speakers", () => {
+      liveKitState.cameraTrackRefs = createCameraTracks(3);
+      const remote = liveKitState.cameraTrackRefs[2]!.participant;
+      const publication = Object.assign(
+        new liveKitState.MockRemoteTrackPublication(),
+        { isMuted: false },
+      );
+      liveKitState.audioTrackRefs = [
+        { participant: remote, publication, source: "microphone" },
+      ];
+      liveKitState.speakingParticipants = [remote];
+      const view = renderShell();
+      const tile = cameraTile(view.container, "Learner 3");
+      expect(tile).toHaveAttribute("data-mic-state", "on");
+      expect(tile).toHaveAttribute("data-speaking", "true");
+      expect(cameraTile(view.container, "Learner 2")).toHaveAttribute(
+        "data-mic-state",
+        "off",
+      );
+
+      // A muted publication is not a live microphone, so no speaking ring.
+      publication.isMuted = true;
+      liveKitState.audioTrackRefs = [...liveKitState.audioTrackRefs];
+      view.rerender(shellElement());
+      expect(tile).toHaveAttribute("data-mic-state", "off");
+      expect(tile).not.toHaveAttribute("data-speaking");
+      expect(avatarOf(tile).textContent).toBe("L3");
+    });
+
+    it("keeps a screen share free of personal microphone cues", async () => {
+      liveKitState.cameraTrackRefs = createCameraTracks(3);
+      const presenter = liveKitState.cameraTrackRefs[1]!.participant;
+      const listener = liveKitState.cameraTrackRefs[2]!.participant;
+      liveKitState.audioTrackRefs = [
+        {
+          participant: listener,
+          publication: Object.assign(
+            new liveKitState.MockRemoteTrackPublication(),
+            { isMuted: false },
+          ),
+          source: "microphone",
+        },
+      ];
+      liveKitState.screenShareTrackRefs = [
+        {
+          participant: presenter,
+          publication: new liveKitState.MockRemoteTrackPublication(),
+          source: "screen_share",
+        },
+      ];
+      const view = renderShell();
+      await waitFor(() =>
+        expect(layoutMode(view.container)).toBe("presentation"),
+      );
+      const share = view.container.querySelector<HTMLElement>(
+        '.media-p405-tile--stage[data-lk-source="screen_share"]',
+      );
+      expect(share).not.toBeNull();
+      expect(share).not.toHaveAttribute("data-mic-state");
+      expect(share).not.toHaveAttribute("data-speaking");
+      expect(micGlyphOf(share!)).toBeNull();
+      expect(avatarOf(share!)).not.toHaveAttribute("data-mic-state");
+      // People in the rail keep their own cues beside the shared screen.
+      const railTile = (name: string) =>
+        Array.from(
+          view.container.querySelectorAll<HTMLElement>(
+            ".media-p405-rail-list .media-p405-tile",
+          ),
+        ).find(
+          (tile) =>
+            tile.querySelector(".media-p405-tile-meta > span")?.textContent ===
+            name,
+        );
+      expect(railTile("Learner 3")).toHaveAttribute("data-mic-state", "on");
+      expect(railTile("Learner 1")).toHaveAttribute("data-mic-state", "off");
     });
   });
 

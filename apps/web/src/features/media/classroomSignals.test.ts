@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   MAX_VISIBLE_REACTION_CLUSTERS,
   REACTION_GROUP_WINDOW_MS,
@@ -7,6 +7,7 @@ import {
   foldClassroomSignalSnapshot,
   groupClassroomReactionEvents,
   identifyClassroomSignalSequenceGap,
+  participantInitials,
   projectParticipantReactions,
   projectReactionClusters,
   projectTileSignals,
@@ -598,5 +599,139 @@ describe("classroom signal sequence classification", () => {
     expect(() => classifyClassroomSignalSequence(1, Number.NaN)).toThrow(
       TypeError,
     );
+  });
+});
+
+describe("ROOM-TILE-TEAMS-01 Teams initials", () => {
+  it("joins the first letters of the first and last words", () => {
+    expect(participantInitials("B. Nguyet")).toBe("BN");
+    expect(participantInitials("Trần Thị Nhật Tú")).toBe("TT");
+    expect(participantInitials("Lê Anh")).toBe("LA");
+    expect(participantInitials("ZITADEL Admin")).toBe("ZA");
+    expect(participantInitials("Hoàng   Trương")).toBe("HT");
+  });
+
+  it("upper-cases Vietnamese letters Đ, Ư, Ơ and Â with their marks", () => {
+    expect(participantInitials("Đào Thế Dũng")).toBe("ĐD");
+    expect(participantInitials("đào thế dũng")).toBe("ĐD");
+    expect(participantInitials("ưng ơn")).toBe("ƯƠ");
+    expect(participantInitials("âu cơ")).toBe("ÂC");
+    // Decomposed input (NFD) still yields single precomposed letters.
+    expect(participantInitials("ấn độ".normalize("NFD"))).toBe("ẤĐ");
+  });
+
+  it("ignores bracketed asides and leading academic titles", () => {
+    expect(participantInitials("Ng Phuong (Unverified)")).toBe("NP");
+    expect(participantInitials("Hương Thảo (Unverified)")).toBe("HT");
+    expect(participantInitials("Thu Hà (Giáo viên)")).toBe("TH");
+    expect(participantInitials("[Khách] Minh Anh")).toBe("MA");
+    expect(participantInitials("ThS. Lê Văn Tuấn")).toBe("LT");
+    expect(participantInitials("PGS.TS. Nguyễn Văn An")).toBe("NA");
+    expect(participantInitials("Dr. Ann Lee")).toBe("AL");
+    // A title alone is still the only readable word.
+    expect(participantInitials("Dr.")).toBe("D");
+  });
+
+  it("uses one letter for one word and a question mark for nothing readable", () => {
+    expect(participantInitials("Basang")).toBe("B");
+    expect(participantInitials("minh")).toBe("M");
+    expect(participantInitials("(Unverified)")).toBe("U");
+    expect(participantInitials("")).toBe("?");
+    expect(participantInitials("   ")).toBe("?");
+    expect(participantInitials("— 🎓 —")).toBe("?");
+  });
+});
+
+describe("ROOM-TILE-TEAMS-01 flat pastel palette", () => {
+  // Vitest stubs stylesheet imports (even `?raw`) and jsdom gives no file
+  // URL, so the room stylesheet is read from the package (or repo) root; the
+  // app's type roots carry no Node types.
+  let stageCss = "";
+  beforeAll(async () => {
+    const fsModule = "node:fs/promises";
+    const { readFile } = (await import(/* @vite-ignore */ fsModule)) as {
+      readFile: (path: string, encoding: "utf8") => Promise<string>;
+    };
+    for (const path of [
+      "src/pages/ClassroomRoomStage.css",
+      "apps/web/src/pages/ClassroomRoomStage.css",
+    ]) {
+      stageCss = await readFile(path, "utf8").catch(() => "");
+      if (stageCss) break;
+    }
+    expect(stageCss).toContain(".media-p405-tile");
+  });
+  const channel = (value: number) => {
+    const c = value / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = (hex: string) => {
+    const value = Number.parseInt(hex.slice(1), 16);
+    return (
+      0.2126 * channel((value >> 16) & 255) +
+      0.7152 * channel((value >> 8) & 255) +
+      0.0722 * channel(value & 255)
+    );
+  };
+  const contrast = (first: string, second: string) => {
+    const [light, dark] = [luminance(first), luminance(second)].sort(
+      (a, b) => b - a,
+    );
+    return (light! + 0.05) / (dark! + 0.05);
+  };
+  const declaredTones = () =>
+    Array.from(
+      stageCss.matchAll(
+        /\[data-tone="(\d)"\][^{]*\{\s*--tile-bg: (#[0-9a-f]{6});\s*--avatar-bg: (#[0-9a-f]{6});\s*--avatar-fg: (#[0-9a-f]{6});/g,
+      ),
+      ([, tone, tile, background, foreground]) => ({
+        background: background!,
+        foreground: foreground!,
+        tile: tile!,
+        tone: Number(tone),
+      }),
+    );
+
+  it("declares eight light, flat tones with readable initials", () => {
+    const tones = declaredTones();
+    expect(tones.map(({ tone }) => tone)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(new Set(tones.map(({ tile }) => tile)).size).toBe(8);
+    expect(new Set(tones.map(({ background }) => background)).size).toBe(8);
+    for (const { background, foreground, tile } of tones) {
+      expect(luminance(tile)).toBeGreaterThanOrEqual(0.8);
+      expect(luminance(tile)).toBeLessThanOrEqual(0.92);
+      expect(contrast(foreground, background)).toBeGreaterThanOrEqual(5);
+      // The live-microphone rim and speaking ring stay visible on the tile.
+      expect(contrast("#5f6670", tile)).toBeGreaterThanOrEqual(3);
+      expect(contrast("#5b5fc7", tile)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("keeps the person glyph, rims and name label at the measured contrast", () => {
+    expect(stageCss).toMatch(
+      /\.media-p405-avatar\[data-mic-state="on"\] \{\s*background: #7d838d;\s*color: #fff;/,
+    );
+    expect(contrast("#7d838d", "#ffffff")).toBeGreaterThanOrEqual(3);
+    expect(stageCss).toMatch(
+      /\.media-p405-tile\[data-mic-state="on"\] \{\s*border-color: #5f6670;/,
+    );
+    // rgb(36 40 48 / 78%) over the brightest possible frame (white video).
+    const label = [36, 40, 48]
+      .map((value) => Math.round(value * 0.78 + 255 * 0.22))
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
+    expect(stageCss).toContain("background: rgb(36 40 48 / 78%);");
+    expect(contrast(`#${label}`, "#ffffff")).toBeGreaterThanOrEqual(7);
+    // No 3D medallion or tile gradients survive on camera-off surfaces.
+    const tileAndAvatarRules = Array.from(
+      stageCss.matchAll(
+        /\.media-p405-room \.media-p405-(?:tile|avatar)(?:\[data-tone\])? \{([^}]*)\}/g,
+      ),
+      ([, body]) => body!,
+    );
+    expect(tileAndAvatarRules.length).toBeGreaterThanOrEqual(3);
+    for (const body of tileAndAvatarRules) {
+      expect(body).not.toMatch(/gradient|inset/);
+    }
   });
 });

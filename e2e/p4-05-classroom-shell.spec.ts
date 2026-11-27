@@ -214,6 +214,7 @@ declare global {
       participantCount: number;
     };
     __p405MediaProbe?: MediaProbeState;
+    __p405Room?: BrowserRoom;
     __paperFixtureAuthority?: PaperFixtureAuthority;
     __roomPeopleFixture?: {
       refetch: () => Promise<void>;
@@ -723,6 +724,9 @@ async function mountClassroomFixture(page: Page, options: FixtureOptions) {
       participantCount: fixtureOptions.participantCount,
     };
     window.__p405Fixture = fixtureState;
+    // ROOM-TILE-TEAMS-01: the simulated room, so a test can raise LiveKit's
+    // own participant events (mute / unmute / speaking) on a remote person.
+    window.__p405Room = room;
 
     // ROOM-PEOPLE-03: the production waiting room over React Query. The test
     // routes the admissions JSON; `refetch` stands in for the 2.5s poll.
@@ -1673,15 +1677,26 @@ test("ROOM-STUDIO-02 centres one large 16:9 tile under an icon-only floating Doc
   // Anodized ruby: the sheen is a background-image over the unchanged fill.
   expect((await readGlass(leave)).backgroundImage).toContain("linear-gradient");
   expect((await readGlass(leave)).boxShadow).toMatch(/inset/);
-  // FaceTime framing: a solo tile gets the soft 20px corner and a rim.
+  // FaceTime framing: a solo tile gets the soft 20px corner. ROOM-TILE-TEAMS-01:
+  // the tile and its Teams name label are flat — no lifted shadow, sheen,
+  // blur or glass rim.
   const soloTile = page.locator(".media-p405-grid .media-p405-tile").first();
   await expect(soloTile).toHaveCSS(
     "border-top-left-radius",
     await expectedCornerRadius(page, 20),
   );
-  expect((await readGlass(soloTile)).boxShadow).toMatch(/inset/);
+  const soloSurface = await readGlass(soloTile);
+  expect(soloSurface.boxShadow).toBe("none");
+  expect(soloSurface.backgroundImage).toBe("none");
   const namePill = soloTile.locator(".media-p405-tile-meta > span");
-  expect((await readGlass(namePill)).backdropFilter).toMatch(/blur\(16px\)/);
+  const namePillSurface = await readGlass(namePill);
+  expect(namePillSurface.backdropFilter).toBe("none");
+  expect(namePillSurface.boxShadow).toBe("none");
+  await expect(namePill).toHaveCSS(
+    "background-color",
+    "rgba(36, 40, 48, 0.78)",
+  );
+  await expect(namePill).toHaveCSS("color", "rgb(255, 255, 255)");
   // Apple HIG type and the spring curve on every Dock key.
   expect(
     await page
@@ -4508,7 +4523,78 @@ async function freezeFloatingReactions(page: Page) {
   });
 }
 
-test("ROOM-STAGE-POLISH-04 gives every camera-off tile its own Google Meet tone with readable initials", async ({
+/**
+ * Computed camera-off surface of every tile, measured in the browser once
+ * the tiles' colour transitions (mic on / off, stylesheet load) settle.
+ */
+async function readTileSurfaces(tiles: Locator) {
+  await tiles.evaluateAll((elements) =>
+    Promise.all(
+      elements
+        .flatMap((element) => element.getAnimations({ subtree: true }))
+        .filter((animation) => animation instanceof CSSTransition)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  );
+  return tiles.evaluateAll((elements) =>
+    elements.map((element) => {
+      const tile = element as HTMLElement;
+      const avatar = tile.querySelector<HTMLElement>(".media-p405-avatar")!;
+      const style = getComputedStyle(tile);
+      const avatarStyle = getComputedStyle(avatar);
+      const after = getComputedStyle(tile, "::after");
+      const luminance = (color: string) => {
+        const [red, green, blue] = (color.match(/[\d.]+/g) ?? [])
+          .slice(0, 3)
+          .map((part) => {
+            const c = Number(part) / 255;
+            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          });
+        return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+      };
+      const contrast = (first: string, second: string) => {
+        const [light, dark] = [luminance(first), luminance(second)].sort(
+          (a, b) => b - a,
+        );
+        return (light! + 0.05) / (dark! + 0.05);
+      };
+      const glyph = avatar.querySelector("svg");
+      return {
+        afterBorder: after.borderTopColor,
+        avatarBackground: avatarStyle.backgroundColor,
+        avatarBackgroundImage: avatarStyle.backgroundImage,
+        avatarBoxShadow: avatarStyle.boxShadow,
+        avatarContrast: contrast(
+          avatarStyle.color,
+          avatarStyle.backgroundColor,
+        ),
+        avatarMicState: avatar.dataset.micState,
+        avatarText: avatar.textContent,
+        avatarTextShadow: avatarStyle.textShadow,
+        avatarTone: avatar.dataset.tone,
+        background: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+        border: style.borderTopColor,
+        boxShadow: style.boxShadow,
+        glyphRatio: glyph
+          ? glyph.getBoundingClientRect().width /
+            avatar.getBoundingClientRect().width
+          : 0,
+        micState: tile.dataset.micState,
+        name:
+          tile.querySelector(".media-p405-tile-meta > span")?.textContent ?? "",
+        nameGlyph:
+          tile
+            .querySelector(".media-p405-tile-meta > span > svg")
+            ?.getAttribute("data-mic-state") ?? null,
+        tileLuminance: luminance(style.backgroundColor),
+        tone: tile.dataset.tone,
+      };
+    }),
+  );
+}
+
+test("ROOM-TILE-TEAMS-01 gives every camera-off tile its own flat Teams pastel with readable initials", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1_440, height: 900 });
@@ -4524,44 +4610,37 @@ test("ROOM-STAGE-POLISH-04 gives every camera-off tile its own Google Meet tone 
 
   const tiles = page.locator(".media-p405-grid .media-p405-tile");
   await expect(tiles).toHaveCount(6);
-  const surfaces = await tiles.evaluateAll((elements) =>
-    elements.map((element) => {
-      const avatar = element.querySelector<HTMLElement>(".media-p405-avatar")!;
-      const style = getComputedStyle(element);
-      const avatarStyle = getComputedStyle(avatar);
-      const luminance = (hex: string) => {
-        const value = Number.parseInt(hex.trim().slice(1), 16);
-        const channel = (shift: number) => {
-          const c = ((value >> shift) & 255) / 255;
-          return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-        };
-        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
-      };
-      const whiteOn = (hex: string) => 1.05 / (luminance(hex) + 0.05);
-      return {
-        avatarTone: avatar.dataset.tone,
-        background: style.backgroundImage,
-        minAvatarContrast: Math.min(
-          whiteOn(avatarStyle.getPropertyValue("--avatar-from")),
-          whiteOn(avatarStyle.getPropertyValue("--avatar-to")),
-        ),
-        minTileContrast: Math.min(
-          whiteOn(style.getPropertyValue("--tile-from")),
-          whiteOn(style.getPropertyValue("--tile-to")),
-        ),
-        tone: (element as HTMLElement).dataset.tone,
-      };
-    }),
-  );
-  // Six people, six different surfaces; each medallion shares its tile tone.
+  const surfaces = await readTileSurfaces(tiles);
+  // Six people, six different flat pastels; each avatar shares its tone.
   expect(new Set(surfaces.map(({ tone }) => tone)).size).toBe(6);
   expect(new Set(surfaces.map(({ background }) => background)).size).toBe(6);
   for (const surface of surfaces) {
     expect(surface.tone).toMatch(/^[0-7]$/);
     expect(surface.avatarTone).toBe(surface.tone);
-    expect(surface.background).toContain("linear-gradient");
-    expect(surface.minAvatarContrast).toBeGreaterThanOrEqual(5);
-    expect(surface.minTileContrast).toBeGreaterThanOrEqual(9);
+    // Flat: no gradient, sheen, inset rim, glow or text shadow anywhere.
+    expect(surface.backgroundImage).toBe("none");
+    expect(surface.boxShadow).toBe("none");
+    expect(surface.avatarBackgroundImage).toBe("none");
+    expect(surface.avatarBoxShadow).toBe("none");
+    expect(surface.avatarTextShadow).toBe("none");
+    expect(surface.tileLuminance).toBeGreaterThanOrEqual(0.8);
+    expect(surface.tileLuminance).toBeLessThanOrEqual(0.92);
+  }
+  // Microphones off: Teams initials (first + last word) at >= 5:1.
+  const initials: Record<string, string> = {
+    "Minh Anh": "MA",
+    "Gia Bảo": "GB",
+    "Khánh Linh": "KL",
+    "Đức Huy": "ĐH",
+    "Ngọc Trâm": "NT",
+  };
+  for (const [name, expected] of Object.entries(initials)) {
+    const surface = surfaces.find((candidate) => candidate.name === name)!;
+    expect(surface.micState).toBe("off");
+    expect(surface.avatarMicState).toBe("off");
+    expect(surface.nameGlyph).toBe("off");
+    expect(surface.avatarText).toBe(expected);
+    expect(surface.avatarContrast).toBeGreaterThanOrEqual(5);
   }
   expect(
     (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
@@ -4569,8 +4648,176 @@ test("ROOM-STAGE-POLISH-04 gives every camera-off tile its own Google Meet tone 
   ).toEqual([]);
   await saveRoomStagePolishScreenshot(
     page,
-    "02-google-meet-diverse-tile-colors-grid.png",
+    "02-teams-flat-pastel-tile-colors-grid.png",
   );
+});
+
+test("ROOM-TILE-TEAMS-01 turns a live microphone into a flat person glyph for self and others", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await installRoomPeopleAdmissions(page, []);
+  await mountClassroomFixture(page, {
+    participantCount: 4,
+    studio: {
+      language: "vi",
+      roomTitle: "Lớp Toán 10 – Phương trình bậc hai",
+    },
+  });
+  await loadRoomStudioStyles(page);
+
+  const tiles = page.locator(".media-p405-grid .media-p405-tile");
+  await expect(tiles).toHaveCount(4);
+  const surfaceOf = async (name: string) =>
+    (await readTileSurfaces(tiles)).find((surface) => surface.name === name)!;
+  const self = "Thu Hà (Giáo viên)";
+
+  // The studio fixture publishes a silent live microphone for you (ref-3):
+  // a flat slate circle with a white person glyph about half its diameter,
+  // a crisper slate rim, and a Mic glyph after the name.
+  let teacher = await surfaceOf(self);
+  expect(teacher.micState).toBe("on");
+  expect(teacher.avatarMicState).toBe("on");
+  expect(teacher.avatarText).toBe("");
+  expect(teacher.avatarBackground).toBe("rgb(125, 131, 141)");
+  expect(teacher.avatarBackgroundImage).toBe("none");
+  expect(teacher.avatarBoxShadow).toBe("none");
+  expect(teacher.avatarContrast).toBeGreaterThanOrEqual(3);
+  expect(teacher.glyphRatio).toBeGreaterThanOrEqual(0.46);
+  expect(teacher.glyphRatio).toBeLessThanOrEqual(0.54);
+  expect(teacher.border).toBe("rgb(95, 102, 112)");
+  expect(teacher.nameGlyph).toBe("on");
+  const minhAnh = await surfaceOf("Minh Anh");
+  expect(minhAnh.micState).toBe("off");
+  expect(minhAnh.avatarText).toBe("MA");
+  await saveRoomStagePolishScreenshot(page, "03-teams-mic-on-person-glyph.png");
+
+  // The Dock key mutes you: initials come back at once on your own tone.
+  const toolbar = page.getByRole("toolbar", { name: "Điều khiển phòng học" });
+  await toolbar.getByRole("button", { name: "Tắt micro", exact: true }).click();
+  await expect(
+    toolbar.getByRole("button", { name: "Bật micro", exact: true }),
+  ).toBeVisible();
+  const teacherTile = tiles.filter({
+    has: page.locator(".media-p405-tile-meta > span", { hasText: self }),
+  });
+  await expect(teacherTile).toHaveAttribute("data-mic-state", "off");
+  teacher = await surfaceOf(self);
+  expect(teacher.avatarText).toBe("TH");
+  expect(teacher.avatarContrast).toBeGreaterThanOrEqual(5);
+  expect(teacher.border).not.toBe("rgb(95, 102, 112)");
+  expect(teacher.nameGlyph).toBe("off");
+
+  // Others: LiveKit's own participant events flip a remote tile.
+  const setRemote = (state: { microphone?: boolean; speaking?: boolean }) =>
+    page.evaluate((next) => {
+      const remote = window.__p405Room!.remoteParticipants.values().next()
+        .value as unknown as {
+        emit(event: string, ...args: unknown[]): boolean;
+        isSpeaking: boolean;
+      };
+      const publication = { isMuted: !next.microphone, source: "microphone" };
+      if (next.microphone !== undefined) {
+        Object.defineProperty(remote, "isMicrophoneEnabled", {
+          configurable: true,
+          get: () => next.microphone,
+        });
+        remote.emit(
+          next.microphone ? "trackUnmuted" : "trackMuted",
+          publication,
+        );
+      }
+      if (next.speaking !== undefined) {
+        remote.isSpeaking = next.speaking;
+        remote.emit("isSpeakingChanged", next.speaking);
+      }
+    }, state);
+  const minhAnhTile = tiles.filter({
+    has: page.locator(".media-p405-tile-meta > span", { hasText: "Minh Anh" }),
+  });
+  await setRemote({ microphone: true });
+  await expect(minhAnhTile).toHaveAttribute("data-mic-state", "on");
+  await expect(minhAnhTile.locator(".media-p405-avatar svg")).toBeVisible();
+  // Speaking: a flat #5b5fc7 Teams ring, no glow.
+  await setRemote({ speaking: true });
+  await expect(minhAnhTile).toHaveAttribute("data-speaking", "true");
+  const speaking = await surfaceOf("Minh Anh");
+  expect(speaking.border).toBe("rgb(91, 95, 199)");
+  expect(speaking.afterBorder).toBe("rgb(91, 95, 199)");
+  expect(speaking.boxShadow).toBe("none");
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+
+  // Forced colours: the person glyph and the speaking outline stay visible.
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect(minhAnhTile).toHaveCSS("outline-style", "solid");
+  await expect(minhAnhTile.locator(".media-p405-avatar svg")).toBeVisible();
+  expect(
+    (await new AxeBuilder({ page }).include(".media-p405-shell").analyze())
+      .violations,
+  ).toEqual([]);
+  await page.emulateMedia({ forcedColors: "none" });
+
+  await setRemote({ microphone: false, speaking: false });
+  await expect(minhAnhTile).toHaveAttribute("data-mic-state", "off");
+  await expect(minhAnhTile).not.toHaveAttribute("data-speaking", "true");
+  expect((await surfaceOf("Minh Anh")).avatarText).toBe("MA");
+});
+
+test("ROOM-TILE-TEAMS-01 never remounts a camera <video> when microphones change", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1_440, height: 900 });
+  await mountClassroomFixture(page, { participantCount: 4 });
+  await loadRoomStudioStyles(page);
+
+  const videos = page.locator(".media-p405-grid .media-p405-tile video");
+  await expect(videos).toHaveCount(4);
+  await videos.evaluateAll((elements) => {
+    elements.forEach((element, index) => {
+      (element as HTMLVideoElement & { __tileMarker?: number }).__tileMarker =
+        index + 1;
+    });
+  });
+  const toggleRemotes = (enabled: boolean) =>
+    page.evaluate((live) => {
+      for (const participant of window.__p405Room!.remoteParticipants.values()) {
+        const remote = participant as unknown as {
+          emit(event: string, ...args: unknown[]): boolean;
+        };
+        Object.defineProperty(remote, "isMicrophoneEnabled", {
+          configurable: true,
+          get: () => live,
+        });
+        remote.emit(live ? "trackUnmuted" : "trackMuted", {
+          isMuted: !live,
+          source: "microphone",
+        });
+      }
+    }, enabled);
+
+  const remoteTiles = page.locator(
+    '.media-p405-grid .media-p405-tile[data-lk-local-participant="false"]',
+  );
+  await expect(remoteTiles).toHaveCount(3);
+  for (const live of [true, false, true]) {
+    await toggleRemotes(live);
+    for (const tile of await remoteTiles.all()) {
+      await expect(tile).toHaveAttribute("data-mic-state", live ? "on" : "off");
+    }
+  }
+  // The very same <video> nodes, still attached, in the same order.
+  expect(
+    await videos.evaluateAll((elements) =>
+      elements.map(
+        (element) =>
+          (element as HTMLVideoElement & { __tileMarker?: number })
+            .__tileMarker ?? 0,
+      ),
+    ),
+  ).toEqual([1, 2, 3, 4]);
 });
 
 test("ROOM-STAGE-POLISH-04 pins hand and reaction badges to the sender's top-right corner while reactions float up above the Dock", async ({

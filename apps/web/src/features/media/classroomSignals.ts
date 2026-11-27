@@ -1311,6 +1311,66 @@ export function mediaTileTone(sequence: number, salt: number): number {
   return slot < 0 ? slot + MEDIA_TILE_TONE_COUNT : slot;
 }
 
+/**
+ * ROOM-TILE-TEAMS-01: honorifics and academic titles that lead a display name
+ * ("ThS. Lê Văn Tuấn", "Dr. Ann Lee"). They are dropped before initials are
+ * taken, but only while at least one real name word remains.
+ */
+const NAME_TITLE_PREFIXES = new Set([
+  "bs",
+  "cn",
+  "dr",
+  "gs",
+  "gsts",
+  "ks",
+  "miss",
+  "mr",
+  "mrs",
+  "ms",
+  "mx",
+  "pgs",
+  "pgsts",
+  "prof",
+  "ths",
+  "ts",
+  "tskh",
+]);
+
+/** First letter or digit of a word, with any combining marks it carries. */
+const INITIAL_PATTERN = /[\p{L}\p{N}]\p{M}*/u;
+
+/**
+ * ROOM-TILE-TEAMS-01: Microsoft Teams style initials for a camera-off
+ * avatar. Bracketed asides ("(Unverified)", "[Khách]") and leading titles are
+ * ignored; two or more words give the first letter of the first and of the
+ * last word, one word gives one letter, nothing readable gives "?". Letters
+ * are upper-cased with Vietnamese rules ("đào thế dũng" → "ĐD").
+ */
+export function participantInitials(displayName: string): string {
+  const normalized = displayName.normalize("NFC");
+  const withoutAsides = normalized
+    .replace(/\([^()]*\)|\[[^[\]]*\]/gu, " ")
+    .replace(/[()[\]]/gu, " ");
+  const words = (withoutAsides.trim() ? withoutAsides : normalized)
+    .split(/\s+/u)
+    .filter((word) => INITIAL_PATTERN.test(word));
+  while (
+    words.length > 1 &&
+    NAME_TITLE_PREFIXES.has(
+      (words[0] ?? "").toLocaleLowerCase("vi").replace(/[^\p{L}]/gu, ""),
+    )
+  ) {
+    words.shift();
+  }
+  const initial = (word: string | undefined) =>
+    word?.match(INITIAL_PATTERN)?.[0] ?? "";
+  const letters =
+    words.length > 1
+      ? `${initial(words[0])}${initial(words[words.length - 1])}`
+      : initial(words[0]);
+  return letters ? letters.toLocaleUpperCase("vi") : "?";
+}
+
 /** 32-bit FNV-1a over UTF-16 code units: small, fast and well spread. */
 export function fnv1aHash(value: string): number {
   let hash = 0x811c9dc5;

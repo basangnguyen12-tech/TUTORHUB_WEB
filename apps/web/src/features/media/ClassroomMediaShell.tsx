@@ -133,6 +133,7 @@ import {
   CLASSROOM_REACTION_TYPES,
   fnv1aHash,
   mediaTileTone,
+  participantInitials,
   projectTileSignals,
   type ClassroomReactionType,
   type ClassroomReactionVisualCluster,
@@ -543,9 +544,96 @@ interface MediaTileProps {
   signal?: ClassroomTileSignal | undefined;
   /** ROOM-STAGE-POLISH-04: camera-off surface tone (0–7). */
   tone: number;
+  /** ROOM-TILE-TEAMS-01: room-wide microphone and speaking cues. */
+  mediaCues: MediaTileMediaCues;
   trackRef?: TrackReferenceOrPlaceholder;
   variant: "grid" | "rail" | "stage";
   onTogglePin: (item: MediaLayoutItem, focusTarget: HTMLElement) => void;
+}
+
+/**
+ * ROOM-TILE-TEAMS-01: what the shell already knows about microphones. The
+ * local state comes straight from `useLocalParticipant` (it flips the moment
+ * the Dock key is pressed); remote unmuted microphones come from the shell's
+ * microphone track references and speakers from `useSpeakingParticipants`.
+ */
+interface MediaTileMediaCues {
+  readonly localMicrophoneEnabled: boolean;
+  readonly speaking: ReadonlySet<Participant>;
+  readonly unmutedMicrophones: ReadonlySet<Participant>;
+}
+
+/**
+ * ROOM-TILE-TEAMS-01: participant events that can change a remote tile's
+ * microphone or speaking cue. A mock may not define every name, so only real
+ * event strings are subscribed.
+ */
+const TILE_MEDIA_EVENTS: readonly string[] = (
+  [
+    ParticipantEvent.TrackMuted,
+    ParticipantEvent.TrackUnmuted,
+    ParticipantEvent.TrackPublished,
+    ParticipantEvent.TrackUnpublished,
+    ParticipantEvent.IsSpeakingChanged,
+  ] as readonly unknown[]
+).filter((event): event is string => typeof event === "string");
+
+interface TileParticipantEmitter {
+  off(event: string, listener: () => void): unknown;
+  on(event: string, listener: () => void): unknown;
+}
+
+function tileParticipantEmitter(
+  participant: Participant | null,
+): TileParticipantEmitter | null {
+  if (!participant) return null;
+  const candidate = participant as unknown as Partial<
+    Record<keyof TileParticipantEmitter, unknown>
+  >;
+  return typeof candidate.on === "function" &&
+    typeof candidate.off === "function"
+    ? (participant as unknown as TileParticipantEmitter)
+    : null;
+}
+
+/** A primitive snapshot ("10" = microphone on, not speaking) for the store. */
+function tileParticipantMediaSnapshot(participant: Participant | null) {
+  if (!participant) return "00";
+  const fields = participant as unknown as Partial<
+    Record<"isMicrophoneEnabled" | "isSpeaking", unknown>
+  >;
+  return `${fields.isMicrophoneEnabled === true ? 1 : 0}${
+    fields.isSpeaking === true ? 1 : 0
+  }`;
+}
+
+/**
+ * ROOM-TILE-TEAMS-01: a remote participant's own microphone / speaking state,
+ * re-read on every LiveKit mute, publish and speaking event. Only `data-*`
+ * attributes and the avatar's content follow it, never the tile's key or its
+ * <VideoTrack>, so toggling a microphone never remounts a <video>.
+ */
+function useRemoteTileMediaState(participant: Participant | null) {
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      const emitter = tileParticipantEmitter(participant);
+      if (!emitter) return () => undefined;
+      for (const event of TILE_MEDIA_EVENTS) emitter.on(event, notify);
+      return () => {
+        for (const event of TILE_MEDIA_EVENTS) emitter.off(event, notify);
+      };
+    },
+    [participant],
+  );
+  const read = useCallback(
+    () => tileParticipantMediaSnapshot(participant),
+    [participant],
+  );
+  const snapshot = useSyncExternalStore(subscribe, read, read);
+  return {
+    microphoneEnabled: snapshot[0] === "1",
+    speaking: snapshot[1] === "1",
+  };
 }
 
 type ToolbarControlKey =
@@ -930,6 +1018,25 @@ export function ClassroomMediaShell({
     () => projectTileSignals(signalProjection),
     [signalProjection],
   );
+  // ROOM-TILE-TEAMS-01: microphone / speaking cues every tile reads. Remote
+  // microphones count as live only when their publication says unmuted.
+  const tileMediaCues = useMemo<MediaTileMediaCues>(() => {
+    const unmutedMicrophones = new Set<Participant>();
+    for (const trackRef of audioTrackRefs) {
+      if (
+        trackRef.source === Track.Source.Microphone &&
+        !trackRef.participant.isLocal &&
+        trackRef.publication.isMuted === false
+      ) {
+        unmutedMicrophones.add(trackRef.participant);
+      }
+    }
+    return {
+      localMicrophoneEnabled: isMicrophoneEnabled,
+      speaking: new Set<Participant>(speakingParticipants),
+      unmutedMicrophones,
+    };
+  }, [audioTrackRefs, isMicrophoneEnabled, speakingParticipants]);
   const toneSalt = useMemo(
     () => fnv1aHash(signalProjection?.room_instance_id ?? ""),
     [signalProjection?.room_instance_id],
@@ -1557,6 +1664,7 @@ export function ClassroomMediaShell({
     <ParticipantRail
       attachedVideoItemIDs={attachedCameraVideoItemIDs}
       items={projection.items}
+      mediaCues={tileMediaCues}
       onTogglePin={handleTogglePin}
       pinnedID={layoutState.pinnedParticipantId}
       tileSignals={tileSignals}
@@ -1952,6 +2060,7 @@ export function ClassroomMediaShell({
                       <MediaTile
                         attachVideo={attachedCameraVideoItemIDs.has(item.id)}
                         item={item}
+                        mediaCues={tileMediaCues}
                         onTogglePin={handleTogglePin}
                         pinned={layoutState.pinnedParticipantId === item.id}
                         signal={tileSignals.get(item.id)}
@@ -1974,6 +2083,7 @@ export function ClassroomMediaShell({
                     : attachedCameraVideoItemIDs.has(stageItem.id)
                 }
                 item={stageItem}
+                mediaCues={tileMediaCues}
                 onTogglePin={handleTogglePin}
                 pinned={layoutState.pinnedParticipantId === stageItem.id}
                 signal={tileSignals.get(stageItem.id)}
@@ -3217,6 +3327,7 @@ function formatSessionClock(totalSeconds: number): string {
 function MediaTile({
   attachVideo,
   item,
+  mediaCues,
   onTogglePin,
   pinned,
   signal,
@@ -3227,6 +3338,7 @@ function MediaTile({
   const { t } = useI18n();
   const displayName = item.displayName;
   const isPresentation = trackRef.source === Track.Source.ScreenShare;
+  const isLocal = item.isLocal === true;
   // A screen share is never a person's tile: no personal badges, no tone.
   const tileSignal = isPresentation ? undefined : signal;
   const label = t(
@@ -3235,12 +3347,36 @@ function MediaTile({
   );
   const pinButtonID = useId();
   // Self-view reads like a mirror; screen shares and other people never flip.
-  const mirrorVideo = item.isLocal && !isPresentation;
+  const mirrorVideo = isLocal && !isPresentation;
+  // ROOM-TILE-TEAMS-01: microphone and speaking cues of the person (never of
+  // a screen share). Self reads the local hook; others their own events.
+  const participant = trackRef.participant;
+  const remoteMedia = useRemoteTileMediaState(
+    isPresentation || isLocal ? null : participant,
+  );
+  const microphoneEnabled =
+    !isPresentation &&
+    (isLocal
+      ? mediaCues.localMicrophoneEnabled
+      : remoteMedia.microphoneEnabled ||
+        mediaCues.unmutedMicrophones.has(participant));
+  const speaking =
+    microphoneEnabled &&
+    (mediaCues.speaking.has(participant) || remoteMedia.speaking);
+  const micState = isPresentation
+    ? undefined
+    : microphoneEnabled
+      ? "on"
+      : "off";
+  const initials = participantInitials(displayName);
+  const MicStateIcon = microphoneEnabled ? Mic : MicOff;
 
   return (
     <ParticipantTile
       aria-label={label}
       className={`media-p405-tile media-p405-tile--${variant}`}
+      data-mic-state={micState}
+      data-speaking={speaking ? "true" : undefined}
       data-tone={isPresentation ? undefined : tone}
       data-video-state={attachVideo ? "active" : "paused"}
       trackRef={trackRef}
@@ -3253,8 +3389,22 @@ function MediaTile({
           trackRef={trackRef}
         />
       )}
-      <div aria-hidden="true" className="media-p405-avatar" data-tone={tone}>
-        {displayName.slice(0, 1).toLocaleUpperCase()}
+      {/*
+        Teams camera-off avatar: flat pastel initials while the microphone is
+        off, a flat slate circle with a person glyph while it is live (ref-3).
+      */}
+      <div
+        aria-hidden="true"
+        className="media-p405-avatar"
+        data-initials={Array.from(initials).length > 1 ? "2" : "1"}
+        data-mic-state={micState}
+        data-tone={tone}
+      >
+        {micState === "on" ? (
+          <UserRound aria-hidden="true" strokeWidth={1.75} />
+        ) : (
+          initials
+        )}
       </div>
       {tileSignal && (tileSignal.hand || tileSignal.reaction) ? (
         /*
@@ -3289,7 +3439,22 @@ function MediaTile({
         </div>
       ) : null}
       <div className="media-p405-tile-meta">
-        <span>{displayName}</span>
+        {/*
+          The name span keeps `textContent === displayName`: the decorative
+          microphone glyph is an empty <svg> floated after the name, so the
+          name still truncates with an ellipsis before it.
+        */}
+        <span>
+          {micState ? (
+            <MicStateIcon
+              aria-hidden="true"
+              className="media-p405-tile-mic"
+              data-mic-state={micState}
+              strokeWidth={2.1}
+            />
+          ) : null}
+          {displayName}
+        </span>
         <IconButton
           aria-pressed={pinned}
           id={pinButtonID}
@@ -3362,6 +3527,7 @@ function FloatingReaction({
 function ParticipantRail({
   attachedVideoItemIDs,
   items,
+  mediaCues,
   onTogglePin,
   pinnedID,
   tileSignals,
@@ -3369,6 +3535,7 @@ function ParticipantRail({
 }: {
   attachedVideoItemIDs: ReadonlySet<string>;
   items: readonly MediaLayoutItem[];
+  mediaCues: MediaTileMediaCues;
   onTogglePin: MediaTileProps["onTogglePin"];
   pinnedID: string | null;
   tileSignals: ReadonlyMap<string, ClassroomTileSignal>;
@@ -3385,6 +3552,7 @@ function ParticipantRail({
           <MediaTile
             attachVideo={attachedVideoItemIDs.has(item.id)}
             item={item}
+            mediaCues={mediaCues}
             onTogglePin={onTogglePin}
             pinned={pinnedID === item.id}
             signal={tileSignals.get(item.id)}

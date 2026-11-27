@@ -40,6 +40,7 @@ import {
 import {
   fnv1aHash,
   mediaTileTone,
+  participantInitials,
   type ClassroomInstanceRole,
   type ClassroomRaisedHandProjection,
   type ClassroomRosterParticipant,
@@ -636,7 +637,8 @@ function PeopleRow({
         className="media-p406-people-avatar"
         data-tone={tone}
       >
-        {(Array.from(name.trim())[0] ?? "?").toLocaleUpperCase()}
+        {/* ROOM-TILE-TEAMS-01: the same Teams initials as the video tile. */}
+        {participantInitials(name)}
       </span>
       <span className="media-p406-people-row__text">
         <span className="media-p406-people-row__name">
