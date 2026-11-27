@@ -20,7 +20,6 @@ import {
   IconButton,
   Skeleton,
   SkeletonGroup,
-  StatusBadge,
   TextField,
 } from "@tutorhub/ui";
 import {
@@ -81,7 +80,6 @@ import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
 import {
   ConversationAvatar,
   ConversationMessages,
-  PersonAvatar,
 } from "../components/ConversationMessages";
 import { parseQuotedMessage } from "../components/ConversationQuote";
 import { TenantOperationNotice } from "../components/TenantOperationNotice";
@@ -1036,21 +1034,28 @@ function ConversationDetail({
     >
       <header className="conversation-detail-panel__header">
         <DetailBackLink />
-        <ConversationAvatar
-          actorID={actorID}
-          conversation={item}
-          coverTheme={item.class_id ? coverFor(item.class_id) : undefined}
-          size="sm"
-        />
+        {/* Zalo-style presence: a green dot on the person's avatar plus a
+            plain muted status line under the name (no pill, no kind label). */}
+        <span className="conversation-detail-panel__avatar">
+          <ConversationAvatar
+            actorID={actorID}
+            conversation={item}
+            coverTheme={item.class_id ? coverFor(item.class_id) : undefined}
+            size="sm"
+          />
+          {item.kind === "direct" && !readOnly && (
+            <span aria-hidden="true" className="conversation-presence-dot" />
+          )}
+        </span>
         <div className="conversation-detail-panel__identity">
           <h2 id="conversation-detail-title" ref={detailHeading} tabIndex={-1}>
             {item.title}
           </h2>
-          <p className="conversation-detail-panel__meta">
-            <span>{t(kindLabelKey(item.kind))}</span>
-            <StatusBadge tone={readOnly ? "warning" : "success"}>
-              {t(readOnly ? "conversations.readOnly" : "conversations.ready")}
-            </StatusBadge>
+          <p
+            className="conversation-detail-panel__meta"
+            data-state={readOnly ? "read-only" : "active"}
+          >
+            {t(readOnly ? "conversations.readOnly" : "conversations.ready")}
           </p>
         </div>
         <div className="conversation-detail-panel__actions">
@@ -1121,32 +1126,6 @@ function ConversationDetail({
             </Link>
           )}
         </nav>
-        <div className="conversation-detail-panel__members">
-          <h3 className="visually-hidden" id="conversation-participants-title">
-            {t("conversations.participantsTitle")}
-          </h3>
-          {item.participants.length > 0 ? (
-            <ul
-              aria-labelledby="conversation-participants-title"
-              className="conversation-participants"
-            >
-              {item.participants.map((participant) => (
-                <li key={participant.user_id}>
-                  <PersonAvatar
-                    name={participant.display_name}
-                    seed={participant.user_id}
-                    size="xs"
-                  />
-                  <span>{participant.display_name}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="conversation-detail-panel__members-empty">
-              {t("conversations.participantsEmpty")}
-            </p>
-          )}
-        </div>
       </div>
 
       <ConversationMessages

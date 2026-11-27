@@ -599,21 +599,24 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
       await expect(
         teacherPage.getByRole("heading", { name: studentDisplayName }),
       ).toBeFocused();
-      const directParticipants = teacherPage.locator(
-        ".conversation-participants li",
+      const directHeader = teacherPage.locator(
+        ".conversation-detail-panel__header",
       );
-      await expect(directParticipants).toHaveCount(2);
       await expect(
-        directParticipants.filter({ hasText: teacherDisplayName }),
+        directHeader.locator(".conversation-detail-panel__meta"),
+      ).toHaveText("Active");
+      await expect(
+        directHeader.locator(".conversation-presence-dot"),
       ).toHaveCount(1);
       await expect(
-        directParticipants.filter({ hasText: studentDisplayName }),
-      ).toHaveCount(1);
-      const directParticipantText = (
-        await directParticipants.allTextContents()
-      ).join(" ");
-      expect(directParticipantText).not.toContain(accountEmails.teacher);
-      expect(directParticipantText).not.toContain(accountEmails.student);
+        teacherPage.locator(".conversation-participants"),
+      ).toHaveCount(0);
+      const directDetailText =
+        (await teacherPage
+          .locator(".conversation-detail-panel")
+          .textContent()) ?? "";
+      expect(directDetailText).not.toContain(accountEmails.teacher);
+      expect(directDetailText).not.toContain(accountEmails.student);
       const directURL = teacherPage.url();
       const teacherMessage = `Persistent teacher message ${runID}`;
       const studentReply = `Persistent student reply ${runID}`;
@@ -796,9 +799,18 @@ test("P2-12 closes admin, instructor, and learner workflows through the real UI"
         studentPage.getByRole("heading", { name: updatedClassName }),
       ).toBeFocused();
       expect(studentPage.url()).toBe(classConversationURL);
+      const classHeader = studentPage.locator(
+        ".conversation-detail-panel__header",
+      );
       await expect(
-        studentPage.getByText("No members are available to display."),
-      ).toBeVisible();
+        classHeader.locator(".conversation-detail-panel__meta"),
+      ).toHaveText("Active");
+      await expect(
+        classHeader.locator(".conversation-presence-dot"),
+      ).toHaveCount(0);
+      await expect(
+        studentPage.locator(".conversation-participants"),
+      ).toHaveCount(0);
       expect(
         (
           await new AxeBuilder({ page: studentPage })

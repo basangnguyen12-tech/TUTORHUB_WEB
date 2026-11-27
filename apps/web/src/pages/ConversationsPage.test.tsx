@@ -215,8 +215,8 @@ describe("ConversationsPage", () => {
     expect(screen.getByText("Chỉ đọc", { exact: true })).toBeInTheDocument();
     expect(screen.getByText(/Lịch sử được giữ lại/)).toBeInTheDocument();
     expect(
-      screen.getByText("Không có thành viên được hiển thị."),
-    ).toBeInTheDocument();
+      heading.closest("header")?.querySelector(".conversation-presence-dot"),
+    ).toBeNull();
     expect(
       screen.queryByRole("textbox", { name: "Tin nhắn mới" }),
     ).not.toBeInTheDocument();
@@ -241,10 +241,12 @@ describe("ConversationsPage", () => {
 
     renderPage(`/app/messages/${roomConversationID}`, fetchMock);
 
-    expect(
-      await screen.findByRole("heading", { name: "Phòng ôn tập Toán" }),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Phòng học")).toHaveLength(2);
+    const heading = await screen.findByRole("heading", {
+      name: "Phòng ôn tập Toán",
+    });
+    // The kind label stays in the list row only; the header shows status.
+    expect(screen.getAllByText("Phòng học")).toHaveLength(1);
+    expect(heading.closest("header")?.textContent).not.toContain("Phòng học");
     expect(screen.getByText("Chỉ đọc", { exact: true })).toBeInTheDocument();
     expect(
       screen.queryByRole("textbox", { name: "Tin nhắn mới" }),
@@ -577,12 +579,9 @@ describe("ConversationsPage", () => {
     expect(
       screen.queryByRole("button", { name: "Đính kèm tệp hoặc ảnh" }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Không có thành viên được hiển thị."),
-    ).toBeInTheDocument();
   });
 
-  it("lists direct members by display name only and pins from the header", async () => {
+  it("shows a Zalo-style presence line without member chips and pins from the header", async () => {
     const fetchMock = vi.fn().mockImplementation((request: Request) => {
       const path = new URL(request.url).pathname;
       if (path.endsWith(`/api/v1/conversations/${directID}/messages`)) {
@@ -599,14 +598,25 @@ describe("ConversationsPage", () => {
 
     renderPage(`/app/messages/${directID}`, fetchMock);
 
-    const participants = await screen.findByRole("list", {
-      name: "Thành viên",
+    const heading = await screen.findByRole("heading", {
+      level: 2,
+      name: "TutorHub Student",
     });
-    const members = within(participants).getAllByRole("listitem");
-    expect(members).toHaveLength(2);
-    expect(members[0]).toHaveTextContent("TutorHub Teacher");
-    expect(members[1]).toHaveTextContent("TutorHub Student");
-    expect(participants.textContent).not.toContain("@");
+    const header = heading.closest("header");
+    expect(header).not.toBeNull();
+    // Presence reads as a plain status line under the name; the kind label
+    // ("Trực tiếp") and the participant chips are gone from the header.
+    expect(
+      within(header as HTMLElement).getByText("Đang hoạt động", {
+        exact: true,
+      }),
+    ).toHaveClass("conversation-detail-panel__meta");
+    expect(header?.textContent).not.toContain("Trực tiếp");
+    expect(header?.querySelector(".conversation-presence-dot")).not.toBeNull();
+    expect(
+      screen.queryByRole("list", { name: "Thành viên" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("TutorHub Teacher")).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain("teacher@example.com");
 
     fireEvent.click(

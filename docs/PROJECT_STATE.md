@@ -12,10 +12,21 @@
 | Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                                                               |
 | Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                                                                 |
 | Phase hiện tại       | Xây dựng Hệ Công cụ Lớp học Phòng học Studio (`ADR-0043` Code/Snippet LIVE, `ADR-0045` Files/PDF Slice 1–3 LIVE); Phase 3 deferred carry-over vẫn hoạt động                                               |
-| Task `DONE` gần nhất | `NAV-SIDEBAR-SAAS-01` Thiết kế lại Thanh Điều hướng Trái (`AppSidebar`) Phong cách SaaS Hiện đại (Cloudflare × ClassIn) (`DONE`)                                                                          |
+| Task `DONE` gần nhất | `MSG-HEADER-ZALO-01` Tinh gọn Đầu Khung Hội thoại (`/app/messages/:id`) Phong cách Zalo (Chấm Xanh Avatar & Dòng Trạng thái Phẳng) (`DONE`)                                                               |
 | Mốc repository mới   | `@tutorhub/web` `1605/1605` (`143` file), `@tutorhub/collaboration-client` `70/70`, `@tutorhub/whiteboard-runtime` `171/171`, `@tutorhub/api-client` `156/156`, Chromium E2E `79/79` PASS (`yjsCopies=1`) |
-| Task hiện tại        | Hoàn tất 100% `ADR-0045`, `ROOM-UI-POLISH-01`, `ROOM-TILE-TEAMS-01`, `CLASS-CLASSIN-UI-01`, `MSG-CLASSIN-TEAMS-01`, `MSG-WELCOME-3D-01` & `NAV-SIDEBAR-SAAS-01`; sẵn sàng mở đề tài tiếp theo             |
+| Task hiện tại        | Hoàn tất 100% `ADR-0045`, `ROOM-UI-POLISH-01`, `ROOM-TILE-TEAMS-01`, `CLASS-CLASSIN-UI-01`, `MSG-CLASSIN-TEAMS-01`, `MSG-WELCOME-3D-01`, `NAV-SIDEBAR-SAAS-01` & `MSG-HEADER-ZALO-01`                     |
 | Task tiếp theo       | `ADR-0044` Thực thi Cô lập Máy chủ `C/C++/Java` hoặc tinh chỉnh giao diện các tab tiếp theo                                                                                                               |
+
+### Checkpoint `MSG-HEADER-ZALO-01` Tinh gọn Đầu Khung Hội thoại (`/app/messages/:conversationId`) Phong cách Zalo (`DONE`) — 2026-11-27
+
+Claude Code hoàn thành tinh chỉnh đầu khung trò chuyện theo phong cách Zalo; Gatekeeper (Antigravity) bổ sung hỗ trợ `@media (forced-colors: active)` cho chấm trạng thái, cập nhật đồng bộ kịch bản E2E `e2e/p2-08-core-workflows.spec.ts`, chạy độc lập toàn bộ cổng kiểm chứng và phát hành live lên `https://tutorhub.vn`:
+
+- **Đầu Khung Chat Tối Giản Kiểu Zalo (`ConversationsPage.tsx`, `ConversationsPage.css`, `i18n.tsx`)**:
+  - Loại bỏ danh sách thẻ thành viên (`.conversation-participants`) bên phải thanh phụ `Chat` và bỏ nhãn phân loại (`Trực tiếp` / `Lớp học` / `Phòng học`) ở đầu khung hội thoại phải (vẫn giữ nhãn loại ở cột danh sách trái).
+  - Thay huy hiệu viền xanh `StatusBadge` bằng dòng chữ xám nhỏ gọn `.conversation-detail-panel__meta` ngay dưới tiêu đề (`Đang hoạt động` hoặc `Chỉ đọc`), kèm chấm tròn xanh lá `.conversation-presence-dot` (`#16a34a`, viền tách nền `2px`, hỗ trợ `forced-colors`) ở góc dưới phải avatar cuộc trò chuyện 1-1 đang mở (tránh chồng chéo với huy hiệu góc có sẵn của avatar lớp `ClassCoverArt`); dọn sạch 2 khóa dịch không còn dùng trong `i18n.tsx`.
+- **Đồng bộ Kiểm thử Đơn vị & E2E (`ConversationsPage.test.tsx`, `e2e/p2-08-core-workflows.spec.ts`)**:
+  - Cập nhật 4 bài kiểm thử trong `ConversationsPage.test.tsx` và 2 bước kiểm tra luồng hội thoại trong `e2e/p2-08-core-workflows.spec.ts` để xác nhận dòng trạng thái phẳng, chấm xanh ở hội thoại 1-1, không lộ địa chỉ email thành viên trong `.conversation-detail-panel` và `0` lỗi Axe.
+- **Bằng chứng Gatekeeper**: `pnpm verify` PASS (`@tutorhub/web` **`1605/1605`** trên `143` file, ESLint `e2e/p2-08-core-workflows.spec.ts` PASS, `security:bundle` `271` file, Go `40` package) và cả 2 cổng bundle PASS (`entryRawBytes = 697,108 / 786,432` B, `issues: []`, `yjsCopies = 1`).
 
 ### Checkpoint `NAV-SIDEBAR-SAAS-01` Thiết kế lại Thanh Điều hướng Trái (`AppSidebar` & `WorkspaceSwitcher`) Phong cách SaaS Hiện đại (Cloudflare × ClassIn) (`DONE`) — 2026-11-27
 
