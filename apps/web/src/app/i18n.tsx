@@ -1376,6 +1376,10 @@ const messages = {
     "shell.offlineMessage": "Một số dữ liệu có thể chưa được cập nhật.",
     "shell.retryConnection": "Thử lại kết nối",
     "shell.skip": "Chuyển đến nội dung chính",
+    "shell.navGroup.learning": "Học tập",
+    "shell.navGroup.manage": "Quản lý",
+    "shell.collapseSidebar": "Thu gọn thanh bên",
+    "shell.expandSidebar": "Mở rộng thanh bên",
     "auth.signInTitle": "Đăng nhập vào TutorHub",
     "auth.signInDescription":
       "Tiếp tục qua nhà cung cấp danh tính được tổ chức phê duyệt. Mật khẩu và token nhà cung cấp không được lưu trong trình duyệt TutorHub.",
@@ -5669,6 +5673,10 @@ const messages = {
     "shell.offlineMessage": "Some data may be out of date.",
     "shell.retryConnection": "Retry connection",
     "shell.skip": "Skip to main content",
+    "shell.navGroup.learning": "Learning",
+    "shell.navGroup.manage": "Manage",
+    "shell.collapseSidebar": "Collapse sidebar",
+    "shell.expandSidebar": "Expand sidebar",
     "auth.signInTitle": "Sign in to TutorHub",
     "auth.signInDescription":
       "Continue through your organization's approved identity provider. TutorHub does not store provider passwords or tokens in the browser.",

@@ -1,9 +1,14 @@
 import { Button, IconButton } from "@tutorhub/ui";
 import { Building2, LogOut, Menu, RefreshCw, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   Link,
-  NavLink,
   Outlet,
   useLocation,
   useNavigate,
@@ -16,8 +21,35 @@ import { useSession } from "../app/session";
 import { useWorkspaceActions } from "../app/workspaces";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { AdminMfaRequiredNotice } from "./AdminMfaRequiredNotice";
+import { AppSidebar, WorkspaceSwitcher } from "./AppSidebar";
 import { NotificationBell } from "./NotificationBell";
 import { StepUpAuthDialog } from "./StepUpAuthDialog";
+
+/** Same threshold as the drawer media query in styles.css. */
+const COMPACT_SIDEBAR_QUERY = "(max-width: 680px)";
+
+function subscribeCompactSidebar(onChange: () => void) {
+  if (typeof window.matchMedia !== "function") return () => undefined;
+  const query = window.matchMedia(COMPACT_SIDEBAR_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+function getCompactSidebarSnapshot() {
+  return (
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(COMPACT_SIDEBAR_QUERY).matches
+  );
+}
+
+/** True while the sidebar renders as the mobile drawer. */
+function useCompactSidebar() {
+  return useSyncExternalStore(
+    subscribeCompactSidebar,
+    getCompactSidebarSnapshot,
+    () => false,
+  );
+}
 
 function useOnlineStatus() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -38,17 +70,6 @@ function useOnlineStatus() {
   return isOnline;
 }
 
-/** First letters of the first and last words, e.g. "Nguyễn Văn An" → "NA". */
-function displayInitials(name: string) {
-  const words = name.trim().split(/\s+/u).filter(Boolean);
-  const first = Array.from(words[0] ?? "")[0] ?? "";
-  const last =
-    words.length > 1
-      ? (Array.from(words[words.length - 1] ?? "")[0] ?? "")
-      : "";
-  return `${first}${last}`.toLocaleUpperCase() || "?";
-}
-
 export function AppShell() {
   const { language, setLanguage, t } = useI18n();
   const session = useSession();
@@ -61,6 +82,10 @@ export function AppShell() {
   const isOnline = useOnlineStatus();
   const stepUp = useStepUpRequest();
   const [isNavigationOpen, setIsNavigationOpen] = useState(false);
+  const isCompact = useCompactSidebar();
+  const [wasCompact, setWasCompact] = useState(isCompact);
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const restoreMenuFocus = useRef(false);
   const activeTenant = session.currentUser?.active_tenant;
   // AUTH-09B: without an active workspace only account settings render here.
   const visibleNavigationItems = getVisibleNavigationItems(
@@ -98,59 +123,59 @@ export function AppShell() {
           : t("shell.role.guest");
   const displayName =
     session.currentUser?.user.display_name || t("shell.profile");
+  const drawerActive = isNavigationOpen && isCompact;
+
+  const closeNavigation = useCallback((restoreFocus: boolean) => {
+    restoreMenuFocus.current = restoreFocus;
+    setIsNavigationOpen(false);
+  }, []);
+
+  // The drawer only exists on narrow screens; widening the window closes it.
+  if (wasCompact !== isCompact) {
+    setWasCompact(isCompact);
+    if (!isCompact) setIsNavigationOpen(false);
+  }
+
+  // Focus goes back to the toggle once `inert` has left the workspace column.
+  useEffect(() => {
+    if (!isNavigationOpen && restoreMenuFocus.current) {
+      restoreMenuFocus.current = false;
+      menuToggleRef.current?.focus();
+    }
+  }, [isNavigationOpen]);
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">
+      <a
+        className="skip-link"
+        href="#main-content"
+        inert={drawerActive || undefined}
+      >
         {t("shell.skip")}
       </a>
 
-      <aside
-        aria-label={t("shell.navigation")}
-        className={`app-sidebar${isNavigationOpen ? " app-sidebar--open" : ""}`}
-      >
-        <div className="app-brand">
-          <span className="app-brand__mark" aria-hidden="true">
-            TH
-          </span>
-          <span>
-            <strong>{t("brand.product")}</strong>
-            <small>{t("brand.version")}</small>
-          </span>
-        </div>
-
-        <nav className="app-navigation" aria-label={t("shell.navigation")}>
-          {visibleNavigationItems.map((item) => (
-            <NavLink
-              className={({ isActive }) =>
-                `app-navigation__link${isActive ? " app-navigation__link--active" : ""}`
+      <AppSidebar
+        displayName={displayName}
+        isCompact={isCompact}
+        isOpen={isNavigationOpen}
+        items={visibleNavigationItems}
+        onClose={closeNavigation}
+        roleLabel={roleLabel}
+        workspaceSwitcher={
+          <WorkspaceSwitcher
+            activeTenant={activeTenant}
+            isPending={switchWorkspace.isPending}
+            onSelect={(tenantID) => {
+              if (!switchWorkspace.isPending && tenantID !== activeTenant?.id) {
+                switchWorkspace.mutate(tenantID);
               }
-              key={item.to}
-              onClick={() => setIsNavigationOpen(false)}
-              to={item.to}
-            >
-              {t(item.labelKey)}
-            </NavLink>
-          ))}
-        </nav>
+            }}
+            options={tenantOptions}
+          />
+        }
+      />
 
-        <Link
-          className="app-sidebar__footer"
-          onClick={() => setIsNavigationOpen(false)}
-          title={t("shell.accountSettings")}
-          to="/app/settings"
-        >
-          <span aria-hidden="true" className="app-sidebar__avatar">
-            {displayInitials(displayName)}
-          </span>
-          <span className="app-sidebar__identity">
-            <span className="app-sidebar__role">{roleLabel}</span>
-            <strong>{displayName}</strong>
-          </span>
-        </Link>
-      </aside>
-
-      <div className="app-workspace">
+      <div className="app-workspace" inert={drawerActive || undefined}>
         <header className="app-topbar">
           <div className="app-topbar__context">
             <IconButton
@@ -162,6 +187,7 @@ export function AppShell() {
                   : t("shell.openNavigation")
               }
               onClick={() => setIsNavigationOpen((open) => !open)}
+              ref={menuToggleRef}
               size="sm"
               variant="secondary"
             >
@@ -174,40 +200,6 @@ export function AppShell() {
           </div>
 
           <div className="app-topbar__actions">
-            <label className="workspace-select" title={activeTenant?.name}>
-              <span className="visually-hidden">
-                {t("workspace.activeLabel")}
-              </span>
-              {!activeTenant ? (
-                <Link className="workspace-select__choose" to="/app/home">
-                  <Building2 aria-hidden="true" />
-                  <span>{t("shell.chooseWorkspace")}</span>
-                </Link>
-              ) : tenantOptions.length > 1 ? (
-                <select
-                  aria-label={t("workspace.activeLabel")}
-                  aria-busy={switchWorkspace.isPending || undefined}
-                  disabled={switchWorkspace.isPending}
-                  onChange={(event) => {
-                    if (
-                      !switchWorkspace.isPending &&
-                      event.target.value !== activeTenant?.id
-                    ) {
-                      switchWorkspace.mutate(event.target.value);
-                    }
-                  }}
-                  value={activeTenant?.id ?? ""}
-                >
-                  {tenantOptions.map((tenant) => (
-                    <option key={tenant.id} value={tenant.id}>
-                      {tenant.name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span>{activeTenant?.name}</span>
-              )}
-            </label>
             {notificationEnabled && activeTenant && (
               <NotificationBell tenantID={activeTenant.id} />
             )}

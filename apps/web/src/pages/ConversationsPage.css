@@ -37,7 +37,7 @@
   --msg-popover-shadow: 0 18px 44px rgb(15 23 42 / 0.16);
   --msg-tooltip-bg: #1c222b;
   --msg-tooltip-ink: #ffffff;
-  --msg-offset: 84px;
+  --msg-offset: 64px;
 }
 
 [data-theme="dark"]
