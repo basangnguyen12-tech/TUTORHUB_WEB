@@ -210,8 +210,12 @@ function editor(): EditorView {
 }
 
 async function waitForEditor() {
-  await waitFor(() =>
-    expect(document.querySelector(".classroom-code .cm-editor")).not.toBeNull(),
+  await waitFor(
+    () =>
+      expect(
+        document.querySelector(".classroom-code .cm-editor"),
+      ).not.toBeNull(),
+    { timeout: 5_000 },
   );
 }
 

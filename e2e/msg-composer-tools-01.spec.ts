@@ -78,6 +78,7 @@ interface Sent {
   directs: unknown[];
   messages: Record<string, unknown>[];
   spaces: Record<string, unknown>[];
+  starts: Record<string, unknown>[];
 }
 
 async function coreApi(page: Page, sent: Sent) {
@@ -133,7 +134,19 @@ async function coreApi(page: Page, sent: Sent) {
     }
     if (path === "media/spaces") {
       sent.spaces.push(request.postDataJSON() as Record<string, unknown>);
-      return json({ id: spaceID, status: "scheduled", version: 1 }, 201);
+      return json(
+        {
+          id: spaceID,
+          status: "scheduled",
+          version: 1,
+          viewer_operations: { can_start: true },
+        },
+        201,
+      );
+    }
+    if (path === `media/spaces/${spaceID}/start` && method === "POST") {
+      sent.starts.push(request.postDataJSON() as Record<string, unknown>);
+      return json({ id: spaceID, status: "open", version: 2 });
     }
     if (path.endsWith("/attachments") && method === "POST") {
       sent.attachments += 1;
@@ -293,7 +306,13 @@ test("composer tools capture, share cards and stay accessible", async ({
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const sent: Sent = { attachments: 0, directs: [], messages: [], spaces: [] };
+  const sent: Sent = {
+    attachments: 0,
+    directs: [],
+    messages: [],
+    spaces: [],
+    starts: [],
+  };
   await openComposer(page, sent);
 
   // Toolbar in the ClassIn order, with the cards rendered from embeds only.
@@ -378,6 +397,10 @@ test("composer tools capture, share cards and stay accessible", async ({
       title: "Lớp học tạm thời 30 phút",
     },
   });
+  expect(sent.starts[0]).toMatchObject({
+    expected_version: 1,
+    reason_code: "product_launch",
+  });
   await expect.poll(() => sent.messages.length).toBe(3);
   expect(sent.messages[2]).toMatchObject({
     embed: { kind: "instant_class", media_space_id: spaceID },
@@ -407,6 +430,7 @@ test("composer tools fit a 375 px phone without horizontal scroll", async ({
     directs: [],
     messages: [],
     spaces: [],
+    starts: [],
   });
   const overflow = await page.evaluate(
     () =>

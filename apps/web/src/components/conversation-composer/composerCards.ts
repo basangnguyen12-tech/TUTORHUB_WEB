@@ -6,8 +6,10 @@
 import {
   APIRequestError,
   createMediaSpace,
+  getMediaSpace,
   type Conversation,
   rotateCSRFToken,
+  startMediaSpace,
   type ActiveMessage,
   type CreateMediaSpaceRequest,
   type MediaSpace,
@@ -15,6 +17,7 @@ import {
 } from "@tutorhub/api-client";
 import { useEffect, useState } from "react";
 import type { useI18n } from "../../app/i18n";
+import { MediaSpaceNotReadyError } from "../../app/mediaSpaces";
 
 export type MessageEmbed = NonNullable<ActiveMessage["embed"]>;
 export type ContactCardEmbed = Extract<MessageEmbed, { kind: "contact_card" }>;
@@ -44,7 +47,8 @@ export function browserTimeZone(): string {
 
 /**
  * Creates (or, with the same key, replays) the instant media space behind a
- * temporary class. No provider room or credential is created here.
+ * temporary class and starts its live room immediately so people clicking
+ * "Join class" enter prejoin/lobby instead of "room not open".
  */
 export async function createInstantClassSpace(
   tenantID: string,
@@ -60,9 +64,62 @@ export async function createInstantClassSpace(
       title: input.title,
     },
   };
-  return createMediaSpace(tenantID, request, csrf.csrf_token, {
+  const space = await createMediaSpace(tenantID, request, csrf.csrf_token, {
     baseUrl: getApiBaseUrl(),
   });
+  if (
+    space.status === "scheduled" &&
+    space.viewer_operations?.can_start === true
+  ) {
+    const startCsrf = await rotateCSRFToken({ baseUrl: getApiBaseUrl() });
+    return startMediaSpace(
+      tenantID,
+      space.id,
+      {
+        expected_version: space.version,
+        idempotency_key: `${input.idempotencyKey}:start`,
+        reason_code: "product_launch",
+      },
+      startCsrf.csrf_token,
+      { baseUrl: getApiBaseUrl() },
+    );
+  }
+  return space;
+}
+
+/**
+ * Ensures a scheduled instant-class space is open before navigating to prejoin.
+ * If the viewer owns/can start the space, starts it on the spot; otherwise
+ * raises `MediaSpaceNotReadyError` so the card shows a clear inline notice.
+ */
+export async function openInstantClassSpace(
+  tenantID: string,
+  spaceID: string,
+): Promise<MediaSpace> {
+  const space = await getMediaSpace(tenantID, spaceID, {
+    baseUrl: getApiBaseUrl(),
+  });
+  if (space.status === "open") {
+    return space;
+  }
+  if (
+    space.status !== "scheduled" ||
+    space.viewer_operations?.can_start !== true
+  ) {
+    throw new MediaSpaceNotReadyError("The media space is not open.");
+  }
+  const csrf = await rotateCSRFToken({ baseUrl: getApiBaseUrl() });
+  return startMediaSpace(
+    tenantID,
+    space.id,
+    {
+      expected_version: space.version,
+      idempotency_key: crypto.randomUUID(),
+      reason_code: "product_launch",
+    },
+    csrf.csrf_token,
+    { baseUrl: getApiBaseUrl() },
+  );
 }
 
 /** `mm:ss` below an hour, `h:mm:ss` above. */

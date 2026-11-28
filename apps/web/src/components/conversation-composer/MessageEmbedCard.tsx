@@ -1,12 +1,20 @@
 import { Button } from "@tutorhub/ui";
 import { ArrowRight, Contact, Presentation, UserX } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { Link, useNavigate } from "react-router";
 import { useCreateDirectConversation } from "../../app/conversations";
 import { useI18n } from "../../app/i18n";
+import { MediaSpaceNotReadyError } from "../../app/mediaSpaces";
 import {
   cardErrorKey,
   formatCountdown,
+  openInstantClassSpace,
   useServerCountdown,
   type ContactCardEmbed,
   type InstantClassEmbed,
@@ -40,7 +48,7 @@ export function MessageEmbedCard({
       tenantID={tenantID}
     />
   ) : (
-    <InstantClassView embed={embed} />
+    <InstantClassView embed={embed} tenantID={tenantID} />
   );
 }
 
@@ -129,13 +137,53 @@ function ContactCardView({
 
 const ANNOUNCED_SECONDS = [300, 60] as const;
 
-function InstantClassView({ embed }: { embed: InstantClassEmbed }) {
+function InstantClassView({
+  embed,
+  tenantID,
+}: {
+  embed: InstantClassEmbed;
+  tenantID: string;
+}) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const remaining = useServerCountdown(embed.remaining_seconds);
   const [announcement, setAnnouncement] = useState("");
+  const [opening, setOpening] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const previous = useRef(remaining);
   const openStatus = embed.status === "scheduled" || embed.status === "open";
   const live = openStatus && remaining > 0;
+  const prejoinPath = `/app/media/spaces/${embed.media_space_id}/prejoin`;
+
+  const onJoinClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (
+      embed.status === "open" ||
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.shiftKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (opening) return;
+    setOpening(true);
+    setJoinError(null);
+    void openInstantClassSpace(tenantID, embed.media_space_id)
+      .then(() => navigate(prejoinPath))
+      .catch((error: unknown) => {
+        setJoinError(
+          t(
+            error instanceof MediaSpaceNotReadyError
+              ? "media.launch.notReady"
+              : "media.launch.error",
+          ),
+        );
+      })
+      .finally(() => setOpening(false));
+  };
 
   useEffect(() => {
     const before = previous.current;
@@ -201,10 +249,16 @@ function InstantClassView({ embed }: { embed: InstantClassEmbed }) {
       </dl>
       {live && embed.viewer_can_join ? (
         <Link
+          aria-busy={opening || undefined}
           className="th-button th-button--primary th-button--sm conversation-card__join"
-          to={`/app/media/spaces/${embed.media_space_id}/prejoin`}
+          onClick={onJoinClick}
+          to={prejoinPath}
         >
-          <span>{t("conversations.instantClassJoin")}</span>
+          <span>
+            {opening
+              ? t("media.launch.opening")
+              : t("conversations.instantClassJoin")}
+          </span>
           <ArrowRight aria-hidden="true" />
         </Link>
       ) : (
@@ -212,6 +266,11 @@ function InstantClassView({ embed }: { embed: InstantClassEmbed }) {
           {live
             ? t("conversations.instantClassNotInvited")
             : t("conversations.instantClassClosedNote")}
+        </p>
+      )}
+      {joinError && (
+        <p className="conversation-card__error" role="alert">
+          {joinError}
         </p>
       )}
       <p aria-live="polite" className="visually-hidden">

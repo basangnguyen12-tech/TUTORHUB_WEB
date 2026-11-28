@@ -1270,6 +1270,7 @@ describe("ConversationMessages", () => {
     function cardFetch(
       items: readonly Message[],
       options: {
+        canStartSpace?: boolean;
         capabilitiesEnabled?: boolean;
         conversations?: Conversation[];
         requests?: Request[];
@@ -1300,8 +1301,33 @@ describe("ConversationMessages", () => {
             201,
           );
         }
+        if (url.pathname.endsWith(`/api/v1/media/spaces/${spaceID}/start`)) {
+          return jsonResponse({ id: spaceID, status: "open", version: 2 }, 200);
+        }
+        if (
+          url.pathname.endsWith(`/api/v1/media/spaces/${spaceID}`) &&
+          request.method === "GET"
+        ) {
+          return jsonResponse(
+            {
+              id: spaceID,
+              status: "scheduled",
+              version: 1,
+              viewer_operations: { can_start: options.canStartSpace ?? true },
+            },
+            200,
+          );
+        }
         if (url.pathname.endsWith("/api/v1/media/spaces")) {
-          return jsonResponse({ id: spaceID, status: "scheduled" }, 201);
+          return jsonResponse(
+            {
+              id: spaceID,
+              status: "scheduled",
+              version: 1,
+              viewer_operations: { can_start: options.canStartSpace ?? true },
+            },
+            201,
+          );
         }
         if (url.pathname.endsWith("/messages") && request.method === "POST") {
           return jsonResponse(
@@ -1519,6 +1545,14 @@ describe("ConversationMessages", () => {
           title: "Ôn thi cuối kỳ",
         },
       });
+      const started = requests.find((request) =>
+        request.url.endsWith(`/api/v1/media/spaces/${spaceID}/start`),
+      );
+      await expect(started?.json()).resolves.toMatchObject({
+        expected_version: 1,
+        idempotency_key: expect.stringMatching(/^instant-class-.*:start$/),
+        reason_code: "product_launch",
+      });
       const shared = requests.find(
         (request) =>
           request.method === "POST" && request.url.endsWith("/messages"),
@@ -1528,6 +1562,39 @@ describe("ConversationMessages", () => {
         content: "",
         embed: { kind: "instant_class", media_space_id: spaceID },
       });
+    });
+
+    it("starts a still-scheduled instant class when the owner clicks Join class", async () => {
+      const requests: Request[] = [];
+      renderMessages(
+        cardFetch(
+          [
+            cardMessage(1, {
+              ends_at: "2026-08-03T09:16:00Z",
+              kind: "instant_class",
+              media_space_id: spaceID,
+              remaining_seconds: 592,
+              status: "scheduled",
+              title: "Ôn tập nhanh",
+              viewer_can_join: true,
+            }),
+          ],
+          { canStartSpace: true, requests },
+        ),
+        { conversation: classConversation },
+      );
+
+      const card = await screen.findByRole("region", {
+        name: "Instant class Ôn tập nhanh",
+      });
+      fireEvent.click(within(card).getByRole("link", { name: "Join class" }));
+      await waitFor(() =>
+        expect(
+          requests.some((request) =>
+            request.url.endsWith(`/api/v1/media/spaces/${spaceID}/start`),
+          ),
+        ).toBe(true),
+      );
     });
   });
 });
