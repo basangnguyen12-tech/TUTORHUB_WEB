@@ -248,6 +248,14 @@ export type MarkConversationReadRequest =
 export type MessageAttachmentKind =
   components["schemas"]["MessageAttachmentKind"];
 export type MessageAttachment = components["schemas"]["MessageAttachment"];
+/** MSG-STICKER-01 (ADR-0047): curated sticker catalog and sticker embeds. */
+export type StickerPackCatalog = components["schemas"]["StickerPackCatalog"];
+export type StickerPack = components["schemas"]["StickerPack"];
+export type Sticker = components["schemas"]["Sticker"];
+export type StickerAsset = components["schemas"]["StickerAsset"];
+export type StickerLabels = components["schemas"]["StickerLabels"];
+export type StickerEmbed = components["schemas"]["StickerEmbed"];
+export type StickerEmbedInput = components["schemas"]["StickerEmbedInput"];
 export type UpdateRoomConversationSettingsRequest =
   components["schemas"]["UpdateRoomConversationSettingsRequest"];
 type UploadConversationAttachmentBody =
@@ -2861,6 +2869,34 @@ export async function getConversation(
 
   return requireData<Conversation>(
     data as Conversation | undefined,
+    error,
+    response,
+  );
+}
+
+/**
+ * MSG-STICKER-01: the active sticker packs of the workspace. The response is
+ * privately cacheable for five minutes and revalidated with its ETag by the
+ * browser cache; 403 `feature_disabled` means the Sticker tab stays hidden.
+ */
+export async function listStickerPacks(
+  tenantID: string,
+  options: APIRequestOptions = {},
+): Promise<StickerPackCatalog> {
+  requireTenantScope(tenantID);
+  const { data, error, response } = await createTutorHubClient(options).GET(
+    "/api/v1/conversations/sticker-packs",
+    {
+      params: {
+        header: { "X-TutorHub-Expected-Tenant-ID": tenantID },
+      },
+      headers: { Accept: "application/json" },
+      signal: options.signal,
+    },
+  );
+
+  return requireData<StickerPackCatalog>(
+    data as StickerPackCatalog | undefined,
     error,
     response,
   );

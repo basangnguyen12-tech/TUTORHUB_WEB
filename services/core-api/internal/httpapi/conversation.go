@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/tutorhub-v2/core-api/internal/modules/conversation"
+	"github.com/tutorhub-v2/core-api/internal/modules/conversation/stickers"
 	"github.com/tutorhub-v2/core-api/internal/modules/identity"
 	"github.com/tutorhub-v2/core-api/internal/platform/logsafe"
 	"github.com/tutorhub-v2/core-api/internal/policy"
@@ -25,6 +26,11 @@ const (
 	conversationMessagesPattern = "/api/v1/conversations/{conversation_id}/messages"
 	conversationMessagePattern  = "/api/v1/conversations/{conversation_id}/messages/{message_id}"
 	conversationReadPattern     = "/api/v1/conversations/{conversation_id}/read"
+	// MSG-STICKER-01 (ADR-0047): GET /api/v1/conversations/sticker-packs is
+	// served through conversationResourcePattern (a literal first segment).
+	conversationStickerPacksSegment = "sticker-packs"
+	conversationStickerPacksPath    = "/api/v1/conversations/" + conversationStickerPacksSegment
+	stickerPacksCacheControl        = "private, max-age=300"
 	// ADR-0042 room chat moderation and attachments.
 	conversationRoomSettingsPattern      = "/api/v1/conversations/{conversation_id}/room-settings"
 	conversationAttachmentsPattern       = "/api/v1/conversations/{conversation_id}/attachments"
@@ -64,6 +70,7 @@ type messageEmbedRequest struct {
 	Kind         *string `json:"kind"`
 	UserID       *string `json:"user_id"`
 	MediaSpaceID *string `json:"media_space_id"`
+	StickerID    *string `json:"sticker_id"`
 }
 
 // parseMessageEmbed accepts exactly the identifier of the card kind.
@@ -75,8 +82,16 @@ func parseMessageEmbed(request *messageEmbedRequest) (*conversation.MessageEmbed
 		return nil, false
 	}
 	switch conversation.EmbedKind(*request.Kind) {
+	case conversation.EmbedKindSticker:
+		if request.StickerID == nil || request.UserID != nil || request.MediaSpaceID != nil ||
+			!stickers.ValidID(*request.StickerID) {
+			return nil, false
+		}
+		return &conversation.MessageEmbedInput{
+			Kind: conversation.EmbedKindSticker, StickerID: *request.StickerID,
+		}, true
 	case conversation.EmbedKindContactCard:
-		if request.UserID == nil || request.MediaSpaceID != nil {
+		if request.UserID == nil || request.MediaSpaceID != nil || request.StickerID != nil {
 			return nil, false
 		}
 		userID, ok := parseResourceUUID(*request.UserID)
@@ -87,7 +102,7 @@ func parseMessageEmbed(request *messageEmbedRequest) (*conversation.MessageEmbed
 			Kind: conversation.EmbedKindContactCard, UserID: userID,
 		}, true
 	case conversation.EmbedKindInstantClass:
-		if request.MediaSpaceID == nil || request.UserID != nil {
+		if request.MediaSpaceID == nil || request.UserID != nil || request.StickerID != nil {
 			return nil, false
 		}
 		spaceID, ok := parseResourceUUID(*request.MediaSpaceID)
@@ -168,6 +183,10 @@ func (handlers conversationHandlers) collection(w http.ResponseWriter, r *http.R
 }
 
 func (handlers conversationHandlers) resource(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("conversation_id") == conversationStickerPacksSegment {
+		handlers.stickerPacks(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Conversation details support GET requests.")
@@ -195,6 +214,56 @@ func (handlers conversationHandlers) resource(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(handlers.logger, w, http.StatusOK, item)
+}
+
+// stickerPacks serves the embedded sticker catalog (ADR-0047 §4). The body
+// is identical for every authorized reader, so it carries a strong ETag and a
+// short private cache lifetime; errors keep the conversation no-store policy.
+func (handlers conversationHandlers) stickerPacks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		writeProblem(w, r, http.StatusMethodNotAllowed, "Method not allowed", "Sticker packs support GET requests.")
+		return
+	}
+	if !handlers.available(w, r) {
+		return
+	}
+	principal, ok := handlers.auth.authenticatedPrincipal(w, r)
+	if !ok {
+		return
+	}
+	access, ok := handlers.access(w, r, principal)
+	if !ok {
+		return
+	}
+	packs, err := handlers.service.ListStickerPacks(r.Context(), access)
+	if err != nil {
+		handlers.writeProblem(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", stickerPacksCacheControl)
+	if packs.ETag != "" {
+		w.Header().Set("ETag", packs.ETag)
+		if entityTagMatches(r.Header.Values("If-None-Match"), packs.ETag) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+	writeJSON(handlers.logger, w, http.StatusOK, packs.Catalog)
+}
+
+// entityTagMatches applies the weak comparison If-None-Match requires.
+func entityTagMatches(headers []string, current string) bool {
+	opaque := strings.TrimPrefix(current, "W/")
+	for _, header := range headers {
+		for _, candidate := range strings.Split(header, ",") {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "*" || (candidate != "" && strings.TrimPrefix(candidate, "W/") == opaque) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (handlers conversationHandlers) createDirect(w http.ResponseWriter, r *http.Request) {
@@ -642,10 +711,10 @@ func (handlers conversationHandlers) writeProblem(w http.ResponseWriter, r *http
 		title, detail = "Message changed", "Reload the latest message state before retrying this change."
 	case errors.Is(err, conversation.ErrMessageNotEditable):
 		status, code = http.StatusConflict, "message_not_editable"
-		title, detail = "Message cannot be edited", "Contact cards and class cards keep their content; unsend and send a new one instead."
+		title, detail = "Message cannot be edited", "Contact cards, class cards and stickers keep their content; unsend and send a new one instead."
 	case errors.Is(err, conversation.ErrEmbedUnavailable):
 		status, code = http.StatusConflict, "message_embed_unavailable"
-		title, detail = "Card unavailable", "The contact or class can no longer be shared in this conversation."
+		title, detail = "Card unavailable", "The contact, class or sticker can no longer be shared in this conversation."
 	case errors.Is(err, conversation.ErrAttachmentUnsupported):
 		status, code = http.StatusUnsupportedMediaType, "conversation_attachment_unsupported"
 		title, detail = "Attachment type not allowed", "Send PNG, JPEG, WebP or GIF images, or PDF, Office, text, CSV, Markdown or ZIP lesson files."

@@ -63,6 +63,10 @@ export function availableTenantCapabilities(
         configured_enabled: false,
         enabled: false,
       },
+      chat_stickers: {
+        configured_enabled: true,
+        enabled: true,
+      },
       instant_study_rooms: {
         configured_enabled: false,
         enabled: false,

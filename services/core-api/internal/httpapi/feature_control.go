@@ -60,6 +60,7 @@ type tenantFeatureCapabilitiesResponse struct {
 	CodeSnippetLibrary         featureCapabilityResponse `json:"code_snippet_library"`
 	ClassroomFilesTool         featureCapabilityResponse `json:"classroom_files_tool"`
 	ClassroomPDFCollaboration  featureCapabilityResponse `json:"classroom_pdf_collaboration"`
+	ChatStickers               featureCapabilityResponse `json:"chat_stickers"`
 }
 
 type tenantQuotaCapabilitiesResponse struct {
@@ -141,6 +142,7 @@ type updateTenantFeatureControlValuesRequest struct {
 	CodeSnippetLibrary         *bool `json:"code_snippet_library"`
 	ClassroomFilesTool         *bool `json:"classroom_files_tool"`
 	ClassroomPDFCollaboration  *bool `json:"classroom_pdf_collaboration"`
+	ChatStickers               *bool `json:"chat_stickers"`
 }
 
 type updateTenantQuotaControlValuesRequest struct {
@@ -192,6 +194,7 @@ func (request updateTenantFeatureControlsRequest) complete() bool {
 		request.Features.CodeSnippetLibrary != nil &&
 		request.Features.ClassroomFilesTool != nil &&
 		request.Features.ClassroomPDFCollaboration != nil &&
+		request.Features.ChatStickers != nil &&
 		request.Quotas != nil && request.Quotas.Members != nil &&
 		request.Quotas.ActiveClasses != nil &&
 		request.Quotas.InviteCreationsPerHour != nil &&
@@ -313,6 +316,7 @@ func (handlers featureControlHandlers) update(w http.ResponseWriter, r *http.Req
 				{Key: featurecontrol.FeatureCodeSnippetLibrary, Enabled: *request.Features.CodeSnippetLibrary},
 				{Key: featurecontrol.FeatureClassroomFilesTool, Enabled: *request.Features.ClassroomFilesTool},
 				{Key: featurecontrol.FeatureClassroomPDFCollaboration, Enabled: *request.Features.ClassroomPDFCollaboration},
+				{Key: featurecontrol.FeatureChatStickers, Enabled: *request.Features.ChatStickers},
 			},
 			QuotaOverrides: []featurecontrol.QuotaOverride{
 				{Key: featurecontrol.QuotaMembers, Limit: *request.Quotas.Members},
@@ -488,6 +492,7 @@ func mapTenantCapabilities(
 	codeSnippetLibraryFeature, codeSnippetLibraryOK := features[featurecontrol.FeatureCodeSnippetLibrary]
 	classroomFilesToolFeature, classroomFilesToolOK := features[featurecontrol.FeatureClassroomFilesTool]
 	classroomPDFCollaborationFeature, classroomPDFCollaborationOK := features[featurecontrol.FeatureClassroomPDFCollaboration]
+	chatStickersFeature, chatStickersOK := features[featurecontrol.FeatureChatStickers]
 	membersQuota, membersOK := quotas[featurecontrol.QuotaMembers]
 	classesQuota, classesOK := quotas[featurecontrol.QuotaActiveClasses]
 	invitesQuota, invitesOK := quotas[featurecontrol.QuotaInviteCreationsPerHour]
@@ -525,7 +530,7 @@ func mapTenantCapabilities(
 		!classroomWhiteboardOK || !whiteboardDocumentsOK || !whiteboardConnectionsOK ||
 		!whiteboardStorageBytesOK || !whiteboardOperationsOK ||
 		!classroomCodeToolOK || !classroomCodeCollaborationOK ||
-		!codeSnippetLibraryOK || !classroomFilesToolOK || !classroomPDFCollaborationOK ||
+		!codeSnippetLibraryOK || !classroomFilesToolOK || !classroomPDFCollaborationOK || !chatStickersOK ||
 		!codeSnippetsPerMemberOK || !codeStorageBytesOK {
 		return tenantCapabilitiesResponse{}, errors.New("feature control snapshot is incomplete")
 	}
@@ -551,6 +556,7 @@ func mapTenantCapabilities(
 			CodeSnippetLibrary:         mapFeatureCapability(codeSnippetLibraryFeature, capabilities.AllowedAction.ManageControls),
 			ClassroomFilesTool:         mapFeatureCapability(classroomFilesToolFeature, capabilities.AllowedAction.ManageControls),
 			ClassroomPDFCollaboration:  mapFeatureCapability(classroomPDFCollaborationFeature, capabilities.AllowedAction.ManageControls),
+			ChatStickers:               mapFeatureCapability(chatStickersFeature, capabilities.AllowedAction.ManageControls),
 		},
 		Quotas: tenantQuotaCapabilitiesResponse{
 			Members:                                    mapQuotaCapability(membersQuota, capabilities.AllowedAction.ManageControls),

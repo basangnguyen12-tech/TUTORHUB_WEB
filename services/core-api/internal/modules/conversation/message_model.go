@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tutorhub-v2/core-api/internal/modules/conversation/stickers"
 )
 
 const (
@@ -53,6 +54,9 @@ type EmbedKind string
 const (
 	EmbedKindContactCard  EmbedKind = "contact_card"
 	EmbedKindInstantClass EmbedKind = "instant_class"
+	// EmbedKindSticker names an entry of the embedded sticker catalog
+	// (MSG-STICKER-01, ADR-0047).
+	EmbedKindSticker EmbedKind = "sticker"
 )
 
 // MessageEmbedInput is the card a sender asks the server to attach; exactly
@@ -61,14 +65,17 @@ type MessageEmbedInput struct {
 	Kind         EmbedKind
 	UserID       uuid.UUID
 	MediaSpaceID uuid.UUID
+	StickerID    string
 }
 
 // MessageEmbed is resolved for each reader at read time. A contact card
 // exposes only the member's display name and ID, and only while the member
-// is still active; an instant class exposes its title, window and status.
+// is still active; an instant class exposes its title, window and status; a
+// sticker exposes its catalog labels and same-origin asset URLs unless it was
+// removed from the catalog.
 type MessageEmbed struct {
 	Kind EmbedKind `json:"kind"`
-	// contact_card
+	// contact_card and sticker
 	Available   *bool      `json:"available,omitempty"`
 	UserID      *uuid.UUID `json:"user_id,omitempty"`
 	DisplayName *string    `json:"display_name,omitempty"`
@@ -79,6 +86,11 @@ type MessageEmbed struct {
 	EndsAt           *time.Time `json:"ends_at,omitempty"`
 	RemainingSeconds *int64     `json:"remaining_seconds,omitempty"`
 	ViewerCanJoin    *bool      `json:"viewer_can_join,omitempty"`
+	// sticker (only while available)
+	StickerID *string                 `json:"sticker_id,omitempty"`
+	PackID    *string                 `json:"pack_id,omitempty"`
+	Labels    *stickers.LocalizedText `json:"labels,omitempty"`
+	Asset     *stickers.Asset         `json:"asset,omitempty"`
 }
 
 type MessageListInput struct {

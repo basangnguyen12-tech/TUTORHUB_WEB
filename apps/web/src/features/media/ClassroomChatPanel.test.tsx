@@ -16,8 +16,11 @@ import type {
   Message,
   MessageAttachment,
 } from "@tutorhub/api-client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../../app/i18n";
+import { tenantCapabilityQueryKeys } from "../../app/tenantCapabilities";
 import {
   ClassroomChatPanel,
   type ClassroomChatPanelProps,
@@ -139,12 +142,21 @@ function renderPanel(overrides: Partial<ClassroomChatPanelProps> = {}) {
     tenantID,
     ...overrides,
   };
+  // MSG-STICKER-03: the expression picker reads capabilities and the sticker
+  // catalog through React Query.
+  const queryClient = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
   const view = render(
     <I18nProvider initialLanguage="vi">
       <ClassroomChatPanel {...props} />
     </I18nProvider>,
+    { wrapper },
   );
-  return { props, view };
+  return { props, queryClient, view };
 }
 
 function composer() {
@@ -1259,5 +1271,129 @@ describe("ROOM-CHAT-EMOJI-02 emoji catalogue", () => {
     );
     expect(loadChatEmojiRecents(scope)).toEqual(["🎉"]);
     storage.clear();
+  });
+});
+
+describe("ClassroomChatPanel stickers and blue mentions (MSG-STICKER-03, MSG-MENTION-BLUE-01)", () => {
+  const tearsOfJoy = {
+    id: "noto_animated:1f602",
+    labels: { vi: "Cười ra nước mắt", en: "Tears of joy" },
+    keywords: { vi: ["buồn cười"], en: ["lol"] },
+    animated: true,
+    asset: {
+      animated_url: "/stickers/noto_animated/v1/1f602.webp",
+      static_url: "/stickers/noto_animated/v1/1f602.static.webp",
+      width: 160,
+      height: 160,
+    },
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) =>
+        new URL(request.url).pathname.endsWith("/conversations/sticker-packs")
+          ? new Response(
+              JSON.stringify({
+                catalog_version: "2026-11-28.1",
+                packs: [
+                  {
+                    id: "noto_animated",
+                    version: "v1",
+                    title: { vi: "Biểu cảm Noto", en: "Noto Animated" },
+                    attribution: {
+                      text: "Noto Emoji Animation by Google, CC BY 4.0.",
+                      license: "CC BY 4.0",
+                      url: "https://creativecommons.org/licenses/by/4.0/",
+                      notices_path: "/THIRD_PARTY_NOTICES.txt",
+                    },
+                    stickers: [tearsOfJoy],
+                  },
+                ],
+              }),
+              { headers: { "Content-Type": "application/json" } },
+            )
+          : new Response("{}", { status: 404 }),
+      ),
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  function enableStickers(queryClient: QueryClient) {
+    queryClient.setQueryData(tenantCapabilityQueryKeys.detail(tenantID), {
+      can_manage_overrides: false,
+      features: { chat_stickers: { enabled: true } },
+      operations: {},
+      quotas: {},
+      tenant_id: tenantID,
+      version: 1,
+    });
+  }
+
+  it("renders room stickers without a bubble and highlights member @names", () => {
+    renderPanel({
+      messages: [
+        message("", {
+          author: { display_name: "Cô Mai", user_id: actorID },
+          content: "",
+          embed: {
+            kind: "sticker",
+            available: true,
+            sticker_id: tearsOfJoy.id,
+            pack_id: "noto_animated",
+            labels: tearsOfJoy.labels,
+            asset: tearsOfJoy.asset,
+          },
+        }),
+        message("@Cô Mai em gửi bài, mail em@example.com"),
+      ],
+    });
+    const image = screen.getByRole("img", { name: "Cười ra nước mắt" });
+    expect(image).toHaveAttribute("width", "128");
+    expect(image.closest(".classroom-chat__sticker")).not.toBeNull();
+    expect(image.closest(".classroom-chat__bubble")).toBeNull();
+    // A sticker cannot be edited.
+    expect(screen.queryByRole("button", { name: "Sửa" })).toBeNull();
+    const mentions = document.querySelectorAll(".classroom-chat__mention");
+    expect([...mentions].map((node) => node.textContent)).toEqual(["@Cô Mai"]);
+  });
+
+  it("sends a sticker from the Sticker tab, keeps the draft and retries with the same key", async () => {
+    const onSendSticker = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined);
+    const { queryClient } = renderPanel({ onSendSticker });
+    enableStickers(queryClient);
+    fireEvent.change(composer(), { target: { value: "Em chưa hiểu câu 2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Biểu tượng cảm xúc" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Sticker" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Cười ra nước mắt" }),
+    );
+    await waitFor(() => expect(onSendSticker).toHaveBeenCalledTimes(1));
+    const first = onSendSticker.mock.calls[0]?.[0] as {
+      clientMessageID: string;
+      stickerID: string;
+    };
+    expect(first.stickerID).toBe("noto_animated:1f602");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Chưa gửi được sticker Cười ra nước mắt.");
+    expect(composer()).toHaveValue("Em chưa hiểu câu 2");
+    fireEvent.click(within(alert).getByRole("button", { name: "Thử lại" }));
+    await waitFor(() => expect(onSendSticker).toHaveBeenCalledTimes(2));
+    expect(onSendSticker.mock.calls[1]?.[0]).toEqual(first);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(composer()).toHaveValue("Em chưa hiểu câu 2");
   });
 });

@@ -360,7 +360,7 @@ export function ClassroomEmojiPicker({
         <Smile aria-hidden="true" />
       </button>
       {open && (
-        <EmojiPopover
+        <ClassroomEmojiPanel
           id={popoverID}
           onClose={close}
           onSelect={onSelect}
@@ -371,17 +371,31 @@ export function ClassroomEmojiPicker({
   );
 }
 
-function EmojiPopover({
-  id,
-  onClose,
-  onSelect,
-  recentScope,
-}: {
+export interface ClassroomEmojiPanelProps {
+  /** Focus the search box on mount (false when entered from a tab). */
+  autoFocusSearch?: boolean;
+  /**
+   * MSG-STICKER-03: render as the Emoji tab panel of ChatExpressionPicker
+   * (no dialog role or popover chrome of its own).
+   */
+  embedded?: boolean;
   id: string;
+  /** The tab that labels the embedded panel. */
+  labelledBy?: string;
   onClose: (restoreFocus: boolean) => void;
   onSelect: (emoji: string) => void;
   recentScope: ChatEmojiRecentScope | null;
-}) {
+}
+
+export function ClassroomEmojiPanel({
+  autoFocusSearch = true,
+  embedded = false,
+  id,
+  labelledBy,
+  onClose,
+  onSelect,
+  recentScope,
+}: ClassroomEmojiPanelProps) {
   const { language, t } = useI18n();
   const [catalogState, retryCatalog] = useEmojiCatalog();
   const catalog = catalogState.status === "ready" ? catalogState.catalog : null;
@@ -487,7 +501,9 @@ function EmojiPopover({
   });
 
   useEffect(() => {
-    searchRef.current?.focus();
+    if (autoFocusSearch) searchRef.current?.focus();
+    // Only on mount: the tab panel keeps focus where the person put it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateTabOverflow = useCallback(() => {
@@ -709,11 +725,16 @@ function EmojiPopover({
 
   return (
     <div
-      aria-label={t("media.chat.emoji.title")}
-      className="classroom-chat-emoji__popover"
+      aria-label={embedded ? undefined : t("media.chat.emoji.title")}
+      aria-labelledby={embedded ? labelledBy : undefined}
+      className={
+        embedded
+          ? "classroom-chat-emoji__panel"
+          : "classroom-chat-emoji__popover"
+      }
       id={id}
       onKeyDown={onPopoverKeyDown}
-      role="dialog"
+      role={embedded ? "tabpanel" : "dialog"}
     >
       <div className="classroom-chat-emoji__search-bar">
         <Search

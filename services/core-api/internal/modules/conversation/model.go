@@ -114,4 +114,5 @@ type ServiceAPI interface {
 	UpdateRoomSettings(context.Context, AccessContext, uuid.UUID, RoomSettingsInput) (Conversation, error)
 	UploadAttachment(context.Context, AccessContext, uuid.UUID, UploadAttachmentInput) (AttachmentUploadResult, error)
 	ReadAttachmentContent(context.Context, AccessContext, uuid.UUID, uuid.UUID) (AttachmentContent, error)
+	ListStickerPacks(context.Context, AccessContext) (StickerPacks, error)
 }

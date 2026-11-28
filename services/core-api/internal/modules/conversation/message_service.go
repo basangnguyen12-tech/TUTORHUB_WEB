@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/tutorhub-v2/core-api/internal/modules/conversation/stickers"
 )
 
 func (service *Service) ListMessages(
@@ -117,9 +119,12 @@ func (service *Service) SendMessage(
 func validMessageEmbedInput(embed MessageEmbedInput) bool {
 	switch embed.Kind {
 	case EmbedKindContactCard:
-		return embed.UserID != uuid.Nil && embed.MediaSpaceID == uuid.Nil
+		return embed.UserID != uuid.Nil && embed.MediaSpaceID == uuid.Nil && embed.StickerID == ""
 	case EmbedKindInstantClass:
-		return embed.MediaSpaceID != uuid.Nil && embed.UserID == uuid.Nil
+		return embed.MediaSpaceID != uuid.Nil && embed.UserID == uuid.Nil && embed.StickerID == ""
+	case EmbedKindSticker:
+		return stickers.ValidID(embed.StickerID) &&
+			embed.UserID == uuid.Nil && embed.MediaSpaceID == uuid.Nil
 	default:
 		return false
 	}
@@ -130,6 +135,17 @@ func validMessageEmbedInput(embed MessageEmbedInput) bool {
 func sendRequestFingerprint(input SendMessageInput) [32]byte {
 	if input.Embed == nil {
 		return messageRequestFingerprint(input.Content, input.AttachmentIDs)
+	}
+	if input.Embed.Kind == EmbedKindSticker {
+		// \x00embed:sticker\x00 + uint16 length + ID bytes (ADR-0047 §4).
+		payload := make([]byte, 0, 18+len(input.Embed.StickerID))
+		payload = append(payload, 0)
+		payload = append(payload, "embed:"...)
+		payload = append(payload, EmbedKindSticker...)
+		payload = append(payload, 0)
+		payload = binary.BigEndian.AppendUint16(payload, uint16(len(input.Embed.StickerID)))
+		payload = append(payload, input.Embed.StickerID...)
+		return sha256.Sum256(payload)
 	}
 	target := input.Embed.UserID
 	if input.Embed.Kind == EmbedKindInstantClass {

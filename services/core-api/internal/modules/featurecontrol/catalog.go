@@ -35,6 +35,9 @@ const (
 	// ROOM-TOOLS-FILES-02A (ADR-0045 §2, §4 Slice 2): real-time PDF
 	// presentation and page-scoped annotations stay default-off.
 	FeatureClassroomPDFCollaboration FeatureKey = "classroom_pdf_collaboration"
+	// MSG-STICKER-01 (ADR-0047): curated sticker messages stay default-on;
+	// tenant admins may turn them off.
+	FeatureChatStickers FeatureKey = "chat_stickers"
 )
 
 type QuotaKey string
@@ -154,6 +157,9 @@ var featureDefinitions = map[FeatureKey]FeatureDefinition{
 	},
 	FeatureClassroomPDFCollaboration: {
 		Key: FeatureClassroomPDFCollaboration, DefaultEnabled: false,
+	},
+	FeatureChatStickers: {
+		Key: FeatureChatStickers, DefaultEnabled: true,
 	},
 }
 

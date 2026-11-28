@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tutorhub-v2/core-api/internal/config"
 	"github.com/tutorhub-v2/core-api/internal/modules/conversation"
+	"github.com/tutorhub-v2/core-api/internal/modules/conversation/stickers"
 	"github.com/tutorhub-v2/core-api/internal/modules/featurecontrol"
 	"github.com/tutorhub-v2/core-api/internal/modules/identity"
 )
@@ -504,6 +505,10 @@ type fakeConversationService struct {
 	markReadMessageID         uuid.UUID
 	markReadCalls             int
 	roomChat                  fakeRoomChatService
+	stickerPacks              conversation.StickerPacks
+	stickerError              error
+	stickerAccess             conversation.AccessContext
+	stickerCalls              int
 }
 
 func (service *fakeConversationService) List(
@@ -637,6 +642,15 @@ func (service *fakeConversationService) MarkRead(
 	service.markReadConversationID = conversationID
 	service.markReadMessageID = messageID
 	return service.readState, service.readError
+}
+
+func (service *fakeConversationService) ListStickerPacks(
+	_ context.Context,
+	access conversation.AccessContext,
+) (conversation.StickerPacks, error) {
+	service.stickerCalls++
+	service.stickerAccess = access
+	return service.stickerPacks, service.stickerError
 }
 
 func conversationTestHandler(
@@ -1221,5 +1235,183 @@ func TestConversationCardHandlersParseEmbedsAndContactCardDirects(t *testing.T) 
 		if service.directCalls != directCalls {
 			t.Fatalf("%s direct request reached the service", name)
 		}
+	}
+}
+
+// MSG-STICKER-01 (ADR-0047): sticker catalog and sticker sends.
+func TestConversationStickerPacksHandlerCachesPrivatelyWithETag(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	service := &fakeConversationService{}
+	handler := conversationTestHandler(classIdentityService(tenantID, uuid.New(), nil), service)
+	catalog, err := stickers.Default()
+	if err != nil {
+		t.Fatalf("embedded catalog: %v", err)
+	}
+	service.stickerPacks = conversation.StickerPacks{Catalog: catalog.Published(), ETag: catalog.ETag()}
+
+	request := func(method string, mutate func(*http.Request)) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, conversationStickerPacksPath, nil)
+		r.Header.Set(conversationTenantHeader, tenantID.String())
+		addSessionCookie(r)
+		if mutate != nil {
+			mutate(r)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, r)
+		return response
+	}
+
+	ok := request(http.MethodGet, nil)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", ok.Code, ok.Body.String())
+	}
+	if ok.Header().Get("Cache-Control") != "private, max-age=300" ||
+		ok.Header().Get("ETag") != catalog.ETag() ||
+		!headerContainsValue(ok.Header().Values("Vary"), "Cookie") ||
+		!headerContainsValue(ok.Header().Values("Vary"), conversationTenantHeader) {
+		t.Fatalf("unexpected catalog headers: %v", ok.Header())
+	}
+	if service.stickerAccess.TenantID != tenantID || service.stickerCalls != 1 {
+		t.Fatalf("catalog access = %+v calls=%d", service.stickerAccess, service.stickerCalls)
+	}
+	var body struct {
+		CatalogVersion string `json:"catalog_version"`
+		Packs          []struct {
+			ID          string `json:"id"`
+			Attribution struct {
+				License     string `json:"license"`
+				NoticesPath string `json:"notices_path"`
+			} `json:"attribution"`
+			Stickers []struct {
+				ID     string `json:"id"`
+				Status string `json:"status"`
+				Asset  struct {
+					AnimatedURL string `json:"animated_url"`
+					StaticURL   string `json:"static_url"`
+				} `json:"asset"`
+			} `json:"stickers"`
+		} `json:"packs"`
+	}
+	if err := json.Unmarshal(ok.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode catalog: %v", err)
+	}
+	if body.CatalogVersion != catalog.Version() || len(body.Packs) != 1 ||
+		body.Packs[0].Attribution.License != "CC BY 4.0" ||
+		body.Packs[0].Attribution.NoticesPath != "/THIRD_PARTY_NOTICES.txt" ||
+		len(body.Packs[0].Stickers) < 80 ||
+		!strings.HasPrefix(body.Packs[0].Stickers[0].Asset.AnimatedURL, "/stickers/noto_animated/v1/") ||
+		body.Packs[0].Stickers[0].Status != "" {
+		t.Fatalf("unexpected catalog body: %.200s", ok.Body.String())
+	}
+
+	for _, header := range []string{catalog.ETag(), "W/" + catalog.ETag(), `"other", ` + catalog.ETag(), "*"} {
+		notModified := request(http.MethodGet, func(r *http.Request) { r.Header.Set("If-None-Match", header) })
+		if notModified.Code != http.StatusNotModified || notModified.Body.Len() != 0 ||
+			notModified.Header().Get("ETag") != catalog.ETag() ||
+			notModified.Header().Get("Cache-Control") != "private, max-age=300" {
+			t.Fatalf("If-None-Match %q => %d %v", header, notModified.Code, notModified.Header())
+		}
+	}
+	changed := request(http.MethodGet, func(r *http.Request) { r.Header.Set("If-None-Match", `"stickers-stale"`) })
+	if changed.Code != http.StatusOK {
+		t.Fatalf("stale validator => %d", changed.Code)
+	}
+
+	service.stickerError = &featurecontrol.FeatureDisabledError{Feature: featurecontrol.FeatureChatStickers}
+	disabled := request(http.MethodGet, nil)
+	assertConversationProblem(t, disabled, http.StatusForbidden, "feature_disabled")
+	if disabled.Header().Get("ETag") != "" {
+		t.Fatal("a disabled catalog must not expose a validator")
+	}
+	service.stickerError = conversation.ErrAccessDenied
+	assertConversationProblem(t, request(http.MethodGet, nil), http.StatusForbidden, "conversation_forbidden")
+	service.stickerError = nil
+
+	calls := service.stickerCalls
+	post := request(http.MethodPost, nil)
+	if post.Code != http.StatusMethodNotAllowed || post.Header().Get("Allow") != "GET, HEAD" {
+		t.Fatalf("POST => %d allow=%q", post.Code, post.Header().Get("Allow"))
+	}
+	missingTenant := request(http.MethodGet, func(r *http.Request) { r.Header.Del(conversationTenantHeader) })
+	assertConversationProblem(t, missingTenant, http.StatusBadRequest, "conversation_invalid")
+	if service.stickerCalls != calls {
+		t.Fatal("rejected catalog requests must not reach the service")
+	}
+}
+
+func TestConversationStickerHandlersParseStickerEmbeds(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	conversationID := uuid.New()
+	service := &fakeConversationService{}
+	handler := conversationTestHandler(classIdentityService(tenantID, uuid.New(), nil), service)
+	path := "/api/v1/conversations/" + conversationID.String() + "/messages"
+	available := true
+	content := ""
+	stickerID, packID := "noto_animated:1f602", "noto_animated"
+	service.messageResult = conversation.MessageMutationResult{Created: true, Message: conversation.Message{
+		ID: uuid.New(), ConversationID: conversationID, Sequence: 1, ClientMessageID: uuid.New(),
+		Content: &content, State: conversation.MessageStateActive, Version: 1,
+		Embed: &conversation.MessageEmbed{
+			Kind: conversation.EmbedKindSticker, Available: &available,
+			StickerID: &stickerID, PackID: &packID,
+			Labels: &stickers.LocalizedText{VI: "Cười ra nước mắt", EN: "Tears of joy"},
+			Asset: &stickers.Asset{
+				AnimatedURL: "/stickers/noto_animated/v1/1f602.webp",
+				StaticURL:   "/stickers/noto_animated/v1/1f602.static.webp", Width: 160, Height: 160,
+			},
+		},
+		CreatedAt: conversationTestTime, UpdatedAt: conversationTestTime,
+	}}
+	sendSticker := `{"client_message_id":"` + uuid.NewString() +
+		`","content":"","embed":{"kind":"sticker","sticker_id":"noto_animated:1f602"}}`
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, conversationAuthenticatedMutationRequest(http.MethodPost, path, sendSticker, tenantID))
+	embed := service.messageInput.Embed
+	if response.Code != http.StatusCreated || embed == nil || embed.Kind != conversation.EmbedKindSticker ||
+		embed.StickerID != stickerID || embed.UserID != uuid.Nil || embed.MediaSpaceID != uuid.Nil {
+		t.Fatalf("sticker send status=%d input=%+v", response.Code, service.messageInput)
+	}
+	if !strings.Contains(response.Body.String(), `"embed":{"kind":"sticker","available":true,"sticker_id":"noto_animated:1f602","pack_id":"noto_animated"`) ||
+		!strings.Contains(response.Body.String(), `"static_url":"/stickers/noto_animated/v1/1f602.static.webp"`) {
+		t.Fatalf("sticker response must project the embed: %s", response.Body.String())
+	}
+
+	otherID := uuid.NewString()
+	calls := service.messageCalls
+	for name, body := range map[string]string{
+		"missing sticker id":   `{"kind":"sticker"}`,
+		"null sticker id":      `{"kind":"sticker","sticker_id":null}`,
+		"malformed sticker id": `{"kind":"sticker","sticker_id":"NOTO:1F602"}`,
+		"traversal sticker id": `{"kind":"sticker","sticker_id":"noto:../../x"}`,
+		"sticker with user":    `{"kind":"sticker","sticker_id":"noto_animated:1f602","user_id":"` + otherID + `"}`,
+		"contact with sticker": `{"kind":"contact_card","user_id":"` + otherID + `","sticker_id":"noto_animated:1f602"}`,
+		"class with sticker":   `{"kind":"instant_class","media_space_id":"` + otherID + `","sticker_id":"noto_animated:1f602"}`,
+	} {
+		invalid := httptest.NewRecorder()
+		handler.ServeHTTP(invalid, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+			`{"client_message_id":"`+uuid.NewString()+`","content":"","embed":`+body+`}`, tenantID,
+		))
+		assertConversationProblem(t, invalid, http.StatusBadRequest, "conversation_invalid")
+		if service.messageCalls != calls {
+			t.Fatalf("%s embed reached the service", name)
+		}
+	}
+
+	for _, test := range []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{conversation.ErrEmbedUnavailable, http.StatusConflict, "message_embed_unavailable"},
+		{conversation.ErrReadOnly, http.StatusConflict, "conversation_read_only"},
+		{&featurecontrol.FeatureDisabledError{Feature: featurecontrol.FeatureChatStickers}, http.StatusForbidden, "feature_disabled"},
+		{conversation.ErrIdempotencyConflict, http.StatusConflict, "message_idempotency_conflict"},
+	} {
+		service.messageError = test.err
+		failed := httptest.NewRecorder()
+		handler.ServeHTTP(failed, conversationAuthenticatedMutationRequest(http.MethodPost, path, sendSticker, tenantID))
+		assertConversationProblem(t, failed, test.status, test.code)
 	}
 }

@@ -324,6 +324,10 @@ type fakeRepository struct {
 	createCalls        int
 	stored             storedAttachment
 	storedError        error
+
+	stickerAccess AccessContext
+	stickerCalls  int
+	stickerError  error
 }
 
 func (repository *fakeRepository) List(
@@ -465,6 +469,15 @@ func (repository *fakeRepository) ReadAttachment(
 	_ uuid.UUID,
 ) (storedAttachment, error) {
 	return repository.stored, repository.storedError
+}
+
+func (repository *fakeRepository) AuthorizeStickerCatalog(
+	_ context.Context,
+	access AccessContext,
+) error {
+	repository.stickerCalls++
+	repository.stickerAccess = access
+	return repository.stickerError
 }
 
 func (repository *fakeRepository) MarkRead(

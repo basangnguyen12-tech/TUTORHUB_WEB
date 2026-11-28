@@ -1,6 +1,9 @@
-import type { MessageAttachment } from "@tutorhub/api-client";
+import type { MessageAttachment, Sticker } from "@tutorhub/api-client";
 import type { TranslationKey } from "../../app/i18n";
-import { CHAT_EMOJI_RECENT_STORAGE_PREFIX } from "../../app/session";
+import {
+  CHAT_EMOJI_RECENT_STORAGE_PREFIX,
+  CHAT_STICKER_RECENT_STORAGE_PREFIX,
+} from "../../app/session";
 
 /**
  * ROOM-CHAT-01 (ADR-0042) client helpers for classroom chat media.
@@ -319,14 +322,98 @@ export function isJumboEmoji(text: string): boolean {
 }
 
 export type ChatTextPiece =
-  { kind: "text"; text: string } | { kind: "link"; href: string; text: string };
+  | { kind: "text"; text: string }
+  | { kind: "link"; href: string; text: string }
+  | { kind: "mention"; text: string };
+
+export type ChatMentionPiece =
+  { kind: "text"; text: string } | { kind: "mention"; text: string };
 
 const linkPattern = /https?:\/\/[^\s<>"']+/giu;
 const trailingPunctuation = /[.,;:!?)\]}'"»”’]+$/u;
+const MENTION_NAME_MAX_LENGTH = 200;
+/** A mention never starts inside a word ("user@example.com"). */
+const mentionWordCharacter = /[\p{L}\p{M}\p{N}_.+-]/u;
+/** A name ends where a word ends ("@An" is not a prefix of "@Anh"). */
+const nameContinuation = /[\p{L}\p{M}\p{N}_]/u;
 
-/** Splits plain text into text and safe http(s) link pieces. */
-export function linkifyChatText(text: string): ChatTextPiece[] {
+/**
+ * MSG-MENTION-BLUE-01: distinct member names, longest first, so "@Nguyễn Văn
+ * An" wins over "@Nguyễn Văn". Blank and oversized names are dropped.
+ */
+export function chatMentionNames(
+  names: Iterable<string | null | undefined>,
+): string[] {
+  const unique = new Set<string>();
+  for (const raw of names) {
+    const name = raw?.trim();
+    if (name && name.length <= MENTION_NAME_MAX_LENGTH) unique.add(name);
+  }
+  return [...unique].sort(
+    (left, right) => right.length - left.length || left.localeCompare(right),
+  );
+}
+
+/**
+ * Splits plain text into text and `@Name` pieces for known member names
+ * (sorted longest first by `chatMentionNames`). Only whole names directly
+ * after "@" match, and only when "@" does not continue a word.
+ */
+export function splitChatMentions(
+  text: string,
+  names: readonly string[],
+): ChatMentionPiece[] {
+  if (names.length === 0 || !text.includes("@")) {
+    return text ? [{ kind: "text", text }] : [];
+  }
+  const pieces: ChatMentionPiece[] = [];
+  let cursor = 0;
+  let index = text.indexOf("@");
+  while (index >= 0) {
+    const before = index > 0 ? text.charAt(index - 1) : "";
+    let matched: string | null = null;
+    if (!before || !mentionWordCharacter.test(before)) {
+      for (const name of names) {
+        if (!text.startsWith(name, index + 1)) continue;
+        const after = text.charAt(index + 1 + name.length);
+        if (after && nameContinuation.test(after)) continue;
+        matched = name;
+        break;
+      }
+    }
+    if (matched) {
+      if (index > cursor) {
+        pieces.push({ kind: "text", text: text.slice(cursor, index) });
+      }
+      const end = index + 1 + matched.length;
+      pieces.push({ kind: "mention", text: text.slice(index, end) });
+      cursor = end;
+      index = text.indexOf("@", end);
+    } else {
+      index = text.indexOf("@", index + 1);
+    }
+  }
+  if (cursor < text.length) {
+    pieces.push({ kind: "text", text: text.slice(cursor) });
+  }
+  return pieces;
+}
+
+/**
+ * Splits plain text into text, safe http(s) link and (with member names)
+ * `@Name` mention pieces. Mentions are only looked for outside links.
+ */
+export function linkifyChatText(
+  text: string,
+  mentionNames: readonly string[] = [],
+): ChatTextPiece[] {
   const pieces: ChatTextPiece[] = [];
+  const pushText = (value: string) => {
+    if (!value) return;
+    for (const piece of splitChatMentions(value, mentionNames)) {
+      pieces.push(piece);
+    }
+  };
   let cursor = 0;
   for (const match of text.matchAll(linkPattern)) {
     const start = match.index ?? 0;
@@ -344,13 +431,13 @@ export function linkifyChatText(text: string): ChatTextPiece[] {
     }
     if (!href) continue;
     if (start > cursor) {
-      pieces.push({ kind: "text", text: text.slice(cursor, start) });
+      pushText(text.slice(cursor, start));
     }
     pieces.push({ kind: "link", href, text: candidate });
     cursor = start + candidate.length;
   }
   if (cursor < text.length) {
-    pieces.push({ kind: "text", text: text.slice(cursor) });
+    pushText(text.slice(cursor));
   }
   return pieces;
 }
@@ -725,6 +812,142 @@ export function recordChatEmojiRecent(
     }
   }
   return next;
+}
+
+/* ---- MSG-STICKER-03 stickers (ADR-0047) ------------------------------ */
+
+export const CHAT_STICKER_RECENT_LIMIT = 24;
+const stickerIDPattern = /^[a-z0-9_]{1,32}:[a-z0-9_-]{1,64}$/u;
+
+export function isChatStickerID(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 3 &&
+    value.length <= 97 &&
+    stickerIDPattern.test(value)
+  );
+}
+
+export function chatStickerRecentKey(scope: ChatEmojiRecentScope) {
+  return `${CHAT_STICKER_RECENT_STORAGE_PREFIX}v1:${encodeURIComponent(
+    scope.tenantID,
+  )}:${encodeURIComponent(scope.actorID)}`;
+}
+
+function sanitizeStickerRecents(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const recents: string[] = [];
+  for (const item of value) {
+    if (isChatStickerID(item) && !recents.includes(item)) recents.push(item);
+    if (recents.length >= CHAT_STICKER_RECENT_LIMIT) break;
+  }
+  return recents;
+}
+
+/** Reads the scoped recent sticker IDs; never writes. */
+export function loadChatStickerRecents(
+  scope: ChatEmojiRecentScope | null,
+  storage: Storage | null = defaultRecentStorage(),
+): string[] {
+  if (!scope || !storage) return [];
+  try {
+    const raw = storage.getItem(chatStickerRecentKey(scope));
+    return raw ? sanitizeStickerRecents(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Most-recent-first, de-duplicated, at most 24 catalog IDs (no PII). */
+export function recordChatStickerRecent(
+  scope: ChatEmojiRecentScope | null,
+  current: readonly string[],
+  stickerID: string,
+  storage: Storage | null = defaultRecentStorage(),
+): string[] {
+  if (!isChatStickerID(stickerID)) return [...current];
+  const next = [
+    stickerID,
+    ...current.filter((item) => item !== stickerID),
+  ].slice(0, CHAT_STICKER_RECENT_LIMIT);
+  if (scope && storage) {
+    try {
+      storage.setItem(chatStickerRecentKey(scope), JSON.stringify(next));
+    } catch {
+      // Quota or privacy mode: the row still updates for this session.
+    }
+  }
+  return next;
+}
+
+export function chatStickerLabel(
+  labels: { en: string; vi: string },
+  language: "vi" | "en",
+): string {
+  return language === "vi" ? labels.vi : labels.en;
+}
+
+interface StickerSearchRow {
+  everything: string;
+  labels: string[];
+  sticker: Sticker;
+}
+
+const stickerSearchIndexes = new WeakMap<
+  readonly Sticker[],
+  StickerSearchRow[]
+>();
+
+function stickerSearchIndex(stickers: readonly Sticker[]) {
+  let rows = stickerSearchIndexes.get(stickers);
+  if (!rows) {
+    rows = stickers.map((sticker) => {
+      const labels = [sticker.labels.vi, sticker.labels.en].map(
+        normalizeEmojiSearch,
+      );
+      const keywords = [...sticker.keywords.vi, ...sticker.keywords.en].map(
+        normalizeEmojiSearch,
+      );
+      return {
+        everything: ` ${[...labels, ...keywords].join(" ")} `,
+        labels,
+        sticker,
+      };
+    });
+    stickerSearchIndexes.set(stickers, rows);
+  }
+  return rows;
+}
+
+/**
+ * Accent- and case-insensitive vi/en search over labels and keywords
+ * ("cuoi" finds "Cười"). Label matches rank before keyword matches; ties
+ * keep catalog order.
+ */
+export function searchChatStickers(
+  stickers: readonly Sticker[],
+  query: string,
+): Sticker[] {
+  const needle = normalizeEmojiSearch(query);
+  if (!needle) return [];
+  const words = needle.split(" ").filter(Boolean);
+  const ranked: { order: number; rank: number; sticker: Sticker }[] = [];
+  stickerSearchIndex(stickers).forEach((row, order) => {
+    let rank = 0;
+    if (row.labels.includes(needle)) rank = 1;
+    else if (row.labels.some((label) => label.startsWith(needle))) rank = 2;
+    else if (row.labels.some((label) => ` ${label}`.includes(` ${needle}`)))
+      rank = 3;
+    else if (row.everything.includes(` ${needle}`)) rank = 4;
+    else if (words.every((word) => row.everything.includes(` ${word}`)))
+      rank = 5;
+    else if (row.everything.includes(needle)) rank = 6;
+    if (rank > 0) ranked.push({ order, rank, sticker: row.sticker });
+  });
+  ranked.sort(
+    (left, right) => left.rank - right.rank || left.order - right.order,
+  );
+  return ranked.map((item) => item.sticker);
 }
 
 /* ---- ROOM-CHAT-01 composer memory ------------------------------------ */

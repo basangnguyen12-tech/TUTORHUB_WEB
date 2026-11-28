@@ -4,6 +4,7 @@ import {
   type Conversation,
   type Message,
   type MessageAttachment,
+  type Sticker,
 } from "@tutorhub/api-client";
 import {
   Button,
@@ -77,15 +78,18 @@ import {
 import { useI18n } from "../app/i18n";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
-import { ClassroomEmojiPicker } from "../features/media/ClassroomEmojiPicker";
+import { ChatExpressionPicker } from "../features/media/ChatExpressionPicker";
 import {
   CHAT_FILE_ACCEPT,
   CHAT_MAX_ATTACHMENTS,
+  chatMentionNames,
+  chatStickerLabel,
   checkChatFile,
   createClientID,
   formatAttachmentSize,
   linkifyChatText,
   prepareChatImage,
+  splitChatMentions,
   type ChatAttachmentKind,
 } from "../features/media/classroomChatMedia";
 import { ClassCoverArt } from "./ClassCoverArt";
@@ -114,7 +118,7 @@ import {
 import {
   cardPreviewText,
   createInstantClassSpace,
-  type MessageEmbed,
+  embedSearchText,
   type MessageEmbedInput,
 } from "./conversation-composer/composerCards";
 import { MessageEmbedCard } from "./conversation-composer/MessageEmbedCard";
@@ -260,6 +264,9 @@ export function ConversationMessages({
   const messages = useConversationMessages(tenantID, conversationID);
   const markRead = useMarkConversationRead(tenantID, conversationID);
   const sendMessage = useSendConversationMessage(tenantID, conversationID);
+  // MSG-STICKER-03: stickers use their own mutation so the typed draft and
+  // its send/error state are never touched by a sticker.
+  const stickerSend = useSendConversationMessage(tenantID, conversationID);
   const editMessage = useEditConversationMessage(tenantID, conversationID);
   const deleteMessage = useDeleteConversationMessage(tenantID, conversationID);
   const uploadAttachment = useUploadConversationAttachment(
@@ -430,6 +437,36 @@ export function ConversationMessages({
       element.style.removeProperty("height");
     }
   }, [draft]);
+
+  // MSG-MENTION-BLUE-01: every member name that can appear after "@".
+  const mentionNames = useMemo(
+    () =>
+      chatMentionNames([
+        ...(conversation?.participants ?? []).map(
+          (participant) => participant.display_name,
+        ),
+        ...items.map((item) => item.author.display_name),
+      ]),
+    [conversation?.participants, items],
+  );
+  const composerPieces = useMemo(
+    () => splitChatMentions(draft, mentionNames),
+    [draft, mentionNames],
+  );
+  const draftHasMention = composerPieces.some(
+    (piece) => piece.kind === "mention",
+  );
+  const mentionMirror = useRef<HTMLDivElement>(null);
+  const syncMentionMirror = () => {
+    if (mentionMirror.current && composer.current) {
+      mentionMirror.current.scrollTop = composer.current.scrollTop;
+    }
+  };
+  useLayoutEffect(() => {
+    if (mentionMirror.current && composer.current) {
+      mentionMirror.current.scrollTop = composer.current.scrollTop;
+    }
+  }, [draft, draftHasMention]);
 
   const mentionCandidates = useMemo(() => {
     const byID = new Map<string, string>();
@@ -659,6 +696,30 @@ export function ConversationMessages({
     }
     return cardAttempt.current;
   };
+  const [stickerFailure, setStickerFailure] = useState<{
+    clientMessageID: string;
+    sticker: Sticker;
+  } | null>(null);
+  const sendSticker = (
+    sticker: Sticker,
+    clientMessageID: string = crypto.randomUUID(),
+  ) => {
+    const label = chatStickerLabel(sticker.labels, language);
+    setStickerFailure(null);
+    stickToBottom.current = true;
+    stickerSend.mutate(
+      {
+        client_message_id: clientMessageID,
+        content: "",
+        embed: { kind: "sticker", sticker_id: sticker.id },
+      },
+      {
+        onError: () => setStickerFailure({ clientMessageID, sticker }),
+        onSuccess: () =>
+          setActionFeedback(t("conversations.stickerSent", { label })),
+      },
+    );
+  };
   const sendCard = async (
     embed: MessageEmbedInput,
     keys: { clientMessageID: string },
@@ -785,7 +846,7 @@ export function ConversationMessages({
     const excerpt =
       quoteExcerpt(message.content) ||
       message.attachments?.map((item) => item.display_name).join(", ") ||
-      cardPreviewText(message.embed, t) ||
+      cardPreviewText(message.embed, t, language) ||
       t("conversations.attachmentPreview");
     setReplyTarget({
       authorName: message.author.display_name,
@@ -1196,7 +1257,13 @@ export function ConversationMessages({
                           {timeFormatter.format(created)}
                         </time>
                       </div>
-                      <div className="conversation-message__bubble">
+                      <div
+                        className={cx(
+                          "conversation-message__bubble",
+                          active?.embed?.kind === "sticker" &&
+                            "conversation-message__bubble--sticker",
+                        )}
+                      >
                         {!active ? (
                           <p className="conversation-message__deleted">
                             {t("conversations.messageDeleted")}
@@ -1239,7 +1306,10 @@ export function ConversationMessages({
                               (!active.attachments?.length &&
                                 !active.embed)) && (
                               <p className="conversation-message__content">
-                                <LinkifiedText text={body} />
+                                <LinkifiedText
+                                  mentions={mentionNames}
+                                  text={body}
+                                />
                               </p>
                             )}
                             {active.attachments &&
@@ -1481,30 +1551,59 @@ export function ConversationMessages({
           >
             {t("conversations.composerLabel")}
           </label>
-          <textarea
-            aria-describedby={`conversation-composer-hint-${conversationID}`}
-            disabled={sendMessage.isPending}
-            id={`conversation-composer-${conversationID}`}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              selection.current = {
-                end: event.target.selectionEnd,
-                start: event.target.selectionStart,
-              };
-              setValidationError(null);
-              setSentFeedback(false);
-              if (sendMessage.isError) {
-                sendMessage.reset();
-              }
-            }}
-            onKeyDown={handleComposerKeyDown}
-            onPaste={onComposerPaste}
-            onSelect={rememberSelection}
-            placeholder={t("conversations.composerPlaceholder")}
-            ref={composer}
-            rows={1}
-            value={draft}
-          />
+          {/* MSG-MENTION-BLUE-01: while the draft names a member, a mirror
+              behind the transparent textarea paints "@Name" in blue. The
+              textarea stays the only editable, focusable, readable element. */}
+          <div
+            className="conversation-composer__field"
+            data-mentions={draftHasMention ? "true" : undefined}
+          >
+            {draftHasMention && (
+              <div
+                aria-hidden="true"
+                className="conversation-composer__mirror"
+                data-testid="conversation-composer-mirror"
+                ref={mentionMirror}
+              >
+                {composerPieces.map((piece, index) =>
+                  piece.kind === "mention" ? (
+                    <span className="conversation-mention" key={index}>
+                      {piece.text}
+                    </span>
+                  ) : (
+                    <span key={index}>{piece.text}</span>
+                  ),
+                )}
+                {draft.endsWith("\n") ? "​" : null}
+              </div>
+            )}
+            <textarea
+              aria-describedby={`conversation-composer-hint-${conversationID}`}
+              disabled={sendMessage.isPending}
+              id={`conversation-composer-${conversationID}`}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                selection.current = {
+                  end: event.target.selectionEnd,
+                  start: event.target.selectionStart,
+                };
+                setValidationError(null);
+                setSentFeedback(false);
+                if (sendMessage.isError) {
+                  sendMessage.reset();
+                }
+              }}
+              onKeyDown={handleComposerKeyDown}
+              onPaste={onComposerPaste}
+              onScroll={syncMentionMirror}
+              onSelect={rememberSelection}
+              placeholder={t("conversations.composerPlaceholder")}
+              ref={composer}
+              rows={1}
+              spellCheck={draftHasMention ? false : undefined}
+              value={draft}
+            />
+          </div>
           {validationError && (
             <p className="conversations-page__form-error" role="alert">
               {validationError}
@@ -1514,6 +1613,46 @@ export function ConversationMessages({
             <p className="conversations-page__form-error" role="alert">
               {messageMutationError(sendMessage.error, t)}
             </p>
+          )}
+          {stickerFailure && (
+            <div
+              className="conversation-composer__notice"
+              data-tone="error"
+              role="alert"
+            >
+              <span>
+                {t("conversations.stickerSendFailed", {
+                  label: chatStickerLabel(
+                    stickerFailure.sticker.labels,
+                    language,
+                  ),
+                })}{" "}
+                {stickerSend.error
+                  ? messageMutationError(stickerSend.error, t)
+                  : null}
+              </span>
+              <button
+                className="conversation-composer__notice-action"
+                disabled={stickerSend.isPending}
+                onClick={() =>
+                  sendSticker(
+                    stickerFailure.sticker,
+                    stickerFailure.clientMessageID,
+                  )
+                }
+                type="button"
+              >
+                {t("media.chat.sticker.retry")}
+              </button>
+              <button
+                aria-label={t("conversations.screenshotDismiss")}
+                className="conversation-composer__chip-close"
+                onClick={() => setStickerFailure(null)}
+                type="button"
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
           )}
           {cardNotice && (
             <div className="conversation-composer__notice" role="status">
@@ -1573,13 +1712,16 @@ export function ConversationMessages({
           )}
           <div className="conversation-composer__toolbar">
             <div className="conversation-composer__tools">
-              <ClassroomEmojiPicker
+              <ChatExpressionPicker
                 boundaryRef={composerCard}
+                composerRef={composer}
                 disabled={sendMessage.isPending}
                 onOpenChange={setEmojiOpen}
-                onSelect={(emoji) => insertIntoDraft(emoji, false)}
+                onSelectEmoji={(emoji) => insertIntoDraft(emoji, false)}
+                onSendSticker={(sticker) => sendSticker(sticker)}
                 open={emojiOpen}
                 recentScope={recentScope}
+                tenantID={tenantID}
               />
               <Menu>
                 <MenuTrigger asChild>
@@ -1749,15 +1891,6 @@ export function ConversationMessages({
   );
 }
 
-/** Text a card contributes to in-thread search. */
-function embedSearchText(embed: MessageEmbed | undefined): string {
-  if (!embed) return "";
-  if (embed.kind === "contact_card") {
-    return embed.available ? (embed.display_name ?? "") : "";
-  }
-  return embed.title;
-}
-
 function MessageActionButton({
   children,
   danger = false,
@@ -1872,15 +2005,28 @@ function MessageEditor({
   );
 }
 
-function LinkifiedText({ text }: { text: string }) {
-  const pieces = useMemo(() => linkifyChatText(text), [text]);
+function LinkifiedText({
+  mentions,
+  text,
+}: {
+  mentions: readonly string[];
+  text: string;
+}) {
+  const pieces = useMemo(
+    () => linkifyChatText(text, mentions),
+    [mentions, text],
+  );
   if (pieces.length === 1 && pieces[0]?.kind === "text") {
     return <>{text}</>;
   }
   return (
     <>
       {pieces.map((piece, index) =>
-        piece.kind === "link" ? (
+        piece.kind === "mention" ? (
+          <span className="conversation-mention" key={`${index}-mention`}>
+            {piece.text}
+          </span>
+        ) : piece.kind === "link" ? (
           <a
             href={piece.href}
             key={`${index}-${piece.href}`}

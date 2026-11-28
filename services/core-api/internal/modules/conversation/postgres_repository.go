@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/tutorhub-v2/core-api/internal/modules/audit"
+	"github.com/tutorhub-v2/core-api/internal/modules/conversation/stickers"
 	"github.com/tutorhub-v2/core-api/internal/modules/featurecontrol"
 	"github.com/tutorhub-v2/core-api/internal/policy"
 )
@@ -29,6 +30,8 @@ type PostgresRepository struct {
 	// instantSharer grants conversation readers access to a shared instant
 	// class; without it instant-class cards are rejected.
 	instantSharer InstantSpaceSharer
+	// stickerOverride replaces the embedded sticker catalog (tests only).
+	stickerOverride *stickers.Catalog
 }
 
 // InstantSpaceSharer shares an instant StudyMeeting media space owned by
@@ -44,6 +47,24 @@ type InstantSpaceSharer func(
 
 // PostgresRepositoryOption configures optional repository collaborators.
 type PostgresRepositoryOption func(*PostgresRepository)
+
+// WithStickerCatalog replaces the embedded sticker catalog used to validate
+// sticker sends (tests only; production uses stickers.Default).
+func WithStickerCatalog(catalog *stickers.Catalog) PostgresRepositoryOption {
+	return func(repository *PostgresRepository) {
+		repository.stickerOverride = catalog
+	}
+}
+
+// stickerCatalog is the catalog sticker sends are validated against; a nil
+// catalog rejects every sticker.
+func (repository *PostgresRepository) stickerCatalog() *stickers.Catalog {
+	if repository.stickerOverride != nil {
+		return repository.stickerOverride
+	}
+	catalog, _ := stickers.Default()
+	return catalog
+}
 
 // WithInstantSpaceSharer enables instant-class cards (MSG-COMPOSER-TOOLS-01).
 func WithInstantSpaceSharer(sharer InstantSpaceSharer) PostgresRepositoryOption {

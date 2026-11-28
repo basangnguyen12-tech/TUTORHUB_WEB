@@ -2187,6 +2187,26 @@ export type paths = {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/v1/conversations/sticker-packs": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Return the curated sticker catalog for the active workspace
+     * @description MSG-STICKER-01 (ADR-0047). Requires an active member session in a tenant where conversations and chat_stickers are enabled; otherwise 403 feature_disabled. Only packs with at least one active sticker and only active stickers are listed. Asset URLs are same-origin static files projected by the server; clients never build them. The body is identical for every authorized reader and carries a strong ETag (If-None-Match returns 304).
+     */
+    readonly get: operations["listStickerPacks"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/v1/files/{file_id}": {
     readonly parameters: {
       readonly query?: never;
@@ -7048,11 +7068,13 @@ export type components = {
     /** @description MSG-COMPOSER-TOOLS-01. The server resolves the card for each reader at read time; clients render actionable cards only from this field, never from message text. Card messages cannot be edited (409 message_not_editable) and tombstones never expose an embed. */
     readonly MessageEmbed:
       | components["schemas"]["ContactCardEmbed"]
-      | components["schemas"]["InstantClassEmbed"];
-    /** @description MSG-COMPOSER-TOOLS-01. A server-validated card that is the whole message. A contact card may name the sender or the other member of one of the sender's direct conversations. An instant class must be an active, classless instant StudyMeeting media space owned by the sender, shared into a direct or class conversation; the conversation's current readers become explicit space members (revoked members stay revoked). Unshareable targets return 409 message_embed_unavailable. */
+      | components["schemas"]["InstantClassEmbed"]
+      | components["schemas"]["StickerEmbed"];
+    /** @description MSG-COMPOSER-TOOLS-01. A server-validated card that is the whole message. A contact card may name the sender or the other member of one of the sender's direct conversations. An instant class must be an active, classless instant StudyMeeting media space owned by the sender, shared into a direct or class conversation; the conversation's current readers become explicit space members (revoked members stay revoked). A sticker (MSG-STICKER-01, ADR-0047) must name an active sticker of the embedded catalog and may be sent into direct, class and room conversations while chat_stickers is enabled (403 feature_disabled otherwise). Unshareable targets, including unknown, retired or removed stickers, return 409 message_embed_unavailable. */
     readonly MessageEmbedInput:
       | components["schemas"]["ContactCardEmbedInput"]
-      | components["schemas"]["InstantClassEmbedInput"];
+      | components["schemas"]["InstantClassEmbedInput"]
+      | components["schemas"]["StickerEmbedInput"];
     readonly MessagePage: {
       /** @description Newest-first persistent message page. */
       readonly items: readonly components["schemas"]["Message"][];
@@ -7994,6 +8016,70 @@ export type components = {
     readonly SSODomainList: {
       readonly items: readonly components["schemas"]["SSODomain"][];
     };
+    readonly Sticker: {
+      readonly animated: boolean;
+      readonly asset: components["schemas"]["StickerAsset"];
+      readonly id: components["schemas"]["StickerID"];
+      readonly keywords: components["schemas"]["StickerKeywords"];
+      readonly labels: components["schemas"]["StickerLabels"];
+    };
+    /** @description Same-origin static files (immutable, versioned path). The static URL is the first frame for reduced motion, idle picker tiles and off-screen thread stickers. */
+    readonly StickerAsset: {
+      readonly animated_url: string;
+      readonly height: number;
+      readonly static_url: string;
+      readonly width: number;
+    };
+    /** @description MSG-STICKER-01 (ADR-0047). Active and retired stickers project available=true with labels and same-origin assets; a removed or unknown sticker projects only available=false. */
+    readonly StickerEmbed: {
+      readonly asset?: components["schemas"]["StickerAsset"];
+      readonly available: boolean;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      readonly kind: "sticker";
+      readonly labels?: components["schemas"]["StickerLabels"];
+      readonly pack_id?: string;
+      readonly sticker_id?: components["schemas"]["StickerID"];
+    };
+    readonly StickerEmbedInput: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      readonly kind: "sticker";
+      readonly sticker_id: components["schemas"]["StickerID"];
+    };
+    /** @description Stable catalog identifier `<pack_id>:<name>`, for example `noto_animated:1f602`. */
+    readonly StickerID: string;
+    readonly StickerKeywords: {
+      readonly en: readonly string[];
+      readonly vi: readonly string[];
+    };
+    readonly StickerLabels: {
+      readonly en: string;
+      readonly vi: string;
+    };
+    readonly StickerPack: {
+      readonly attribution: components["schemas"]["StickerPackAttribution"];
+      readonly id: string;
+      readonly stickers: readonly components["schemas"]["Sticker"][];
+      readonly title: components["schemas"]["StickerLabels"];
+      readonly version: string;
+    };
+    readonly StickerPackAttribution: {
+      readonly license: string;
+      /** @description Same-origin path of the third-party notices file. */
+      readonly notices_path: string;
+      readonly text: string;
+      /** Format: uri */
+      readonly url: string;
+    };
+    readonly StickerPackCatalog: {
+      readonly catalog_version: string;
+      readonly packs: readonly components["schemas"]["StickerPack"][];
+    };
     readonly StudyMeeting: {
       readonly cancelled_at: string | null;
       readonly class_id: string | null;
@@ -8070,6 +8156,7 @@ export type components = {
     };
     readonly TenantFeatureCapabilities: {
       readonly availability_polls: components["schemas"]["FeatureCapability"];
+      readonly chat_stickers: components["schemas"]["FeatureCapability"];
       readonly class_invite_links: components["schemas"]["FeatureCapability"];
       readonly class_management: components["schemas"]["FeatureCapability"];
       readonly class_session_recurrence: components["schemas"]["FeatureCapability"];
@@ -8089,6 +8176,7 @@ export type components = {
     };
     readonly TenantFeatureControlValues: {
       readonly availability_polls: boolean;
+      readonly chat_stickers: boolean;
       readonly class_invite_links: boolean;
       readonly class_management: boolean;
       readonly class_session_recurrence: boolean;
@@ -13367,6 +13455,47 @@ export interface operations {
       readonly 404: components["responses"]["NotFoundResponse"];
       readonly 409: components["responses"]["ConflictResponse"];
       readonly 429: components["responses"]["ProblemResponse"];
+      readonly 503: components["responses"]["ProblemResponse"];
+      readonly default: components["responses"]["ProblemResponse"];
+    };
+  };
+  readonly listStickerPacks: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header: {
+        readonly "If-None-Match"?: string;
+        /** @description Client cache-scope assertion; authorization still comes only from the server-side active session. */
+        readonly "X-TutorHub-Expected-Tenant-ID": string;
+      };
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Active sticker packs */
+      readonly 200: {
+        headers: {
+          readonly "Cache-Control"?: "private, max-age=300";
+          readonly ETag?: string;
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["StickerPackCatalog"];
+        };
+      };
+      /** @description The catalog matches If-None-Match */
+      readonly 304: {
+        headers: {
+          readonly "Cache-Control"?: "private, max-age=300";
+          readonly ETag?: string;
+          readonly [name: string]: unknown;
+        };
+        content?: never;
+      };
+      readonly 400: components["responses"]["ProblemResponse"];
+      readonly 401: components["responses"]["UnauthorizedResponse"];
+      readonly 403: components["responses"]["ForbiddenResponse"];
+      readonly 409: components["responses"]["ConflictResponse"];
       readonly 503: components["responses"]["ProblemResponse"];
       readonly default: components["responses"]["ProblemResponse"];
     };

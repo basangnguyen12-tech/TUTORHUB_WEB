@@ -1193,4 +1193,95 @@ describe("ConversationsPage", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Đã gửi tệp đính kèm/)).not.toBeInTheDocument();
   });
+
+  it("previews sticker messages as [Sticker] with the localized label (MSG-STICKER-03)", async () => {
+    const sticker = (
+      id: string,
+      conversationID: string,
+      own: boolean,
+      embed: unknown,
+    ) =>
+      ({
+        id,
+        conversation_id: conversationID,
+        sequence: 4,
+        client_message_id: id,
+        author: own
+          ? { user_id: teacherID, display_name: "TutorHub Teacher" }
+          : { user_id: studentID, display_name: "TutorHub Student" },
+        content: "",
+        attachments: [],
+        embed,
+        state: "active",
+        version: 1,
+        created_at: "2026-08-03T12:00:00Z",
+        updated_at: "2026-08-03T12:00:00Z",
+      }) as Message;
+    const seed = (
+      queryClient: QueryClient,
+      conversationID: string,
+      item: Message,
+    ) =>
+      queryClient.setQueryData(
+        conversationQueryKeys.messages(tenantID, conversationID),
+        {
+          pageParams: [undefined],
+          pages: [
+            {
+              items: [item],
+              read_state: null,
+              unread_count: 0,
+              unread_count_capped: false,
+            } satisfies MessagePage,
+          ],
+        },
+      );
+    renderPage(
+      "/app/messages",
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(
+            listResponse([directConversation, activeClassConversation]),
+          ),
+        ),
+      availableTenantCapabilities(tenantID),
+      (queryClient) => {
+        seed(
+          queryClient,
+          directID,
+          sticker("10000000-0000-4000-8000-000000000041", directID, false, {
+            kind: "sticker",
+            available: true,
+            sticker_id: "noto_animated:1f602",
+            pack_id: "noto_animated",
+            labels: { vi: "Cười ra nước mắt", en: "Tears of joy" },
+            asset: {
+              animated_url: "/stickers/noto_animated/v1/1f602.webp",
+              static_url: "/stickers/noto_animated/v1/1f602.static.webp",
+              width: 160,
+              height: 160,
+            },
+          }),
+        );
+        seed(
+          queryClient,
+          activeClassConversationID,
+          sticker(
+            "10000000-0000-4000-8000-000000000042",
+            activeClassConversationID,
+            true,
+            { kind: "sticker", available: false },
+          ),
+        );
+      },
+    );
+
+    expect(
+      await screen.findByText("[Sticker] Cười ra nước mắt"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Bạn: Sticker không còn khả dụng"),
+    ).toBeInTheDocument();
+  });
 });

@@ -212,11 +212,18 @@ func TestCodeSnippetLibraryFeatureQuotaMigrationExtendsAndRestoresAllowlists(t *
 var featuresIntroducedAfter000055 = map[FeatureKey]bool{
 	FeatureClassroomFilesTool:        true,
 	FeatureClassroomPDFCollaboration: true,
+	FeatureChatStickers:              true,
 }
 
 // featuresIntroducedAfter000056 lists catalog keys added by 000057 or later.
 var featuresIntroducedAfter000056 = map[FeatureKey]bool{
 	FeatureClassroomPDFCollaboration: true,
+	FeatureChatStickers:              true,
+}
+
+// featuresIntroducedAfter000057 lists catalog keys added by 000058 or later.
+var featuresIntroducedAfter000057 = map[FeatureKey]bool{
+	FeatureChatStickers: true,
 }
 
 func TestClassroomFilesToolFeatureMigrationExtendsAndRestoresAllowlist(t *testing.T) {
@@ -297,6 +304,9 @@ func TestClassroomPDFCollaborationFeatureMigrationExtendsAndRestoresAllowlist(t 
 	}
 	upAllowlist := featureAllowlistBlock(t, up)
 	for _, definition := range catalog.Features() {
+		if featuresIntroducedAfter000057[definition.Key] {
+			continue
+		}
 		if !strings.Contains(upAllowlist, "'"+string(definition.Key)+"'") {
 			t.Fatalf("forward feature allowlist dropped %q", definition.Key)
 		}
@@ -341,4 +351,52 @@ func featureAllowlistBlock(t *testing.T, sql string) string {
 
 func normalizeSQLWhitespace(value string) string {
 	return strings.Join(strings.Fields(value), " ")
+}
+
+func TestChatStickersFeatureMigrationExtendsAndRestoresAllowlist(t *testing.T) {
+	t.Parallel()
+
+	migrations := filepath.Join("..", "..", "..", "migrations")
+	upContents, err := os.ReadFile(filepath.Join(migrations, "000060_message_embed_stickers.up.sql"))
+	if err != nil {
+		t.Fatalf("read chat stickers migration: %v", err)
+	}
+	downContents, err := os.ReadFile(filepath.Join(migrations, "000060_message_embed_stickers.down.sql"))
+	if err != nil {
+		t.Fatalf("read chat stickers rollback: %v", err)
+	}
+	previousContents, err := os.ReadFile(filepath.Join(migrations, "000057_pdf_presentations_and_annotations.up.sql"))
+	if err != nil {
+		t.Fatalf("read previous feature allowlist migration: %v", err)
+	}
+	up := string(upContents)
+	down := string(downContents)
+	catalog := NewDefaultCatalog()
+	if definition, ok := catalog.FeatureDefinition(FeatureChatStickers); !ok || !definition.DefaultEnabled {
+		t.Fatalf("chat_stickers must exist and default on (ADR-0047): %+v", definition)
+	}
+	upAllowlist := featureAllowlistBlock(t, up)
+	for _, definition := range catalog.Features() {
+		if !strings.Contains(upAllowlist, "'"+string(definition.Key)+"'") {
+			t.Fatalf("forward feature allowlist dropped %q", definition.Key)
+		}
+	}
+	if strings.Contains(strings.ToUpper(up), "DELETE FROM") {
+		t.Fatal("forward chat stickers migration must not delete data")
+	}
+	if !strings.Contains(down, "DELETE FROM tutorhub.tenant_feature_overrides") ||
+		!strings.Contains(down, "WHERE feature_key = 'chat_stickers'") {
+		t.Fatal("rollback must remove overrides for chat_stickers")
+	}
+	restored := normalizeSQLWhitespace(featureAllowlistBlock(t, down))
+	previous := normalizeSQLWhitespace(featureAllowlistBlock(t, string(previousContents)))
+	if restored != previous {
+		t.Fatalf("rollback must restore the exact 000057 feature allowlist:\n got %s\nwant %s", restored, previous)
+	}
+	if expected := strings.Replace(
+		previous, "'classroom_pdf_collaboration'", "'classroom_pdf_collaboration', 'chat_stickers'", 1,
+	); normalizeSQLWhitespace(upAllowlist) != expected {
+		t.Fatalf("forward allowlist must equal 000057 plus chat_stickers:\n got %s\nwant %s",
+			normalizeSQLWhitespace(upAllowlist), expected)
+	}
 }

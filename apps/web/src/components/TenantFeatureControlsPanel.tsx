@@ -44,6 +44,7 @@ const featureLabelKeys: Record<FeatureKey, TranslationKey> = {
   code_snippet_library: "capabilities.featureCodeSnippetLibrary",
   classroom_files_tool: "capabilities.featureClassroomFilesTool",
   classroom_pdf_collaboration: "capabilities.featureClassroomPdfCollaboration",
+  chat_stickers: "capabilities.featureChatStickers",
   instant_study_rooms: "capabilities.featureInstantStudyRooms",
   in_app_notifications: "capabilities.featureInAppNotifications",
   membership_invitations: "capabilities.featureMembershipInvitations",
@@ -143,6 +144,7 @@ function controlsDraft(capabilities: TenantCapabilities): ControlsDraft {
         capabilities,
         "classroom_pdf_collaboration",
       ),
+      chat_stickers: configuredFeature(capabilities, "chat_stickers"),
       instant_study_rooms: configuredFeature(
         capabilities,
         "instant_study_rooms",

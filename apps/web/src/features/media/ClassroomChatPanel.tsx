@@ -4,6 +4,7 @@ import {
   type Conversation,
   type Message,
   type MessageAttachment,
+  type Sticker,
 } from "@tutorhub/api-client";
 import {
   Dialog,
@@ -42,6 +43,7 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
+import { useSendConversationMessage } from "../../app/conversations";
 import { useI18n, type TranslationKey } from "../../app/i18n";
 import type { ChatCodeToken } from "../classroom-tools/chatCodeHighlight";
 import { splitChatCodeBlocks } from "../classroom-tools/codeFence";
@@ -54,7 +56,7 @@ import {
   CODE_LANGUAGES,
   type CodeFileLanguage,
 } from "../classroom-tools/codeLanguages";
-import { ClassroomEmojiPicker } from "./ClassroomEmojiPicker";
+import { ChatExpressionPicker, ChatStickerView } from "./ChatExpressionPicker";
 import {
   CHAT_COUNTER_THRESHOLD,
   CHAT_FILE_ACCEPT,
@@ -64,6 +66,8 @@ import {
   attachmentCacheKey,
   chatAvatarTone,
   chatInitials,
+  chatMentionNames,
+  chatStickerLabel,
   checkChatFile,
   createAttachmentObjectURLCache,
   createClientID,
@@ -107,6 +111,12 @@ export interface ClassroomChatSendInput {
   content: string;
 }
 
+/** MSG-STICKER-03: one catalog sticker sent as its own message. */
+export interface ClassroomChatStickerInput {
+  clientMessageID: string;
+  stickerID: string;
+}
+
 export interface ClassroomChatUploadInput {
   clientAttachmentID: string;
   file: Blob;
@@ -133,6 +143,11 @@ export interface ClassroomChatPanelProps {
   onEdit: (message: ActiveMessage, content: string) => Promise<void>;
   onLoadOlder: () => void;
   onSend: (input: ClassroomChatSendInput) => Promise<void>;
+  /**
+   * MSG-STICKER-03: sends a sticker message. Without it the panel sends
+   * through the shared conversation mutation (same cache as `onSend`).
+   */
+  onSendSticker?: (input: ClassroomChatStickerInput) => Promise<void>;
   onToggleParticipantChat: (enabled: boolean) => Promise<void>;
   onUpload: (input: ClassroomChatUploadInput) => Promise<MessageAttachment>;
   /**
@@ -215,6 +230,7 @@ export function ClassroomChatPanel({
   onEdit,
   onLoadOlder,
   onSend,
+  onSendSticker,
   onToggleParticipantChat,
   onUpload,
   onOpenInCode,
@@ -301,6 +317,27 @@ export function ClassroomChatPanel({
     () => ({ actorID, tenantID }),
     [actorID, tenantID],
   );
+  // MSG-MENTION-BLUE-01: "@Name" of room members renders in blue.
+  const mentionNames = useMemo(
+    () =>
+      chatMentionNames([
+        ...conversation.participants.map(
+          (participant) => participant.display_name,
+        ),
+        ...messages.map((message) => message.author.display_name),
+      ]),
+    [conversation.participants, messages],
+  );
+  const fallbackStickerSend = useSendConversationMessage(
+    tenantID,
+    conversation.id,
+  );
+  const sendStickerMutation = fallbackStickerSend.mutateAsync;
+  const [stickerFailure, setStickerFailure] = useState<{
+    clientMessageID: string;
+    message: string;
+    sticker: Sticker;
+  } | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<HTMLDivElement>(null);
@@ -658,6 +695,37 @@ export function ClassroomChatPanel({
     if (files.length === 0 || !canUpload) return;
     if (!event.clipboardData.getData("text/plain")) event.preventDefault();
     addFiles(files);
+  };
+
+  // MSG-STICKER-03: a picked sticker is its own message; the draft stays.
+  const sendSticker = async (
+    sticker: Sticker,
+    clientMessageID: string = createClientID(),
+  ) => {
+    const label = chatStickerLabel(sticker.labels, language);
+    setStickerFailure(null);
+    forceScroll.current = true;
+    try {
+      if (onSendSticker) {
+        await onSendSticker({ clientMessageID, stickerID: sticker.id });
+      } else {
+        await sendStickerMutation({
+          client_message_id: clientMessageID,
+          content: "",
+          embed: { kind: "sticker", sticker_id: sticker.id },
+        });
+      }
+      if (mountedRef.current) {
+        setAnnouncement(t("conversations.stickerSent", { label }));
+      }
+    } catch (error) {
+      if (!mountedRef.current) return;
+      setStickerFailure({
+        clientMessageID,
+        message: t(problemKey(error, "media.chat.sendFailed")),
+        sticker,
+      });
+    }
   };
 
   // Multi-pick: the textarea keeps its caret while focus stays in the picker.
@@ -1034,10 +1102,15 @@ export function ClassroomChatPanel({
                               </button>
                             </div>
                           </div>
+                        ) : active.embed?.kind === "sticker" ? (
+                          <div className="classroom-chat__sticker">
+                            <ChatStickerView embed={active.embed} size={128} />
+                          </div>
                         ) : (
                           active.content && (
                             <ChatBubble
                               jumbo={jumbo}
+                              mentions={mentionNames}
                               onCopyCode={(code) => void copyCode(code)}
                               onOpenInCode={openInCode}
                               onOpenDocument={onOpenDocument}
@@ -1086,7 +1159,7 @@ export function ClassroomChatPanel({
                             className="classroom-chat__tools"
                             role="toolbar"
                           >
-                            {own && canPost && (
+                            {own && canPost && !active.embed && (
                               <button
                                 aria-label={t("media.chat.edit")}
                                 className="classroom-chat__tool-button"
@@ -1256,14 +1329,46 @@ export function ClassroomChatPanel({
               {composerError}
             </p>
           )}
+          {stickerFailure && (
+            <div
+              className="classroom-chat__error classroom-chat__error--sticker"
+              role="alert"
+            >
+              <span>
+                {t("conversations.stickerSendFailed", {
+                  label: chatStickerLabel(
+                    stickerFailure.sticker.labels,
+                    language,
+                  ),
+                })}{" "}
+                {stickerFailure.message}
+              </span>
+              <button
+                className="classroom-chat__error-action"
+                onClick={() =>
+                  void sendSticker(
+                    stickerFailure.sticker,
+                    stickerFailure.clientMessageID,
+                  )
+                }
+                type="button"
+              >
+                {t("media.chat.sticker.retry")}
+              </button>
+            </div>
+          )}
           <div className="classroom-chat__actions">
-            <ClassroomEmojiPicker
+            <ChatExpressionPicker
               boundaryRef={composerRef}
+              composerRef={textareaRef}
               disabled={sending}
               onOpenChange={setEmojiOpen}
-              onSelect={insertEmoji}
+              onSelectEmoji={insertEmoji}
+              onSendSticker={(sticker) => void sendSticker(sticker)}
               open={emojiOpen}
+              readOnly={!canPost}
               recentScope={emojiScope}
+              tenantID={tenantID}
             />
             {canUpload && (
               <button
@@ -1392,12 +1497,14 @@ export function ClassroomChatPanel({
  */
 function ChatBubble({
   jumbo,
+  mentions,
   onCopyCode,
   onOpenInCode,
   onOpenDocument,
   text,
 }: {
   jumbo: boolean;
+  mentions: readonly string[];
   onCopyCode: (code: string) => void;
   onOpenInCode: ((block: ClassroomChatCodeBlock) => void) | undefined;
   onOpenDocument?: ClassroomChatPanelProps["onOpenDocument"];
@@ -1434,12 +1541,12 @@ function ChatBubble({
             />
           ) : (
             <p className="classroom-chat__text-piece" key={`text-${index}`}>
-              <ChatText text={piece.text} />
+              <ChatText mentions={mentions} text={piece.text} />
             </p>
           ),
         )
       ) : (
-        <ChatText text={text} />
+        <ChatText mentions={mentions} text={text} />
       )}
     </div>
   );
@@ -1695,12 +1802,25 @@ function ChatCodeCard({
   );
 }
 
-function ChatText({ text }: { text: string }) {
-  const pieces = useMemo(() => linkifyChatText(text), [text]);
+function ChatText({
+  mentions,
+  text,
+}: {
+  mentions: readonly string[];
+  text: string;
+}) {
+  const pieces = useMemo(
+    () => linkifyChatText(text, mentions),
+    [mentions, text],
+  );
   return (
     <>
       {pieces.map((piece, index) =>
-        piece.kind === "link" ? (
+        piece.kind === "mention" ? (
+          <span className="classroom-chat__mention" key={`${index}-mention`}>
+            {piece.text}
+          </span>
+        ) : piece.kind === "link" ? (
           <a
             className="classroom-chat__link"
             href={piece.href}

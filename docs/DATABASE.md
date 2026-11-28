@@ -137,52 +137,52 @@ ngoài UI thread ở các client native về sau.
 
 ## Schema source qua migration `000030`
 
-| Bảng                               | Vai trò                                                                                                          |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `users`                            | Hồ sơ định danh nội bộ, email chuẩn hóa và trạng thái tài khoản                                                  |
-| `identities`                       | Ánh xạ `(provider, subject)` từ OIDC, verified email và lần xác thực gần nhất                                    |
-| `tenants`                          | Workspace với slug/name, locale/timezone, status, optimistic `version` và `archived_at`                          |
-| `memberships`                      | Quan hệ user-tenant và role `org_admin/teacher/student/guest`                                                    |
-| `sessions`                         | Hash session/CSRF, active tenant, `context_version`, idle/absolute expiry và revoke state                        |
-| `auth_flows`                       | HMAC state/binding/nonce, PKCE verifier mã hóa và one-time consume                                               |
-| `classes`                          | Lớp học theo tenant; owner cùng tenant, timezone, lifecycle, optimistic version và archive state                 |
-| `class_enrollments`                | Quan hệ user-class theo tenant, class role, trạng thái tham gia và các mốc lifecycle                             |
-| `class_invite_codes`               | Mã mời lớp chỉ lưu HMAC, TTL, giới hạn lượt dùng, trạng thái và actor lifecycle                                  |
-| `membership_invitations`           | Lời mời tenant một lần: normalized email, role, HMAC token, TTL và terminal state                                |
-| `outbox_events`                    | Transactional outbox có exact versioned event type, lease/fencing, retry và retained dead-letter                 |
-| `audit_events`                     | Lịch sử tenant append-only cho actor/action/resource/outcome và request correlation                              |
-| `class_sessions`                   | Buổi học một lần theo class, UTC instant/IANA timezone, lifecycle và optimistic version                          |
-| `class_session_series`             | Recurrence bounded theo class, civil-time/IANA timezone, stable iCal UID, sequence và optimistic version         |
-| `class_session_exceptions`         | Tombstone/override occurrence theo stable key, retention policy và optimistic version                            |
-| `class_session_mutation_receipts`  | Idempotency fingerprint cho update/cancel, tenant-scoped và append-only                                          |
-| `notifications`                    | Projection tenant/user-scoped, idempotent theo source/recipient/effect và trạng thái read                        |
-| `notification_preferences`         | Preference in-app/email, reminder, quiet-hours IANA và optimistic version                                        |
-| `calendar_display_preferences`     | Preference Calendar tenant/user-scoped cho timezone, locale, view, density và optimistic version                 |
-| `tenant_feature_control_revisions` | Phiên bản optimistic của override feature/quota theo tenant                                                      |
-| `tenant_feature_overrides`         | Override feature typed theo tenant; global disable vẫn có quyền ưu tiên                                          |
-| `tenant_quota_overrides`           | Override hard limit typed cho member/class, invitation, Calendar và message storage/send rate                    |
-| `tenant_quota_windows`             | Bộ đếm fixed-window tenant-scoped cho invitation, Calendar và message send rate                                  |
-| `rate_limit_windows`               | Bộ đếm anonymous shared; lưu purpose và SHA-256 đã domain-separate theo version/purpose/prefix                   |
-| `legacy_import_runs`               | Ledger migration-role-only cho checksum, trạng thái và checkpoint fixture V1                                     |
-| `legacy_import_run_items`          | Outcome/reason code bounded theo record để reconciliation và resume                                              |
-| `legacy_import_mappings`           | Mapping bền `(source_system, entity_type, external_id) -> target_id`; không chứa source payload                  |
-| `conversations`                    | Container direct/class/room tenant-scoped; canonical direct pair, một conversation mỗi class hoặc MediaSpace     |
-| `conversation_members`             | Hai membership row server-owned cho direct conversation; class membership luôn đọc từ enrollment                 |
-| `room_conversation_settings`       | Trạng thái công tắc `participant_chat_enabled` cho room conversation; bảo toàn cột `UPDATE` của `conversations`  |
-| `messages`                         | Message plain-text tenant/conversation-scoped, server sequence, idempotency fingerprint và tombstone lifecycle   |
-| `message_attachments`              | Metadata/bytes dev giới hạn của ảnh và tệp đính kèm hội thoại (`direct`/`class`/`room`); xóa thành `NULL`        |
-| `message_embeds`                   | Thẻ tin nhắn có cấu trúc insert-only (`contact_card`, `instant_class`) xác thực khi gửi, chiếu theo người đọc    |
-| `tenant_message_usage`             | O(1) committed message/tombstone counter theo tenant để reserve storage quota trong transaction                  |
-| `content_files`                    | Metadata class/room file (owner union `000056`), opaque object key, idempotent intent, finalize + verifier proof |
-| `tenant_file_usage`                | O(1) file-count/reserved-byte/committed-byte counter theo tenant                                                 |
-| `message_receipts`                 | Self read marker đơn điệu theo tenant/conversation/user; tham chiếu exact message sequence/ID                    |
-| `media_spaces`                     | Aggregate lifecycle tenant-scoped, bind đúng một ClassSession/occurrence/StudyMeeting                            |
-| `media_room_instances`             | Exact RoomInstance intent/activation, opaque provider room/SID binding và terminal lifecycle                     |
-| `media_space_members`              | Explicit same-tenant member boundary cho member-owned space                                                      |
-| `media_admission_requests`         | Canonical join-attempt/lobby request, exact actor/room/version và terminal admission state                       |
-| `media_participant_sessions`       | Participant lifecycle/capacity, opaque provider identity, credential transition và explicit rejoin restore       |
-| `media_space_mutation_receipts`    | Idempotency receipt cho lifecycle/member/admission command, bind tenant/actor/space/version                      |
-| `media_provider_webhook_receipts`  | Signed provider-event replay receipt, mapped exact RoomInstance và không lưu raw payload                         |
+| Bảng                               | Vai trò                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `users`                            | Hồ sơ định danh nội bộ, email chuẩn hóa và trạng thái tài khoản                                                          |
+| `identities`                       | Ánh xạ `(provider, subject)` từ OIDC, verified email và lần xác thực gần nhất                                            |
+| `tenants`                          | Workspace với slug/name, locale/timezone, status, optimistic `version` và `archived_at`                                  |
+| `memberships`                      | Quan hệ user-tenant và role `org_admin/teacher/student/guest`                                                            |
+| `sessions`                         | Hash session/CSRF, active tenant, `context_version`, idle/absolute expiry và revoke state                                |
+| `auth_flows`                       | HMAC state/binding/nonce, PKCE verifier mã hóa và one-time consume                                                       |
+| `classes`                          | Lớp học theo tenant; owner cùng tenant, timezone, lifecycle, optimistic version và archive state                         |
+| `class_enrollments`                | Quan hệ user-class theo tenant, class role, trạng thái tham gia và các mốc lifecycle                                     |
+| `class_invite_codes`               | Mã mời lớp chỉ lưu HMAC, TTL, giới hạn lượt dùng, trạng thái và actor lifecycle                                          |
+| `membership_invitations`           | Lời mời tenant một lần: normalized email, role, HMAC token, TTL và terminal state                                        |
+| `outbox_events`                    | Transactional outbox có exact versioned event type, lease/fencing, retry và retained dead-letter                         |
+| `audit_events`                     | Lịch sử tenant append-only cho actor/action/resource/outcome và request correlation                                      |
+| `class_sessions`                   | Buổi học một lần theo class, UTC instant/IANA timezone, lifecycle và optimistic version                                  |
+| `class_session_series`             | Recurrence bounded theo class, civil-time/IANA timezone, stable iCal UID, sequence và optimistic version                 |
+| `class_session_exceptions`         | Tombstone/override occurrence theo stable key, retention policy và optimistic version                                    |
+| `class_session_mutation_receipts`  | Idempotency fingerprint cho update/cancel, tenant-scoped và append-only                                                  |
+| `notifications`                    | Projection tenant/user-scoped, idempotent theo source/recipient/effect và trạng thái read                                |
+| `notification_preferences`         | Preference in-app/email, reminder, quiet-hours IANA và optimistic version                                                |
+| `calendar_display_preferences`     | Preference Calendar tenant/user-scoped cho timezone, locale, view, density và optimistic version                         |
+| `tenant_feature_control_revisions` | Phiên bản optimistic của override feature/quota theo tenant                                                              |
+| `tenant_feature_overrides`         | Override feature typed theo tenant; global disable vẫn có quyền ưu tiên                                                  |
+| `tenant_quota_overrides`           | Override hard limit typed cho member/class, invitation, Calendar và message storage/send rate                            |
+| `tenant_quota_windows`             | Bộ đếm fixed-window tenant-scoped cho invitation, Calendar và message send rate                                          |
+| `rate_limit_windows`               | Bộ đếm anonymous shared; lưu purpose và SHA-256 đã domain-separate theo version/purpose/prefix                           |
+| `legacy_import_runs`               | Ledger migration-role-only cho checksum, trạng thái và checkpoint fixture V1                                             |
+| `legacy_import_run_items`          | Outcome/reason code bounded theo record để reconciliation và resume                                                      |
+| `legacy_import_mappings`           | Mapping bền `(source_system, entity_type, external_id) -> target_id`; không chứa source payload                          |
+| `conversations`                    | Container direct/class/room tenant-scoped; canonical direct pair, một conversation mỗi class hoặc MediaSpace             |
+| `conversation_members`             | Hai membership row server-owned cho direct conversation; class membership luôn đọc từ enrollment                         |
+| `room_conversation_settings`       | Trạng thái công tắc `participant_chat_enabled` cho room conversation; bảo toàn cột `UPDATE` của `conversations`          |
+| `messages`                         | Message plain-text tenant/conversation-scoped, server sequence, idempotency fingerprint và tombstone lifecycle           |
+| `message_attachments`              | Metadata/bytes dev giới hạn của ảnh và tệp đính kèm hội thoại (`direct`/`class`/`room`); xóa thành `NULL`                |
+| `message_embeds`                   | Thẻ tin nhắn có cấu trúc insert-only (`contact_card`, `instant_class`, `sticker`) xác thực khi gửi, chiếu theo người đọc |
+| `tenant_message_usage`             | O(1) committed message/tombstone counter theo tenant để reserve storage quota trong transaction                          |
+| `content_files`                    | Metadata class/room file (owner union `000056`), opaque object key, idempotent intent, finalize + verifier proof         |
+| `tenant_file_usage`                | O(1) file-count/reserved-byte/committed-byte counter theo tenant                                                         |
+| `message_receipts`                 | Self read marker đơn điệu theo tenant/conversation/user; tham chiếu exact message sequence/ID                            |
+| `media_spaces`                     | Aggregate lifecycle tenant-scoped, bind đúng một ClassSession/occurrence/StudyMeeting                                    |
+| `media_room_instances`             | Exact RoomInstance intent/activation, opaque provider room/SID binding và terminal lifecycle                             |
+| `media_space_members`              | Explicit same-tenant member boundary cho member-owned space                                                              |
+| `media_admission_requests`         | Canonical join-attempt/lobby request, exact actor/room/version và terminal admission state                               |
+| `media_participant_sessions`       | Participant lifecycle/capacity, opaque provider identity, credential transition và explicit rejoin restore               |
+| `media_space_mutation_receipts`    | Idempotency receipt cho lifecycle/member/admission command, bind tenant/actor/space/version                              |
+| `media_provider_webhook_receipts`  | Signed provider-event replay receipt, mapped exact RoomInstance và không lưu raw payload                                 |
 
 Ràng buộc quan trọng:
 
@@ -1692,6 +1692,17 @@ GRANT SELECT, INSERT ON TABLE tutorhub.message_embeds TO tutorhub_runtime;
 
 Quyền của `tutorhub_collab_worker` và các role bảo trì không thay đổi. Rollback `000059.down` xóa bảng
 `tutorhub.message_embeds` (ưu tiên roll-forward trên môi trường chia sẻ vì xóa bảng sẽ làm mất metadata thẻ đã gửi).
+
+## MSG-STICKER-01 — sticker message embeds and `chat_stickers` feature control (000060)
+
+Migration `000060_message_embed_stickers` (ADR-0047) thêm cột `sticker_id text` vào `tutorhub.message_embeds` kèm
+`CHECK message_embeds_sticker_id_valid` (`char_length(sticker_id) BETWEEN 3 AND 97` và khớp
+`^[a-z0-9_]{1,32}:[a-z0-9_-]{1,64}$`), mở rộng `message_embeds_kind_valid` thành 3 nhánh phân biệt
+(`contact_card`, `instant_class`, `sticker`), và bổ sung `'chat_stickers'` vào `tenant_feature_overrides_key_valid`.
+
+Quyền của `tutorhub_runtime` trên `tutorhub.message_embeds` giữ nguyên `SELECT, INSERT` (cấp mức bảng từ `000059`
+tự động bao phủ cột `sticker_id`, không cấp `UPDATE`/`DELETE`). Rollback `000060.down` chặn hạ cấp bằng lỗi
+`restrict_violation` nếu tồn tại bất kỳ dòng `kind = 'sticker'` nào.
 
 ## Quy tắc thay đổi schema
 

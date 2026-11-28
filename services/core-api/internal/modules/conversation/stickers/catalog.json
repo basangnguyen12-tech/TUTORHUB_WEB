@@ -1,0 +1,1566 @@
+{
+  "catalog_version": "2026-11-28.1",
+  "packs": [
+    {
+      "id": "noto_animated",
+      "version": "v1",
+      "title": {
+        "vi": "Biểu cảm Noto",
+        "en": "Noto Animated"
+      },
+      "attribution": {
+        "text": "Noto Emoji Animation by Google, licensed under CC BY 4.0. Modified by TutorHub: curated subset, resized to 160×160 animated WebP, plus a static representative-frame WebP.",
+        "license": "CC BY 4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/",
+        "notices_path": "/THIRD_PARTY_NOTICES.txt"
+      },
+      "stickers": [
+        {
+          "id": "noto_animated:1f600",
+          "labels": {
+            "vi": "Cười tươi",
+            "en": "Smile"
+          },
+          "keywords": {
+            "vi": ["vui", "cười", "vui vẻ"],
+            "en": ["happy", "smile", "grin"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f603",
+          "labels": {
+            "vi": "Cười toe",
+            "en": "Big smile"
+          },
+          "keywords": {
+            "vi": ["vui", "hớn hở"],
+            "en": ["happy", "joy", "smile"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f604",
+          "labels": {
+            "vi": "Cười híp mắt",
+            "en": "Grin"
+          },
+          "keywords": {
+            "vi": ["vui", "cười"],
+            "en": ["happy", "laugh"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f601",
+          "labels": {
+            "vi": "Cười nhe răng",
+            "en": "Beaming"
+          },
+          "keywords": {
+            "vi": ["tự hào", "nhe răng"],
+            "en": ["grin", "proud"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f606",
+          "labels": {
+            "vi": "Cười lớn",
+            "en": "Laughing"
+          },
+          "keywords": {
+            "vi": ["cười lớn", "haha"],
+            "en": ["laugh", "lol"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f605",
+          "labels": {
+            "vi": "Cười trừ",
+            "en": "Nervous laugh"
+          },
+          "keywords": {
+            "vi": ["ngại", "đổ mồ hôi", "hú hồn"],
+            "en": ["sweat", "awkward", "phew"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f602",
+          "labels": {
+            "vi": "Cười ra nước mắt",
+            "en": "Tears of joy"
+          },
+          "keywords": {
+            "vi": ["buồn cười", "haha", "hài"],
+            "en": ["lol", "funny", "haha"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f923",
+          "labels": {
+            "vi": "Cười lăn lộn",
+            "en": "Rolling on the floor laughing"
+          },
+          "keywords": {
+            "vi": ["cười bò", "hài hước"],
+            "en": ["rofl", "lmao", "funny"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f60a",
+          "labels": {
+            "vi": "Mỉm cười e thẹn",
+            "en": "Blush"
+          },
+          "keywords": {
+            "vi": ["ngượng", "dễ thương"],
+            "en": ["shy", "happy", "pleased"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f607",
+          "labels": {
+            "vi": "Thiên thần",
+            "en": "Angel"
+          },
+          "keywords": {
+            "vi": ["ngoan", "hiền"],
+            "en": ["halo", "innocent", "good"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f642",
+          "labels": {
+            "vi": "Mỉm cười",
+            "en": "Slight smile"
+          },
+          "keywords": {
+            "vi": ["ổn", "mỉm cười"],
+            "en": ["ok", "fine"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f643",
+          "labels": {
+            "vi": "Mặt lộn ngược",
+            "en": "Upside-down face"
+          },
+          "keywords": {
+            "vi": ["lộn ngược", "đùa"],
+            "en": ["silly", "sarcasm"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f609",
+          "labels": {
+            "vi": "Nháy mắt",
+            "en": "Wink"
+          },
+          "keywords": {
+            "vi": ["nháy mắt", "đùa"],
+            "en": ["wink", "joke"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f60d",
+          "labels": {
+            "vi": "Mắt trái tim",
+            "en": "Heart eyes"
+          },
+          "keywords": {
+            "vi": ["yêu thích", "mê"],
+            "en": ["love", "adore"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f970",
+          "labels": {
+            "vi": "Yêu thương",
+            "en": "Smiling with hearts"
+          },
+          "keywords": {
+            "vi": ["thương", "tình cảm"],
+            "en": ["love", "affection"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f618",
+          "labels": {
+            "vi": "Gửi nụ hôn",
+            "en": "Blowing a kiss"
+          },
+          "keywords": {
+            "vi": ["hôn gió", "thương"],
+            "en": ["kiss", "love"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f929",
+          "labels": {
+            "vi": "Mắt sao",
+            "en": "Star-struck"
+          },
+          "keywords": {
+            "vi": ["tuyệt vời", "phấn khích"],
+            "en": ["wow", "amazing", "excited"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f973",
+          "labels": {
+            "vi": "Tiệc tùng",
+            "en": "Partying face"
+          },
+          "keywords": {
+            "vi": ["ăn mừng", "sinh nhật"],
+            "en": ["party", "celebrate", "birthday"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f60e",
+          "labels": {
+            "vi": "Ngầu",
+            "en": "Cool"
+          },
+          "keywords": {
+            "vi": ["kính râm", "ngầu"],
+            "en": ["sunglasses", "cool"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f913",
+          "labels": {
+            "vi": "Mọt sách",
+            "en": "Nerd"
+          },
+          "keywords": {
+            "vi": ["học bá", "chăm học", "thông minh"],
+            "en": ["nerd", "geek", "study", "smart"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f914",
+          "labels": {
+            "vi": "Suy nghĩ",
+            "en": "Thinking"
+          },
+          "keywords": {
+            "vi": ["suy nghĩ", "hmm", "thắc mắc"],
+            "en": ["think", "hmm", "question"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f9d0",
+          "labels": {
+            "vi": "Soi kỹ",
+            "en": "Monocle"
+          },
+          "keywords": {
+            "vi": ["kiểm tra", "tò mò"],
+            "en": ["inspect", "curious", "check"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f92b",
+          "labels": {
+            "vi": "Suỵt",
+            "en": "Shush"
+          },
+          "keywords": {
+            "vi": ["im lặng", "bí mật", "trật tự"],
+            "en": ["quiet", "secret", "silence"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f917",
+          "labels": {
+            "vi": "Ôm",
+            "en": "Hug"
+          },
+          "keywords": {
+            "vi": ["ôm", "cảm ơn"],
+            "en": ["hug", "thanks"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1fae1",
+          "labels": {
+            "vi": "Tuân lệnh",
+            "en": "Salute"
+          },
+          "keywords": {
+            "vi": ["rõ", "nhận lệnh", "vâng"],
+            "en": ["salute", "yes", "respect", "got it"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f972",
+          "labels": {
+            "vi": "Cười trong nước mắt",
+            "en": "Smiling with a tear"
+          },
+          "keywords": {
+            "vi": ["cảm động", "xúc động"],
+            "en": ["touched", "grateful", "bittersweet"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f979",
+          "labels": {
+            "vi": "Rưng rưng",
+            "en": "Holding back tears"
+          },
+          "keywords": {
+            "vi": ["cảm động", "rưng rưng"],
+            "en": ["touched", "moved", "emotional"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f97a",
+          "labels": {
+            "vi": "Năn nỉ",
+            "en": "Pleading"
+          },
+          "keywords": {
+            "vi": ["năn nỉ", "làm ơn", "xin"],
+            "en": ["please", "beg", "puppy eyes"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f62d",
+          "labels": {
+            "vi": "Khóc to",
+            "en": "Loudly crying"
+          },
+          "keywords": {
+            "vi": ["khóc", "buồn"],
+            "en": ["cry", "sad", "sob"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f622",
+          "labels": {
+            "vi": "Rơi nước mắt",
+            "en": "Crying"
+          },
+          "keywords": {
+            "vi": ["buồn", "khóc"],
+            "en": ["sad", "tear"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f614",
+          "labels": {
+            "vi": "Trầm ngâm",
+            "en": "Pensive"
+          },
+          "keywords": {
+            "vi": ["buồn", "tiếc", "xin lỗi"],
+            "en": ["sad", "sorry", "regret"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f62e",
+          "labels": {
+            "vi": "Ngạc nhiên",
+            "en": "Open mouth"
+          },
+          "keywords": {
+            "vi": ["bất ngờ", "ồ"],
+            "en": ["surprised", "oh"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f631",
+          "labels": {
+            "vi": "Hét lên",
+            "en": "Screaming"
+          },
+          "keywords": {
+            "vi": ["sợ hãi", "hoảng"],
+            "en": ["scared", "shocked", "omg"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f92f",
+          "labels": {
+            "vi": "Choáng váng",
+            "en": "Mind blown"
+          },
+          "keywords": {
+            "vi": ["sốc", "bái phục"],
+            "en": ["shocked", "wow", "amazed"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f633",
+          "labels": {
+            "vi": "Đỏ mặt",
+            "en": "Flushed"
+          },
+          "keywords": {
+            "vi": ["ngượng", "xấu hổ"],
+            "en": ["embarrassed", "oops"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f971",
+          "labels": {
+            "vi": "Ngáp",
+            "en": "Yawning"
+          },
+          "keywords": {
+            "vi": ["buồn ngủ", "chán", "mệt"],
+            "en": ["tired", "bored", "sleepy"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f634",
+          "labels": {
+            "vi": "Ngủ",
+            "en": "Sleeping"
+          },
+          "keywords": {
+            "vi": ["ngủ", "mệt"],
+            "en": ["sleep", "zzz", "tired"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f644",
+          "labels": {
+            "vi": "Đảo mắt",
+            "en": "Eye roll"
+          },
+          "keywords": {
+            "vi": ["chán", "kệ"],
+            "en": ["whatever", "annoyed"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f624",
+          "labels": {
+            "vi": "Quyết tâm",
+            "en": "Determined"
+          },
+          "keywords": {
+            "vi": ["quyết tâm", "hừ"],
+            "en": ["determined", "triumph", "huff"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f620",
+          "labels": {
+            "vi": "Tức giận",
+            "en": "Angry"
+          },
+          "keywords": {
+            "vi": ["giận", "bực"],
+            "en": ["angry", "mad"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f92a",
+          "labels": {
+            "vi": "Tinh nghịch",
+            "en": "Zany"
+          },
+          "keywords": {
+            "vi": ["nghịch ngợm", "vui nhộn"],
+            "en": ["crazy", "silly", "fun"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f60b",
+          "labels": {
+            "vi": "Ngon quá",
+            "en": "Yummy"
+          },
+          "keywords": {
+            "vi": ["ngon", "đói"],
+            "en": ["yum", "delicious", "tasty"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1fae0",
+          "labels": {
+            "vi": "Tan chảy",
+            "en": "Melting"
+          },
+          "keywords": {
+            "vi": ["tan chảy", "ngượng"],
+            "en": ["melting", "embarrassed", "hot"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f62c",
+          "labels": {
+            "vi": "Nhăn nhó",
+            "en": "Grimacing"
+          },
+          "keywords": {
+            "vi": ["khó xử", "ngại"],
+            "en": ["awkward", "eek"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f630",
+          "labels": {
+            "vi": "Lo lắng",
+            "en": "Anxious"
+          },
+          "keywords": {
+            "vi": ["lo", "hồi hộp", "thi cử"],
+            "en": ["nervous", "worried", "exam"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f635_200d_1f4ab",
+          "labels": {
+            "vi": "Chóng mặt",
+            "en": "Dizzy"
+          },
+          "keywords": {
+            "vi": ["chóng mặt", "rối", "quá tải"],
+            "en": ["dizzy", "confused", "overwhelmed"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f44d",
+          "labels": {
+            "vi": "Thích",
+            "en": "Thumbs up"
+          },
+          "keywords": {
+            "vi": ["like", "tốt", "đồng ý", "được"],
+            "en": ["like", "good", "yes", "ok"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f44e",
+          "labels": {
+            "vi": "Không thích",
+            "en": "Thumbs down"
+          },
+          "keywords": {
+            "vi": ["không", "chưa được"],
+            "en": ["dislike", "no", "bad"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f44f",
+          "labels": {
+            "vi": "Vỗ tay",
+            "en": "Clapping"
+          },
+          "keywords": {
+            "vi": ["vỗ tay", "hoan hô", "giỏi lắm"],
+            "en": ["clap", "bravo", "applause", "well done"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f64c",
+          "labels": {
+            "vi": "Hoan hô",
+            "en": "Raising hands"
+          },
+          "keywords": {
+            "vi": ["hoan hô", "tuyệt", "yeah"],
+            "en": ["hooray", "celebrate", "yay"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1faf6",
+          "labels": {
+            "vi": "Tay trái tim",
+            "en": "Heart hands"
+          },
+          "keywords": {
+            "vi": ["yêu thương", "cảm ơn"],
+            "en": ["love", "thanks", "support"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f44b",
+          "labels": {
+            "vi": "Vẫy tay",
+            "en": "Waving"
+          },
+          "keywords": {
+            "vi": ["xin chào", "tạm biệt", "chào"],
+            "en": ["hello", "hi", "bye"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:270b",
+          "labels": {
+            "vi": "Giơ tay",
+            "en": "Raised hand"
+          },
+          "keywords": {
+            "vi": ["giơ tay", "phát biểu", "em ạ"],
+            "en": ["question", "me", "raise hand"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f44c",
+          "labels": {
+            "vi": "OK",
+            "en": "OK"
+          },
+          "keywords": {
+            "vi": ["ổn", "được", "hoàn hảo"],
+            "en": ["ok", "perfect", "fine"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:270c_fe0f",
+          "labels": {
+            "vi": "Chiến thắng",
+            "en": "Victory"
+          },
+          "keywords": {
+            "vi": ["chiến thắng", "hòa bình"],
+            "en": ["peace", "victory", "yeah"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f91e",
+          "labels": {
+            "vi": "Cầu may",
+            "en": "Fingers crossed"
+          },
+          "keywords": {
+            "vi": ["may mắn", "hi vọng", "chúc may mắn"],
+            "en": ["luck", "hope", "good luck"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4aa",
+          "labels": {
+            "vi": "Cố lên",
+            "en": "Flexed biceps"
+          },
+          "keywords": {
+            "vi": ["cố lên", "mạnh mẽ", "cố gắng"],
+            "en": ["strong", "fighting", "you can do it"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f64f",
+          "labels": {
+            "vi": "Cảm ơn",
+            "en": "Folded hands"
+          },
+          "keywords": {
+            "vi": ["cảm ơn", "làm ơn", "cầu mong"],
+            "en": ["thanks", "please", "pray"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f91d",
+          "labels": {
+            "vi": "Bắt tay",
+            "en": "Handshake"
+          },
+          "keywords": {
+            "vi": ["đồng ý", "hợp tác", "thỏa thuận"],
+            "en": ["deal", "agree", "team"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f44a",
+          "labels": {
+            "vi": "Cụng tay",
+            "en": "Fist bump"
+          },
+          "keywords": {
+            "vi": ["cụng tay", "đồng đội"],
+            "en": ["team", "bro", "fist bump"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f91f",
+          "labels": {
+            "vi": "Yêu bạn",
+            "en": "Love you"
+          },
+          "keywords": {
+            "vi": ["yêu", "thương"],
+            "en": ["ily", "love you"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1faf5",
+          "labels": {
+            "vi": "Chỉ bạn",
+            "en": "Pointing at you"
+          },
+          "keywords": {
+            "vi": ["bạn đó", "tới lượt bạn"],
+            "en": ["you", "your turn"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f449",
+          "labels": {
+            "vi": "Chỉ sang phải",
+            "en": "Pointing right"
+          },
+          "keywords": {
+            "vi": ["nhìn này", "tiếp theo"],
+            "en": ["look", "here", "next"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:270d_fe0f",
+          "labels": {
+            "vi": "Đang viết",
+            "en": "Writing"
+          },
+          "keywords": {
+            "vi": ["ghi chép", "viết bài", "bài tập"],
+            "en": ["write", "notes", "homework"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f440",
+          "labels": {
+            "vi": "Đôi mắt",
+            "en": "Eyes"
+          },
+          "keywords": {
+            "vi": ["xem", "nhìn", "chú ý"],
+            "en": ["look", "watching", "see"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4af",
+          "labels": {
+            "vi": "100 điểm",
+            "en": "Hundred points"
+          },
+          "keywords": {
+            "vi": ["điểm tuyệt đối", "xuất sắc", "100 điểm"],
+            "en": ["100", "perfect", "score"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f525",
+          "labels": {
+            "vi": "Lửa",
+            "en": "Fire"
+          },
+          "keywords": {
+            "vi": ["cháy", "đỉnh", "tuyệt"],
+            "en": ["fire", "hot", "lit", "awesome"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:2728",
+          "labels": {
+            "vi": "Lấp lánh",
+            "en": "Sparkles"
+          },
+          "keywords": {
+            "vi": ["lấp lánh", "mới", "đẹp"],
+            "en": ["sparkle", "magic", "new"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f31f",
+          "labels": {
+            "vi": "Ngôi sao sáng",
+            "en": "Glowing star"
+          },
+          "keywords": {
+            "vi": ["ngôi sao", "xuất sắc", "giỏi"],
+            "en": ["star", "excellent", "best"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:2764_fe0f",
+          "labels": {
+            "vi": "Trái tim đỏ",
+            "en": "Red heart"
+          },
+          "keywords": {
+            "vi": ["yêu", "tim"],
+            "en": ["love", "heart"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f496",
+          "labels": {
+            "vi": "Tim lấp lánh",
+            "en": "Sparkling heart"
+          },
+          "keywords": {
+            "vi": ["yêu", "tim"],
+            "en": ["love", "sparkle"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f495",
+          "labels": {
+            "vi": "Hai trái tim",
+            "en": "Two hearts"
+          },
+          "keywords": {
+            "vi": ["yêu", "bạn bè"],
+            "en": ["love", "friends"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f494",
+          "labels": {
+            "vi": "Tim vỡ",
+            "en": "Broken heart"
+          },
+          "keywords": {
+            "vi": ["buồn", "tan vỡ"],
+            "en": ["sad", "heartbreak"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f389",
+          "labels": {
+            "vi": "Pháo giấy",
+            "en": "Party popper"
+          },
+          "keywords": {
+            "vi": ["chúc mừng", "ăn mừng"],
+            "en": ["congrats", "party", "celebrate"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f38a",
+          "labels": {
+            "vi": "Bóng giấy màu",
+            "en": "Confetti ball"
+          },
+          "keywords": {
+            "vi": ["chúc mừng", "liên hoan"],
+            "en": ["congrats", "celebrate"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f388",
+          "labels": {
+            "vi": "Bóng bay",
+            "en": "Balloon"
+          },
+          "keywords": {
+            "vi": ["bóng bay", "sinh nhật"],
+            "en": ["party", "birthday"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f382",
+          "labels": {
+            "vi": "Bánh sinh nhật",
+            "en": "Birthday cake"
+          },
+          "keywords": {
+            "vi": ["sinh nhật", "bánh kem"],
+            "en": ["birthday", "cake"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f381",
+          "labels": {
+            "vi": "Quà tặng",
+            "en": "Gift"
+          },
+          "keywords": {
+            "vi": ["quà", "phần thưởng"],
+            "en": ["gift", "present", "reward"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f386",
+          "labels": {
+            "vi": "Pháo hoa",
+            "en": "Fireworks"
+          },
+          "keywords": {
+            "vi": ["pháo hoa", "năm mới"],
+            "en": ["fireworks", "celebrate", "new year"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f3c6",
+          "labels": {
+            "vi": "Cúp vô địch",
+            "en": "Trophy"
+          },
+          "keywords": {
+            "vi": ["vô địch", "chiến thắng", "giải nhất"],
+            "en": ["win", "champion", "trophy"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f947",
+          "labels": {
+            "vi": "Huy chương vàng",
+            "en": "Gold medal"
+          },
+          "keywords": {
+            "vi": ["hạng nhất", "huy chương"],
+            "en": ["first", "gold", "winner"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f451",
+          "labels": {
+            "vi": "Vương miện",
+            "en": "Crown"
+          },
+          "keywords": {
+            "vi": ["vua", "nhất"],
+            "en": ["king", "queen", "best"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f308",
+          "labels": {
+            "vi": "Cầu vồng",
+            "en": "Rainbow"
+          },
+          "keywords": {
+            "vi": ["cầu vồng", "hi vọng"],
+            "en": ["rainbow", "hope"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f680",
+          "labels": {
+            "vi": "Tên lửa",
+            "en": "Rocket"
+          },
+          "keywords": {
+            "vi": ["xuất phát", "tăng tốc", "bứt phá"],
+            "en": ["launch", "fast", "go"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f3af",
+          "labels": {
+            "vi": "Trúng đích",
+            "en": "Bullseye"
+          },
+          "keywords": {
+            "vi": ["mục tiêu", "chính xác", "trúng"],
+            "en": ["goal", "target", "correct"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f393",
+          "labels": {
+            "vi": "Mũ tốt nghiệp",
+            "en": "Graduation cap"
+          },
+          "keywords": {
+            "vi": ["tốt nghiệp", "học", "ra trường"],
+            "en": ["graduate", "school", "study"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4da",
+          "labels": {
+            "vi": "Chồng sách",
+            "en": "Books"
+          },
+          "keywords": {
+            "vi": ["sách", "học bài", "đọc"],
+            "en": ["books", "study", "read", "homework"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:270f_fe0f",
+          "labels": {
+            "vi": "Bút chì",
+            "en": "Pencil"
+          },
+          "keywords": {
+            "vi": ["bút chì", "viết", "làm bài"],
+            "en": ["pencil", "write", "exercise"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4a1",
+          "labels": {
+            "vi": "Ý tưởng",
+            "en": "Light bulb"
+          },
+          "keywords": {
+            "vi": ["ý tưởng", "hiểu rồi", "sáng kiến"],
+            "en": ["idea", "insight", "got it"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f9e0",
+          "labels": {
+            "vi": "Bộ não",
+            "en": "Brain"
+          },
+          "keywords": {
+            "vi": ["não", "thông minh", "suy nghĩ"],
+            "en": ["brain", "smart", "think"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4bb",
+          "labels": {
+            "vi": "Máy tính",
+            "en": "Laptop"
+          },
+          "keywords": {
+            "vi": ["máy tính", "học online"],
+            "en": ["laptop", "computer", "online"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4c8",
+          "labels": {
+            "vi": "Tiến bộ",
+            "en": "Chart increasing"
+          },
+          "keywords": {
+            "vi": ["tiến bộ", "tăng", "phát triển"],
+            "en": ["progress", "improve", "grow"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:23f0",
+          "labels": {
+            "vi": "Đồng hồ báo thức",
+            "en": "Alarm clock"
+          },
+          "keywords": {
+            "vi": ["báo thức", "giờ học", "hạn chót"],
+            "en": ["alarm", "time", "deadline", "wake up"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:23f3",
+          "labels": {
+            "vi": "Đồng hồ cát",
+            "en": "Hourglass"
+          },
+          "keywords": {
+            "vi": ["chờ", "thời gian", "đợi"],
+            "en": ["wait", "time", "loading"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f514",
+          "labels": {
+            "vi": "Chuông",
+            "en": "Bell"
+          },
+          "keywords": {
+            "vi": ["chuông", "nhắc nhở", "thông báo"],
+            "en": ["bell", "reminder", "notice"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4e3",
+          "labels": {
+            "vi": "Loa thông báo",
+            "en": "Megaphone"
+          },
+          "keywords": {
+            "vi": ["thông báo", "chú ý"],
+            "en": ["announcement", "attention"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f50e",
+          "labels": {
+            "vi": "Kính lúp",
+            "en": "Magnifying glass"
+          },
+          "keywords": {
+            "vi": ["tìm kiếm", "tra cứu"],
+            "en": ["search", "look", "research"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:2705",
+          "labels": {
+            "vi": "Đúng",
+            "en": "Check mark"
+          },
+          "keywords": {
+            "vi": ["xong", "đúng", "hoàn thành"],
+            "en": ["done", "correct", "yes"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:274c",
+          "labels": {
+            "vi": "Sai",
+            "en": "Cross mark"
+          },
+          "keywords": {
+            "vi": ["sai", "không"],
+            "en": ["wrong", "no", "incorrect"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:2753",
+          "labels": {
+            "vi": "Câu hỏi",
+            "en": "Question mark"
+          },
+          "keywords": {
+            "vi": ["câu hỏi", "hỏi", "tại sao"],
+            "en": ["question", "what", "why"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:2757",
+          "labels": {
+            "vi": "Chú ý",
+            "en": "Exclamation mark"
+          },
+          "keywords": {
+            "vi": ["quan trọng", "lưu ý"],
+            "en": ["important", "attention", "warning"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:1f4ac",
+          "labels": {
+            "vi": "Trò chuyện",
+            "en": "Speech bubble"
+          },
+          "keywords": {
+            "vi": ["nhắn tin", "bình luận", "nói chuyện"],
+            "en": ["chat", "comment", "talk"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        },
+        {
+          "id": "noto_animated:2615",
+          "labels": {
+            "vi": "Giải lao",
+            "en": "Hot drink"
+          },
+          "keywords": {
+            "vi": ["cà phê", "trà", "nghỉ giải lao"],
+            "en": ["coffee", "tea", "break"]
+          },
+          "width": 160,
+          "height": 160,
+          "animated": true,
+          "status": "active"
+        }
+      ]
+    }
+  ]
+}

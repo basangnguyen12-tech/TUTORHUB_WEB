@@ -1,0 +1,32 @@
+TutorHub - Third-party notices
+==============================
+
+Noto Emoji Animation (stickers)
+-------------------------------
+
+Material:  Animated emoji artwork from the Noto Emoji Animation project.
+Creator:   Google LLC - https://googlefonts.github.io/noto-emoji-animation/
+Source:    https://fonts.gstatic.com/s/e/notoemoji/latest/<codepoint>/512.webp
+           (retrieved 2026-11-28; each file pinned by SHA-256)
+License:   Creative Commons Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+           Legal code: https://creativecommons.org/licenses/by/4.0/legalcode
+Used in:   /stickers/noto_animated/v1/ - the "Noto Animated" sticker pack in
+           Messages and classroom room chat.
+
+Modifications by TutorHub (2026-11-28, CC BY 4.0 Section 3(a)(1)(B)):
+
+  1. Selected a curated subset of 103 emoji (faces, encouragement gestures,
+     hearts, celebration and study symbols).
+  2. Resized every frame from 512x512 to 160x160 pixels.
+  3. Reduced the frame count (keeping every 1st to 6th frame and merging
+     frame durations) and re-encoded each animation as a lossy animated WebP
+     of at most 100 KB.
+  4. Extracted one representative frame of each animation (the frame that
+     differs most from the first) as a separate static WebP
+     (<codepoint>.static.webp) for reduced motion and idle previews.
+  5. Renamed the files to <codepoint>.webp / <codepoint>.static.webp.
+
+Disclaimer: the material is provided as-is under CC BY 4.0. To the extent
+possible, the licensor offers it without warranties of any kind (Section 5 of
+the license). Google does not endorse TutorHub or its use of the material.

@@ -22,8 +22,10 @@ import type { ClassroomCodeWorkspaceSnapshot } from "../features/classroom-tools
 import { createTutorHubQueryClient } from "./queryClient";
 import {
   CHAT_EMOJI_RECENT_STORAGE_PREFIX,
+  CHAT_STICKER_RECENT_STORAGE_PREFIX,
   CLASSROOM_PREFERENCES_STORAGE_PREFIX,
   clearChatEmojiRecentStorage,
+  clearChatStickerRecentStorage,
   clearClassroomPreferencesStorage,
   clearCodeDraftStorage,
   clearConversationPreferencesStorage,
@@ -361,6 +363,42 @@ describe("remote session provider", () => {
       },
     } as unknown as Storage;
     expect(() => clearChatEmojiRecentStorage(blocked)).not.toThrow();
+  });
+
+  it("removes every recent-sticker key on sign-out (MSG-STICKER-03)", async () => {
+    const queryClient = new QueryClient();
+    localStorage.setItem(
+      `${CHAT_STICKER_RECENT_STORAGE_PREFIX}v1:tenant-a:user-a`,
+      JSON.stringify(["noto_animated:1f602"]),
+    );
+    localStorage.setItem(
+      `${CHAT_STICKER_RECENT_STORAGE_PREFIX}v1:tenant-b:user-b`,
+      JSON.stringify(["noto_animated:1f44d"]),
+    );
+    localStorage.setItem(
+      `${CHAT_EMOJI_RECENT_STORAGE_PREFIX}v1:tenant-a:user-a`,
+      JSON.stringify(["👏"]),
+    );
+    localStorage.setItem("tutorhub:unrelated-preference", "keep");
+
+    await clearPrivateSessionCache(queryClient);
+
+    expect(
+      Object.keys(localStorage).filter(
+        (key) =>
+          key.startsWith("tutorhub:chat-sticker-recent:") ||
+          key.startsWith("tutorhub:chat-emoji-recent:"),
+      ),
+    ).toEqual([]);
+    expect(localStorage.getItem("tutorhub:unrelated-preference")).toBe("keep");
+    localStorage.clear();
+
+    const blocked = {
+      get length(): number {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    } as unknown as Storage;
+    expect(() => clearChatStickerRecentStorage(blocked)).not.toThrow();
   });
 
   it("removes every classroom preference key on sign-out (CLASS-CLASSIN-UI-01)", async () => {

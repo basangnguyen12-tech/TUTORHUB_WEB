@@ -13,3 +13,7 @@
   X-Frame-Options: DENY
   X-Robots-Tag: noindex, nofollow
   Permissions-Policy: camera=(self), microphone=(self), display-capture=(self), speaker-selection=(self)
+
+/stickers/*
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff

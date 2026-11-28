@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/tutorhub-v2/core-api/internal/modules/conversation/stickers"
 	"github.com/tutorhub-v2/core-api/internal/modules/featurecontrol"
 )
 
@@ -62,6 +63,19 @@ func (repository *PostgresRepository) prepareMessageEmbed(
 		return nil
 	case EmbedKindInstantClass:
 		return repository.shareInstantClass(ctx, transaction, access, conversationID, embed.MediaSpaceID, now)
+	case EmbedKindSticker:
+		// ADR-0047: direct, class and room conversations alike; posting
+		// authority (archived class, paused room chat) was already enforced.
+		if err := repository.controls.RequireFeature(
+			ctx, transaction, access.TenantID, featurecontrol.FeatureChatStickers,
+		); err != nil {
+			return err
+		}
+		if !repository.stickerCatalog().Sendable(embed.StickerID) {
+			// Unknown, retired and removed stickers are indistinguishable.
+			return ErrEmbedUnavailable
+		}
+		return nil
 	default:
 		return ErrInvalidInput
 	}
@@ -150,22 +164,26 @@ func insertMessageEmbed(
 	embed MessageEmbedInput,
 	now time.Time,
 ) error {
-	var targetUserID, mediaSpaceID any
+	var targetUserID, mediaSpaceID, stickerID any
 	switch embed.Kind {
 	case EmbedKindContactCard:
 		targetUserID = embed.UserID
 	case EmbedKindInstantClass:
 		mediaSpaceID = embed.MediaSpaceID
+	case EmbedKindSticker:
+		stickerID = embed.StickerID
 	default:
 		return ErrInvalidInput
 	}
 	if _, err := transaction.Exec(
 		ctx,
 		`INSERT INTO tutorhub.message_embeds (
-    tenant_id, conversation_id, message_id, kind, target_user_id, media_space_id, created_at
+    tenant_id, conversation_id, message_id, kind, target_user_id, media_space_id,
+    sticker_id, created_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		tenantID, conversationID, messageID, string(embed.Kind), targetUserID, mediaSpaceID, now,
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		tenantID, conversationID, messageID, string(embed.Kind), targetUserID, mediaSpaceID,
+		stickerID, now,
 	); err != nil {
 		return safeMessageStoreError("insert message embed", err)
 	}
@@ -213,7 +231,8 @@ func loadMessageEmbeds(
               AND space_member.status = 'active'
         ),
         false
-    )
+    ),
+    embed.sticker_id
 FROM tutorhub.message_embeds AS embed
 LEFT JOIN tutorhub.memberships AS member
   ON member.tenant_id = embed.tenant_id AND member.user_id = embed.target_user_id
@@ -231,6 +250,7 @@ WHERE embed.tenant_id = $1
 		return fmt.Errorf("query message embeds: %w", err)
 	}
 	defer rows.Close()
+	catalog, _ := stickers.Default()
 	byMessage := make(map[uuid.UUID]*MessageEmbed, len(activeIDs))
 	for rows.Next() {
 		var messageID uuid.UUID
@@ -239,10 +259,11 @@ WHERE embed.tenant_id = $1
 		var displayName, title, status sql.NullString
 		var endsAt sql.NullTime
 		var remaining sql.NullInt64
+		var stickerID sql.NullString
 		var available, canJoin bool
 		if err := rows.Scan(
 			&messageID, &kind, &targetUserID, &displayName, &available,
-			&mediaSpaceID, &title, &status, &endsAt, &remaining, &canJoin,
+			&mediaSpaceID, &title, &status, &endsAt, &remaining, &canJoin, &stickerID,
 		); err != nil {
 			return safeMessageStoreError("scan message embed", err)
 		}
@@ -264,6 +285,8 @@ WHERE embed.tenant_id = $1
 			seconds := remaining.Int64
 			embed.MediaSpaceID, embed.Title, embed.Status = &spaceID, &name, &state
 			embed.EndsAt, embed.RemainingSeconds, embed.ViewerCanJoin = &end, &seconds, &canJoin
+		case EmbedKindSticker:
+			embed = projectStickerEmbed(catalog, stickerID.String)
 		default:
 			continue
 		}
@@ -278,6 +301,23 @@ WHERE embed.tenant_id = $1
 		}
 	}
 	return nil
+}
+
+// projectStickerEmbed resolves a sticker against the embedded catalog:
+// active and retired stickers stay visible; removed or unknown ones expose
+// nothing but available=false (ADR-0047 §4).
+func projectStickerEmbed(catalog *stickers.Catalog, stickerID string) *MessageEmbed {
+	embed := &MessageEmbed{Kind: EmbedKindSticker}
+	entry, ok := catalog.Lookup(stickerID)
+	visible := ok && (entry.Status == stickers.StatusActive || entry.Status == stickers.StatusRetired)
+	embed.Available = &visible
+	if visible {
+		id, packID := entry.ID, entry.PackID
+		labels, asset := entry.Labels, entry.Asset
+		embed.StickerID, embed.PackID = &id, &packID
+		embed.Labels, embed.Asset = &labels, &asset
+	}
+	return embed
 }
 
 // withMessageExtras projects attachments and the viewer's card for one

@@ -24,4 +24,5 @@ type Repository interface {
 	FindAttachmentReplay(context.Context, AccessContext, uuid.UUID, uuid.UUID, []byte) (MessageAttachment, bool, error)
 	CreateAttachment(context.Context, AccessContext, uuid.UUID, attachmentRecord) (MessageAttachment, bool, []string, error)
 	ReadAttachment(context.Context, AccessContext, uuid.UUID, uuid.UUID) (storedAttachment, error)
+	AuthorizeStickerCatalog(context.Context, AccessContext) error
 }

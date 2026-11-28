@@ -140,6 +140,30 @@ export function clearChatEmojiRecentStorage(
 }
 
 /**
+ * MSG-STICKER-03 (ADR-0047): the sticker picker's "Recent" row keeps at most
+ * 24 catalog sticker IDs (no PII) under
+ * `tutorhub:chat-sticker-recent:v1:<tenant>:<user>`; sign-out wipes them all.
+ */
+export const CHAT_STICKER_RECENT_STORAGE_PREFIX =
+  "tutorhub:chat-sticker-recent:";
+
+export function clearChatStickerRecentStorage(
+  storage: Storage | null = defaultChatEmojiStorage(),
+) {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(CHAT_STICKER_RECENT_STORAGE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // Storage may be blocked; keys stay scoped per (tenant, user) anyway.
+  }
+}
+
+/**
  * ROOM-TOOLS-CODE-01 (ADR-0043 §2, ADR-0029): the classroom Code tool keeps a
  * bounded 8-hour draft in localStorage under
  * `tutorhub:code-draft:v1:<tenant>:<actor>:<media space>`. The prefix is owned
@@ -246,6 +270,7 @@ export async function clearPrivateSessionCache(queryClient: QueryClient) {
   clearClientDrafts();
   clearMediaRoomEscrow();
   clearChatEmojiRecentStorage();
+  clearChatStickerRecentStorage();
   clearCodeDraftStorage();
   clearClassroomPreferencesStorage();
   clearConversationPreferencesStorage();

@@ -3049,3 +3049,417 @@
     outline: 2px solid Highlight;
   }
 }
+
+/* ---------- MSG-MENTION-BLUE-01: Zalo-style blue @mentions ----------
+ * --msg-mention-ink contrast (WCAG 2.1 AA, text >= 4.5:1):
+ *   light #0b5cbd: 6.40 on #ffffff, 5.82 on #f3f4f6, 5.65 on #e6f4ec
+ *   dark  #79b8e8: 6.69 on #232b36, 5.67 on #183c34, 6.96 on #202833
+ */
+.conversations-page {
+  --msg-mention-ink: #0b5cbd;
+}
+
+[data-theme="dark"] .conversations-page,
+.conversations-page[data-theme="dark"] {
+  --msg-mention-ink: #79b8e8;
+}
+
+.conversation-mention {
+  color: var(--msg-mention-ink);
+}
+
+/* The mirror sits exactly under the transparent textarea: same box, font,
+   padding, wrapping and scroll position. Only colors differ. */
+.conversation-composer__field {
+  position: relative;
+  min-width: 0;
+}
+
+.conversation-composer__field textarea {
+  display: block;
+}
+
+.conversation-composer__mirror {
+  position: absolute;
+  margin: 0;
+  padding: 4px 2px;
+  border: 0;
+  color: var(--msg-ink);
+  font: inherit;
+  font-size: 14px;
+  inset: 0;
+  letter-spacing: normal;
+  line-height: 1.5;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  tab-size: 8;
+  text-align: start;
+  white-space: pre-wrap;
+  word-break: normal;
+}
+
+.conversation-composer__field[data-mentions="true"] textarea {
+  caret-color: var(--msg-ink);
+  color: transparent;
+  scrollbar-width: none;
+}
+
+.conversation-composer__field[data-mentions="true"]
+  textarea::-webkit-scrollbar {
+  display: none;
+}
+
+@media (forced-colors: active) {
+  .conversation-mention {
+    color: LinkText;
+  }
+
+  /* System colors replace "transparent", so the textarea paints its own
+     text and the mirror would double it. */
+  .conversation-composer__mirror {
+    display: none;
+  }
+
+  .conversation-composer__field[data-mentions="true"] textarea {
+    color: CanvasText;
+  }
+}
+
+/* ---------- MSG-STICKER-03: sticker messages (ADR-0047) ---------- */
+.conversation-message__bubble.conversation-message__bubble--sticker,
+.conversation-message--own
+  .conversation-message__bubble.conversation-message__bubble--sticker {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.conversation-message--own .conversation-message__bubble--sticker {
+  justify-items: end;
+}
+
+.chat-sticker-message {
+  display: block;
+  line-height: 0;
+}
+
+.chat-sticker-message__image {
+  display: block;
+  object-fit: contain;
+}
+
+.chat-sticker-message--unavailable {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--msg-control);
+  border-radius: 10px;
+  background: var(--msg-fill);
+  color: var(--msg-muted);
+  font-size: 13px;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.chat-sticker-message--unavailable svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+/* ---------- Sticker | Emoji picker on the white plane ---------- */
+.conversations-page .conversation-composer .chat-expression__popover {
+  --sticker-accent: var(--msg-active-line);
+  --sticker-focus: var(--msg-focus);
+  --sticker-hover: var(--msg-hover);
+  --sticker-ink: var(--msg-ink);
+  --sticker-line: var(--msg-line);
+  --sticker-muted: var(--msg-muted);
+  --sticker-skeleton: var(--msg-fill);
+  --sticker-surface: var(--msg-surface);
+}
+
+.conversations-page .conversation-composer .chat-expression__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--sticker-line);
+  gap: 4px;
+}
+
+.conversations-page .conversation-composer .chat-expression__tab {
+  position: relative;
+  height: 38px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--sticker-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.conversations-page .conversation-composer .chat-expression__tab::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  content: "";
+}
+
+.conversations-page
+  .conversation-composer
+  .chat-expression__tab[aria-selected="true"] {
+  color: var(--sticker-ink);
+}
+
+.conversations-page
+  .conversation-composer
+  .chat-expression__tab[aria-selected="true"]::after {
+  background: var(--sticker-accent);
+}
+
+.conversations-page .conversation-composer .chat-expression__tab:hover {
+  color: var(--sticker-ink);
+}
+
+.conversations-page .conversation-composer .chat-expression__tab:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid var(--sticker-focus);
+  outline-offset: -4px;
+}
+
+.conversations-page .conversation-composer .classroom-chat-emoji__panel,
+.conversations-page .conversation-composer .chat-sticker {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.conversations-page .conversation-composer .chat-sticker__stream {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0 8px 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--sticker-line) transparent;
+  scrollbar-width: thin;
+}
+
+.conversations-page .conversation-composer .chat-sticker__heading {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  height: 28px;
+  align-items: center;
+  margin: 0;
+  padding: 0 4px;
+  background: var(--sticker-surface);
+  color: var(--sticker-muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.conversations-page .conversation-composer .chat-sticker__grid,
+.conversations-page .conversation-composer .chat-sticker__skeleton {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.conversations-page .conversation-composer .chat-sticker__grid {
+  padding-bottom: 6px;
+}
+
+.conversations-page .conversation-composer .chat-sticker__cell {
+  display: grid;
+  height: 72px;
+  padding: 4px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  place-items: center;
+}
+
+.conversations-page .conversation-composer .chat-sticker__cell img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.conversations-page
+  .conversation-composer
+  .chat-sticker__cell:is(:hover, :focus-visible) {
+  background: var(--sticker-hover);
+}
+
+.conversations-page .conversation-composer .chat-sticker__cell:focus-visible {
+  outline: 2px solid var(--sticker-focus);
+  outline-offset: -2px;
+}
+
+.conversations-page
+  .conversation-composer
+  .chat-sticker__cell[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.conversations-page .conversation-composer .chat-sticker__skeleton span {
+  height: 64px;
+  border-radius: 12px;
+  animation: chat-sticker-pulse 1.1s ease-in-out infinite alternate;
+  background: var(--sticker-skeleton);
+}
+
+.conversations-page
+  .conversation-composer
+  :is(.chat-sticker__state, .chat-sticker__empty, .chat-sticker__notice) {
+  color: var(--sticker-muted);
+  font-size: 13px;
+}
+
+.conversations-page .conversation-composer .chat-sticker__state {
+  display: grid;
+  gap: 12px;
+  padding: 12px 4px;
+  justify-items: center;
+  text-align: center;
+}
+
+.conversations-page .conversation-composer .chat-sticker__skeleton {
+  width: 100%;
+}
+
+.conversations-page .conversation-composer .chat-sticker__empty {
+  margin: 18px 6px;
+  text-align: center;
+}
+
+.conversations-page .conversation-composer .chat-sticker__notice {
+  margin: 6px 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--msg-fill);
+}
+
+.conversations-page .conversation-composer .chat-sticker__footer {
+  display: grid;
+  flex: 0 0 auto;
+  padding: 4px 8px 6px;
+  border-top: 1px solid var(--sticker-line);
+  gap: 2px;
+}
+
+.conversations-page .conversation-composer .chat-sticker__packs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.conversations-page .conversation-composer .chat-sticker__pack {
+  display: grid;
+  width: 36px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sticker-muted);
+  cursor: pointer;
+  place-items: center;
+}
+
+.conversations-page .conversation-composer .chat-sticker__pack svg {
+  width: 16px;
+  height: 16px;
+}
+
+.conversations-page
+  .conversation-composer
+  .chat-sticker__pack[aria-pressed="true"] {
+  background: var(--sticker-hover);
+  box-shadow: inset 0 -2px 0 var(--sticker-accent);
+  color: var(--sticker-ink);
+}
+
+.conversations-page .conversation-composer .chat-sticker__pack:focus-visible {
+  outline: 2px solid var(--sticker-focus);
+  outline-offset: -2px;
+}
+
+.conversations-page .conversation-composer .chat-sticker__credits {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  color: var(--sticker-muted);
+  font-size: 11px;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.conversations-page .conversation-composer .chat-sticker__credits a {
+  color: var(--msg-active-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.conversations-page
+  .conversation-composer
+  .chat-sticker__credits
+  a:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--sticker-focus);
+  outline-offset: 2px;
+}
+
+@keyframes chat-sticker-pulse {
+  from {
+    opacity: 0.55;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversations-page .conversation-composer .chat-sticker__skeleton span {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .conversations-page
+    .conversation-composer
+    .chat-expression__tab[aria-selected="true"]::after,
+  .conversations-page
+    .conversation-composer
+    .chat-sticker__pack[aria-pressed="true"] {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .chat-sticker-message--unavailable {
+    border-color: CanvasText;
+  }
+}

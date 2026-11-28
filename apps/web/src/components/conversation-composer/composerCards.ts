@@ -25,6 +25,8 @@ export type InstantClassEmbed = Extract<
   MessageEmbed,
   { kind: "instant_class" }
 >;
+/** MSG-STICKER-03 (ADR-0047): a catalog sticker, resolved per reader. */
+export type StickerMessageEmbed = Extract<MessageEmbed, { kind: "sticker" }>;
 export type MessageEmbedInput = NonNullable<SendMessageRequest["embed"]>;
 
 export const INSTANT_CLASS_DURATIONS = [15, 30, 45, 60] as const;
@@ -239,6 +241,7 @@ type Translate = ReturnType<typeof useI18n>["t"];
 export function cardPreviewText(
   embed: MessageEmbed | undefined,
   t: Translate,
+  language: "vi" | "en" = "vi",
 ): string | null {
   if (!embed) return null;
   if (embed.kind === "contact_card") {
@@ -246,5 +249,26 @@ export function cardPreviewText(
       ? t("conversations.contactCardPreview", { name: embed.display_name })
       : t("conversations.contactCardUnavailable");
   }
+  if (embed.kind === "sticker") {
+    return embed.available && embed.labels
+      ? t("conversations.stickerPreview", {
+          label: language === "vi" ? embed.labels.vi : embed.labels.en,
+        })
+      : t("conversations.stickerUnavailable");
+  }
   return t("conversations.instantClassPreview", { title: embed.title });
+}
+
+/** Text a card contributes to in-thread search (both languages). */
+export function embedSearchText(embed: MessageEmbed | undefined): string {
+  if (!embed) return "";
+  if (embed.kind === "contact_card") {
+    return embed.available ? (embed.display_name ?? "") : "";
+  }
+  if (embed.kind === "sticker") {
+    return embed.available && embed.labels
+      ? `Sticker ${embed.labels.vi} ${embed.labels.en}`
+      : "";
+  }
+  return embed.title;
 }

@@ -402,7 +402,7 @@ export function ConversationsPage() {
         ? t("conversations.messageDeleted")
         : parseQuotedMessage(newest.content).body.replace(/\s+/g, " ").trim() ||
           // MSG-COMPOSER-TOOLS-01: cards read as cards, not attachments.
-          cardPreviewText(newest.embed, t) ||
+          cardPreviewText(newest.embed, t, language) ||
           t("conversations.attachmentPreview");
     if (newest.author.user_id === actorID) {
       return `${t("conversations.youPrefix")}: ${text}`;

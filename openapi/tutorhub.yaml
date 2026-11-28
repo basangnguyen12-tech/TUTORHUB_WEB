@@ -3880,6 +3880,63 @@ paths:
           $ref: "#/components/responses/ProblemResponse"
         default:
           $ref: "#/components/responses/ProblemResponse"
+  /api/v1/conversations/sticker-packs:
+    get:
+      operationId: listStickerPacks
+      summary: Return the curated sticker catalog for the active workspace
+      description: MSG-STICKER-01 (ADR-0047). Requires an active member session in a tenant where conversations and chat_stickers are enabled; otherwise 403 feature_disabled. Only packs with at least one active sticker and only active stickers are listed. Asset URLs are same-origin static files projected by the server; clients never build them. The body is identical for every authorized reader and carries a strong ETag (If-None-Match returns 304).
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: X-TutorHub-Expected-Tenant-ID
+          in: header
+          required: true
+          description: Client cache-scope assertion; authorization still comes only from the server-side active session.
+          schema:
+            type: string
+            format: uuid
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Active sticker packs
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, max-age=300
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StickerPackCatalog"
+        "304":
+          description: The catalog matches If-None-Match
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, max-age=300
+            ETag:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/ProblemResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "403":
+          $ref: "#/components/responses/ForbiddenResponse"
+        "409":
+          $ref: "#/components/responses/ConflictResponse"
+        "503":
+          $ref: "#/components/responses/ProblemResponse"
+        default:
+          $ref: "#/components/responses/ProblemResponse"
   /api/v1/conversations/{conversation_id}:
     get:
       operationId: getConversation
@@ -13165,6 +13222,7 @@ components:
         - code_snippet_library
         - classroom_files_tool
         - classroom_pdf_collaboration
+        - chat_stickers
       properties:
         membership_invitations:
           $ref: "#/components/schemas/FeatureCapability"
@@ -13199,6 +13257,8 @@ components:
         classroom_files_tool:
           $ref: "#/components/schemas/FeatureCapability"
         classroom_pdf_collaboration:
+          $ref: "#/components/schemas/FeatureCapability"
+        chat_stickers:
           $ref: "#/components/schemas/FeatureCapability"
     TenantQuotaCapabilities:
       type: object
@@ -13437,6 +13497,7 @@ components:
         - code_snippet_library
         - classroom_files_tool
         - classroom_pdf_collaboration
+        - chat_stickers
       properties:
         membership_invitations:
           type: boolean
@@ -13471,6 +13532,8 @@ components:
         classroom_files_tool:
           type: boolean
         classroom_pdf_collaboration:
+          type: boolean
+        chat_stickers:
           type: boolean
     ContentFileStatus:
       type: string
@@ -14487,15 +14550,154 @@ components:
           format: int64
           minimum: 1
     MessageEmbedInput:
-      description: MSG-COMPOSER-TOOLS-01. A server-validated card that is the whole message. A contact card may name the sender or the other member of one of the sender's direct conversations. An instant class must be an active, classless instant StudyMeeting media space owned by the sender, shared into a direct or class conversation; the conversation's current readers become explicit space members (revoked members stay revoked). Unshareable targets return 409 message_embed_unavailable.
+      description: MSG-COMPOSER-TOOLS-01. A server-validated card that is the whole message. A contact card may name the sender or the other member of one of the sender's direct conversations. An instant class must be an active, classless instant StudyMeeting media space owned by the sender, shared into a direct or class conversation; the conversation's current readers become explicit space members (revoked members stay revoked). A sticker (MSG-STICKER-01, ADR-0047) must name an active sticker of the embedded catalog and may be sent into direct, class and room conversations while chat_stickers is enabled (403 feature_disabled otherwise). Unshareable targets, including unknown, retired or removed stickers, return 409 message_embed_unavailable.
       oneOf:
         - $ref: "#/components/schemas/ContactCardEmbedInput"
         - $ref: "#/components/schemas/InstantClassEmbedInput"
+        - $ref: "#/components/schemas/StickerEmbedInput"
       discriminator:
         propertyName: kind
         mapping:
           contact_card: "#/components/schemas/ContactCardEmbedInput"
           instant_class: "#/components/schemas/InstantClassEmbedInput"
+          sticker: "#/components/schemas/StickerEmbedInput"
+    StickerEmbedInput:
+      type: object
+      additionalProperties: false
+      required: [kind, sticker_id]
+      properties:
+        kind:
+          type: string
+          const: sticker
+        sticker_id:
+          $ref: "#/components/schemas/StickerID"
+    StickerID:
+      type: string
+      minLength: 3
+      maxLength: 97
+      pattern: "^[a-z0-9_]{1,32}:[a-z0-9_-]{1,64}$"
+      description: Stable catalog identifier `<pack_id>:<name>`, for example `noto_animated:1f602`.
+    StickerLabels:
+      type: object
+      additionalProperties: false
+      required: [vi, en]
+      properties:
+        vi:
+          type: string
+          minLength: 1
+          maxLength: 64
+        en:
+          type: string
+          minLength: 1
+          maxLength: 64
+    StickerKeywords:
+      type: object
+      additionalProperties: false
+      required: [vi, en]
+      properties:
+        vi:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 48
+        en:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 48
+    StickerAsset:
+      type: object
+      additionalProperties: false
+      required: [animated_url, static_url, width, height]
+      description: Same-origin static files (immutable, versioned path). The static URL is the first frame for reduced motion, idle picker tiles and off-screen thread stickers.
+      properties:
+        animated_url:
+          type: string
+          pattern: "^/stickers/[a-z0-9_]{1,32}/v[0-9]{1,4}/[a-z0-9_-]{1,64}[.]webp$"
+        static_url:
+          type: string
+          pattern: "^/stickers/[a-z0-9_]{1,32}/v[0-9]{1,4}/[a-z0-9_-]{1,64}[.]static[.]webp$"
+        width:
+          type: integer
+          minimum: 1
+          maximum: 512
+        height:
+          type: integer
+          minimum: 1
+          maximum: 512
+    Sticker:
+      type: object
+      additionalProperties: false
+      required: [id, labels, keywords, animated, asset]
+      properties:
+        id:
+          $ref: "#/components/schemas/StickerID"
+        labels:
+          $ref: "#/components/schemas/StickerLabels"
+        keywords:
+          $ref: "#/components/schemas/StickerKeywords"
+        animated:
+          type: boolean
+        asset:
+          $ref: "#/components/schemas/StickerAsset"
+    StickerPackAttribution:
+      type: object
+      additionalProperties: false
+      required: [text, license, url, notices_path]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 512
+        license:
+          type: string
+          minLength: 1
+          maxLength: 64
+        url:
+          type: string
+          format: uri
+        notices_path:
+          type: string
+          description: Same-origin path of the third-party notices file.
+          pattern: "^/[^/]"
+    StickerPack:
+      type: object
+      additionalProperties: false
+      required: [id, version, title, attribution, stickers]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z0-9_]{1,32}$"
+        version:
+          type: string
+          pattern: "^v[0-9]{1,4}$"
+        title:
+          $ref: "#/components/schemas/StickerLabels"
+        attribution:
+          $ref: "#/components/schemas/StickerPackAttribution"
+        stickers:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/Sticker"
+    StickerPackCatalog:
+      type: object
+      additionalProperties: false
+      required: [catalog_version, packs]
+      properties:
+        catalog_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        packs:
+          type: array
+          items:
+            $ref: "#/components/schemas/StickerPack"
     ContactCardEmbedInput:
       type: object
       additionalProperties: false
@@ -14523,11 +14725,33 @@ components:
       oneOf:
         - $ref: "#/components/schemas/ContactCardEmbed"
         - $ref: "#/components/schemas/InstantClassEmbed"
+        - $ref: "#/components/schemas/StickerEmbed"
       discriminator:
         propertyName: kind
         mapping:
           contact_card: "#/components/schemas/ContactCardEmbed"
           instant_class: "#/components/schemas/InstantClassEmbed"
+          sticker: "#/components/schemas/StickerEmbed"
+    StickerEmbed:
+      type: object
+      additionalProperties: false
+      required: [kind, available]
+      description: MSG-STICKER-01 (ADR-0047). Active and retired stickers project available=true with labels and same-origin assets; a removed or unknown sticker projects only available=false.
+      properties:
+        kind:
+          type: string
+          const: sticker
+        available:
+          type: boolean
+        sticker_id:
+          $ref: "#/components/schemas/StickerID"
+        pack_id:
+          type: string
+          pattern: "^[a-z0-9_]{1,32}$"
+        labels:
+          $ref: "#/components/schemas/StickerLabels"
+        asset:
+          $ref: "#/components/schemas/StickerAsset"
     ContactCardEmbed:
       type: object
       additionalProperties: false

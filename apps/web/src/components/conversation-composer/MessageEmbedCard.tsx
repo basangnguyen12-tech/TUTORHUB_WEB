@@ -11,6 +11,7 @@ import { Link, useNavigate } from "react-router";
 import { useCreateDirectConversation } from "../../app/conversations";
 import { useI18n } from "../../app/i18n";
 import { MediaSpaceNotReadyError } from "../../app/mediaSpaces";
+import { ChatStickerView } from "../../features/media/ChatExpressionPicker";
 import {
   cardErrorKey,
   formatCountdown,
@@ -23,7 +24,8 @@ import {
 
 /**
  * MSG-COMPOSER-TOOLS-01: renders the server-resolved card of a message. The
- * card is built only from `message.embed`, never from text.
+ * card is built only from `message.embed`, never from text. MSG-STICKER-03:
+ * a sticker renders as borderless artwork from the server-projected asset.
  */
 export function MessageEmbedCard({
   actorID,
@@ -39,6 +41,9 @@ export function MessageEmbedCard({
   messageID: string;
   tenantID: string;
 }) {
+  if (embed.kind === "sticker") {
+    return <ChatStickerView embed={embed} size={140} />;
+  }
   return embed.kind === "contact_card" ? (
     <ContactCardView
       actorID={actorID}

@@ -1713,3 +1713,215 @@ describe("MSG-AVATAR-SEARCH-CLASSIN-01 ConversationAvatar", () => {
     );
   });
 });
+
+describe("ConversationMessages stickers and blue mentions (MSG-STICKER-03, MSG-MENTION-BLUE-01)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  const tearsOfJoy = {
+    id: "noto_animated:1f602",
+    labels: { vi: "Cười ra nước mắt", en: "Tears of joy" },
+    keywords: { vi: ["buồn cười"], en: ["lol"] },
+    animated: true,
+    asset: {
+      animated_url: "/stickers/noto_animated/v1/1f602.webp",
+      static_url: "/stickers/noto_animated/v1/1f602.static.webp",
+      width: 160,
+      height: 160,
+    },
+  };
+  const stickerCatalog = {
+    catalog_version: "2026-11-28.1",
+    packs: [
+      {
+        id: "noto_animated",
+        version: "v1",
+        title: { vi: "Biểu cảm Noto", en: "Noto Animated" },
+        attribution: {
+          text: "Noto Emoji Animation by Google, licensed under CC BY 4.0.",
+          license: "CC BY 4.0",
+          url: "https://creativecommons.org/licenses/by/4.0/",
+          notices_path: "/THIRD_PARTY_NOTICES.txt",
+        },
+        stickers: [tearsOfJoy],
+      },
+    ],
+  };
+  const availableEmbed = {
+    kind: "sticker",
+    available: true,
+    sticker_id: tearsOfJoy.id,
+    pack_id: "noto_animated",
+    labels: tearsOfJoy.labels,
+    asset: tearsOfJoy.asset,
+  };
+
+  function stickerMessage(sequence: number, embed: unknown, own = false) {
+    return { ...message(sequence, "", { own }), embed } as Message;
+  }
+
+  function stickerFetch(
+    items: readonly Message[],
+    options: { requests?: Request[]; sendStatus?: number[] } = {},
+  ) {
+    let sends = 0;
+    return vi.fn().mockImplementation(async (request: Request) => {
+      const url = new URL(request.url);
+      options.requests?.push(request.clone());
+      if (url.pathname.endsWith("/api/v1/auth/csrf")) {
+        return jsonResponse({ csrf_token: "sticker-csrf" });
+      }
+      if (url.pathname.endsWith("/capabilities")) {
+        return jsonResponse({
+          can_manage_overrides: false,
+          features: { chat_stickers: { enabled: true } },
+          operations: {},
+          quotas: {},
+          tenant_id: tenantID,
+        });
+      }
+      if (url.pathname.endsWith("/api/v1/conversations/sticker-packs")) {
+        return jsonResponse(stickerCatalog);
+      }
+      if (url.pathname.endsWith("/messages") && request.method === "POST") {
+        const status = options.sendStatus?.[sends] ?? 201;
+        sends += 1;
+        if (status >= 400) {
+          return jsonResponse(
+            {
+              code: "conversation_read_only",
+              status,
+              title: "Conversation is read only",
+            },
+            status,
+          );
+        }
+        return jsonResponse(stickerMessage(9, availableEmbed, true), 201);
+      }
+      return jsonResponse(page(items));
+    });
+  }
+
+  it("renders stickers without a bubble and removed stickers as a quiet card", async () => {
+    renderMessages(
+      stickerFetch([
+        stickerMessage(1, availableEmbed, true),
+        stickerMessage(2, { kind: "sticker", available: false }),
+      ]),
+      { conversation },
+    );
+    const image = await screen.findByRole("img", { name: "Tears of joy" });
+    expect(image).toHaveAttribute("width", "140");
+    expect(image).toHaveAttribute("height", "140");
+    expect(image.closest(".conversation-message__bubble")).toHaveClass(
+      "conversation-message__bubble--sticker",
+    );
+    expect(
+      screen.getByText("Sticker is no longer available"),
+    ).toBeInTheDocument();
+    // Sticker messages are immutable: no edit action.
+    const own = image.closest("li");
+    expect(
+      own && within(own).queryByRole("button", { name: /edit/i }),
+    ).toBeNull();
+  });
+
+  it("sends a picked sticker as its own message, keeps the draft and retries with the same key", async () => {
+    const requests: Request[] = [];
+    renderMessages(stickerFetch([], { requests, sendStatus: [409, 201] }), {
+      conversation,
+    });
+    const composer = await screen.findByRole("textbox", {
+      name: "New message",
+    });
+    fireEvent.change(composer, { target: { value: "Bài 3 đáp án là" } });
+    fireEvent.click(screen.getByRole("button", { name: "Emoji" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Sticker" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Tears of joy" }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn't send the Tears of joy sticker.");
+    expect(composer).toHaveValue("Bài 3 đáp án là");
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(
+        requests.filter(
+          (request) =>
+            request.method === "POST" && request.url.endsWith("/messages"),
+        ),
+      ).toHaveLength(2),
+    );
+    const bodies = await Promise.all(
+      requests
+        .filter(
+          (request) =>
+            request.method === "POST" && request.url.endsWith("/messages"),
+        )
+        .map((request) => request.json()),
+    );
+    expect(bodies[0]).toEqual({
+      client_message_id: expect.any(String),
+      content: "",
+      embed: { kind: "sticker", sticker_id: "noto_animated:1f602" },
+    });
+    expect(bodies[1]).toEqual(bodies[0]);
+    await waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+    );
+    expect(composer).toHaveValue("Bài 3 đáp án là");
+  });
+
+  it("paints known @names blue in sent bubbles but not inside emails", async () => {
+    renderMessages(
+      stickerFetch([
+        message(1, "@TutorHub Teacher làm xong rồi, mail ta@example.com nhé"),
+      ]),
+      { conversation },
+    );
+    await screen.findByText(/làm xong rồi/);
+    const mentions = document.querySelectorAll(
+      ".conversation-message .conversation-mention",
+    );
+    expect([...mentions].map((node) => node.textContent)).toEqual([
+      "@TutorHub Teacher",
+    ]);
+  });
+
+  it("paints @names blue inside the composer through an aria-hidden mirror", async () => {
+    renderMessages(stickerFetch([]), { conversation });
+    const composer = await screen.findByRole("textbox", {
+      name: "New message",
+    });
+    expect(
+      screen.queryByTestId("conversation-composer-mirror"),
+    ).not.toBeInTheDocument();
+    fireEvent.change(composer, {
+      target: { value: "@TutorHub Student làm xong đốt hết bao nhiêu?" },
+    });
+    const mirror = screen.getByTestId("conversation-composer-mirror");
+    expect(mirror).toHaveAttribute("aria-hidden", "true");
+    expect(mirror.querySelector(".conversation-mention")).toHaveTextContent(
+      "@TutorHub Student",
+    );
+    expect(mirror).toHaveTextContent(
+      "@TutorHub Student làm xong đốt hết bao nhiêu?",
+    );
+    expect(composer).toHaveAttribute("spellcheck", "false");
+    expect(composer).toHaveValue(
+      "@TutorHub Student làm xong đốt hết bao nhiêu?",
+    );
+    expect(composer.parentElement).toHaveAttribute("data-mentions", "true");
+
+    fireEvent.change(composer, { target: { value: "không nhắc ai" } });
+    expect(
+      screen.queryByTestId("conversation-composer-mirror"),
+    ).not.toBeInTheDocument();
+    expect(composer).not.toHaveAttribute("spellcheck");
+  });
+});
