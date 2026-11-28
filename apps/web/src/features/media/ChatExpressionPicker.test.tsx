@@ -215,10 +215,14 @@ describe("ChatExpressionPicker", () => {
     expect(
       await within(panel).findByRole("button", { name: "Vỗ tay" }),
     ).toBeInTheDocument();
-    expect(within(panel).getByText(/CC BY 4\.0/)).toBeInTheDocument();
-    const credits = within(panel).getByRole("link", { name: /Ghi nguồn bộ/ });
+    // The CC BY 4.0 credit is a compact ⓘ link, not a text line.
+    const credits = within(panel).getByRole("link", {
+      name: "Ghi nguồn bộ Biểu cảm Noto theo giấy phép CC BY 4.0 (mở trong thẻ mới)",
+    });
     expect(credits).toHaveAttribute("href", "/THIRD_PARTY_NOTICES.txt");
     expect(credits).toHaveAttribute("target", "_blank");
+    expect(credits).toHaveAttribute("title", "Biểu cảm Noto · CC BY 4.0");
+    expect(within(panel).queryByText(/CC BY 4\.0/)).toBeNull();
 
     const search = within(panel).getByRole("searchbox", {
       name: "Tìm sticker",

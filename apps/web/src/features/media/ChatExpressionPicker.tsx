@@ -7,7 +7,7 @@ import {
   type StickerPack,
   type StickerPackCatalog,
 } from "@tutorhub/api-client";
-import { Clock, ImageOff, Search, Smile, X } from "lucide-react";
+import { Clock, ImageOff, Info, Search, Smile, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -22,6 +22,8 @@ import {
 } from "react";
 import { useI18n } from "../../app/i18n";
 import { useTenantCapabilities } from "../../app/tenantCapabilities";
+// MSG-EMOJI-NOTO-01: self-hosted Noto Color Emoji for picker and chat text.
+import "./notoEmojiFont.css";
 import {
   ClassroomEmojiPanel,
   type ClassroomEmojiPanelProps,
@@ -831,25 +833,26 @@ function StickerPanel({
               );
             })}
           </div>
-          {packs.map((pack) => (
-            <p className="chat-sticker__credits" key={pack.id}>
-              <span>
-                {chatStickerLabel(pack.title, language)} ·{" "}
-                {pack.attribution.license}
-              </span>
+          {/* CC BY 4.0 credit (ADR-0047 §1), kept as a compact ⓘ link. */}
+          {packs.map((pack) => {
+            const credit = t("media.chat.sticker.creditsLabel", {
+              license: pack.attribution.license,
+              title: chatStickerLabel(pack.title, language),
+            });
+            return (
               <a
-                aria-label={t("media.chat.sticker.creditsLabel", {
-                  license: pack.attribution.license,
-                  title: chatStickerLabel(pack.title, language),
-                })}
+                aria-label={credit}
+                className="chat-sticker__credits"
                 href={pack.attribution.notices_path}
+                key={pack.id}
                 rel="noopener"
                 target="_blank"
+                title={`${chatStickerLabel(pack.title, language)} · ${pack.attribution.license}`}
               >
-                {t("media.chat.sticker.credits")}
+                <Info aria-hidden="true" />
               </a>
-            </p>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

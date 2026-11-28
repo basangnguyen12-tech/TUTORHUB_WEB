@@ -3364,7 +3364,6 @@ const messages = {
       "Cuộc trò chuyện đang chỉ đọc nên chưa gửi được sticker.",
     "media.chat.sticker.sending": "Đang gửi sticker…",
     "media.chat.sticker.packs": "Bộ sticker",
-    "media.chat.sticker.credits": "Ghi nguồn",
     "media.chat.sticker.creditsLabel":
       "Ghi nguồn bộ {title} theo giấy phép {license} (mở trong thẻ mới)",
     "media.chat.emoji.open": "Biểu tượng cảm xúc",
@@ -7797,7 +7796,6 @@ const messages = {
       "This conversation is read-only, so stickers can't be sent.",
     "media.chat.sticker.sending": "Sending sticker…",
     "media.chat.sticker.packs": "Sticker packs",
-    "media.chat.sticker.credits": "Credits",
     "media.chat.sticker.creditsLabel":
       "Credits for the {title} pack under {license} (opens in a new tab)",
     "media.chat.emoji.open": "Emoji",

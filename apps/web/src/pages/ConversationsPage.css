@@ -2154,7 +2154,8 @@
   color: inherit;
   cursor: pointer;
   font-family:
-    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    "TutorHub Noto Emoji", "Apple Color Emoji", "Segoe UI Emoji",
+    "Noto Color Emoji", sans-serif;
   font-size: 25px;
   line-height: 1;
   place-items: center;
@@ -3360,15 +3361,18 @@
 }
 
 .conversations-page .conversation-composer .chat-sticker__footer {
-  display: grid;
+  display: flex;
   flex: 0 0 auto;
-  padding: 4px 8px 6px;
+  align-items: center;
+  padding: 4px 6px 4px 8px;
   border-top: 1px solid var(--sticker-line);
-  gap: 2px;
+  gap: 4px;
 }
 
 .conversations-page .conversation-composer .chat-sticker__packs {
   display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
   gap: 4px;
   overflow-x: auto;
   scrollbar-width: none;
@@ -3406,30 +3410,45 @@
   outline-offset: -2px;
 }
 
+/* CC BY 4.0 credit as a compact info link at the end of the pack bar. */
 .conversations-page .conversation-composer .chat-sticker__credits {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 8px;
   color: var(--sticker-muted);
-  font-size: 11px;
-  gap: 8px;
-  line-height: 1.4;
+  place-items: center;
 }
 
-.conversations-page .conversation-composer .chat-sticker__credits a {
-  color: var(--msg-active-ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.conversations-page .conversation-composer .chat-sticker__credits svg {
+  width: 16px;
+  height: 16px;
+}
+
+.conversations-page .conversation-composer .chat-sticker__credits:hover {
+  background: var(--sticker-hover);
+  color: var(--sticker-ink);
 }
 
 .conversations-page
   .conversation-composer
-  .chat-sticker__credits
-  a:focus-visible {
-  border-radius: 4px;
+  .chat-sticker__credits:focus-visible {
   outline: 2px solid var(--sticker-focus);
-  outline-offset: 2px;
+  outline-offset: -2px;
+}
+
+/* MSG-EMOJI-NOTO-01: Noto Color Emoji first in chat text; its unicode-range
+   limits it to emoji, so letters and digits keep the UI font. The mention
+   mirror must use the exact same stack as the textarea. */
+.conversations-page
+  :is(
+    .conversation-message__content,
+    .conversation-message__quote,
+    .conversation-composer textarea,
+    .conversation-composer__mirror
+  ) {
+  font-family: "TutorHub Noto Emoji", var(--font-family-sans);
 }
 
 @keyframes chat-sticker-pulse {

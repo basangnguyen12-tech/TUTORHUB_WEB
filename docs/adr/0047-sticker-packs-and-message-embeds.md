@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-11-28
-- Scope: `MSG-STICKER-01..03` curated sticker catalog (`go:embed`), `000060_message_embed_stickers`, `GET /api/v1/conversations/sticker-packs`, same-origin static WebP delivery, `CC BY 4.0` attribution, and `ChatExpressionPicker` (`Sticker | Emoji`) across Messages and Classroom Room Chat
+- Scope: `MSG-STICKER-01..03` & `MSG-EMOJI-NOTO-01` curated sticker catalog (`go:embed`), `000060_message_embed_stickers`, `GET /api/v1/conversations/sticker-packs`, same-origin static WebP delivery, `CC BY 4.0` attribution, self-hosted `Noto Color Emoji` (`COLRv1`, `SIL OFL 1.1`) WOFF2 subsets, and `ChatExpressionPicker` (`Sticker | Emoji`) across Messages and Classroom Room Chat
 - Extends: ADR-0042 (`ROOM-CHAT-EMOJI-02` / `MSG-COMPOSER-TOOLS-01`), ADR-0046 (`tutorhub.message_embeds`)
 
 ## Context
@@ -31,7 +31,22 @@ Because TutorHub serves minor students and enforces strict CSP (`img-src 'self'`
   - `/stickers/*` serves `Cache-Control: public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`. Because asset paths include `<pack_version>`, immutable caching is safe across catalog updates.
 - **Mandatory `CC BY 4.0` attribution**:
   - Repository root `THIRD_PARTY_NOTICES.md` and public static file `apps/web/public/THIRD_PARTY_NOTICES.txt` (served at `/THIRD_PARTY_NOTICES.txt`) credit **Google Noto Emoji Animation**, link to `https://creativecommons.org/licenses/by/4.0/`, and state the modifications made (curated subset, resized to `160×160` animated WebP, and extracted static frame `.static.webp`).
-  - The Sticker picker tab renders a compact attribution line at the bottom of the Noto pack with a link to `/THIRD_PARTY_NOTICES.txt`.
+  - The Sticker picker tab renders a compact `ⓘ` (`Info`) attribution link button at the right end of the bottom pack bar (`href="/THIRD_PARTY_NOTICES.txt"`, `title="{Pack Title} · CC BY 4.0"`, and localized `aria-label` in `vi`/`en`).
+
+### 1b. Self-hosted `Noto Color Emoji` (`COLRv1`, `SIL OFL 1.1`) for crisp 2D emoji and country flags (`MSG-EMOJI-NOTO-01`)
+
+- On Windows, the OS default `Segoe UI Emoji` font uses a glossy 3D style with pale top highlights and bottom drop shadows that appear blurred or clipped at ~25 px, and Microsoft Windows omits country flag glyphs (`U+1F1E6–1F1FF`), rendering regional indicator pairs as two-letter codes (`VN`, `US`, etc.).
+- To guarantee crisp, vibrant 2D emoji and full country flag support across Windows, Linux, and macOS without external CDN calls (`font-src 'self'`):
+  - **Deterministic font build script (`apps/web/scripts/generate-emoji-font.mjs`)**:
+    - Pins Google's `Noto-COLRv1.ttf` from `googlefonts/noto-emoji` (`v2026-09-24-unicode18_0`, commit `e20cbc2`) by SHA-256 and subsets it via `fontTools` into two WOFF2 files under `apps/web/public/fonts/noto-emoji/v1/`:
+      - `noto-emoji.woff2` (`~1.31 MB`): all non-flag emoji (including skin-tone modifiers and ZWJ sequences).
+      - `noto-emoji-flags.woff2` (`~0.71 MB`): regional-indicator country flags (`U+1F1E6–1F1FF`), separated so the flag subset only downloads when a flag emoji is rendered.
+    - Copies the full `SIL Open Font License 1.1` text to `apps/web/public/fonts/noto-emoji/v1/OFL.txt` (referenced in `THIRD_PARTY_NOTICES.md` and `apps/web/public/THIRD_PARTY_NOTICES.txt`).
+    - Generates `apps/web/src/features/media/notoEmojiFont.css` declaring `@font-face` rules for `"TutorHub Noto Emoji"` with `format("woff2") tech(color-COLRv1)`, `font-display: swap`, and explicit `unicode-range` excluding ASCII, `©`, `®`, `™`, and `U+20E3` so text and digits continue using the UI sans-serif font.
+  - **Caching headers (`apps/web/public/_headers`)**:
+    - `/fonts/noto-emoji/*` serves `Cache-Control: public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`.
+  - **Synchronized font stack**:
+    - Applied to `.classroom-chat-emoji__cell`, message bubbles/quotes, room chat bubbles/inputs, and both `.conversation-composer textarea` and `.conversation-composer__mirror` so the blue `@mention` backdrop mirror stays 1:1 aligned with the `<textarea>` caret.
 
 ### 2. Platform-owned `go:embed` catalog and feature control
 
@@ -76,7 +91,7 @@ Because TutorHub serves minor students and enforces strict CSP (`img-src 'self'`
 
 - **`ChatExpressionPicker` (`Sticker | Emoji`)**:
   - Replaces the standalone emoji popover in both `/app/messages` (`ConversationMessages.tsx`) and live classroom room chat (`ClassroomChatPanel.tsx`) when `chat_stickers` is enabled; falls back to the Emoji-only picker when `chat_stickers` is disabled.
-  - Implements WAI-ARIA `role="tablist"` (`Sticker` | `Emoji`) with roving tabindex, accent-insensitive `vi`/`en` search across `labels` and `keywords`, a `Recent` row (`tutorhub:chat-sticker-recent:v1:<tenantId>:<userId>`, capped at 24 sticker IDs, wiped on sign-out in `clearPrivateSessionCache`), a 4-column keyboard-navigable sticker grid, a bottom pack strip, and the `CC BY 4.0` attribution footer.
+  - Implements WAI-ARIA `role="tablist"` (`Sticker` | `Emoji`) with roving tabindex, accent-insensitive `vi`/`en` search across `labels` and `keywords`, a `Recent` row (`tutorhub:chat-sticker-recent:v1:<tenantId>:<userId>`, capped at 24 sticker IDs, wiped on sign-out in `clearPrivateSessionCache`), a 4-column keyboard-navigable sticker grid, and a bottom pack strip ending with the compact `ⓘ` `CC BY 4.0` attribution link button.
   - Clicking or pressing `Enter`/`Space` on a sticker sends it immediately without discarding any typed text draft in the composer, and returns focus cleanly.
 - **CPU & reduced-motion guardrails**:
   - **In the picker grid**: Sticker tiles render `static_url` by default and swap to `animated_url` only while hovered or keyboard-focused (and never when `prefers-reduced-motion: reduce` matches).

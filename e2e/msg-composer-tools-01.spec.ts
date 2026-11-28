@@ -816,9 +816,32 @@ for (const variant of variants) {
     await stickerTab.press("ArrowRight");
     const emojiTab = page.getByRole("tab", { name: "Emoji" });
     await expect(emojiTab).toBeFocused();
-    await expect(page.getByRole("tabpanel", { name: "Emoji" })).toBeVisible();
+    const emojiPanel = page.getByRole("tabpanel", { name: "Emoji" });
+    await expect(emojiPanel).toBeVisible();
+    // MSG-EMOJI-NOTO-01: emoji draw with the self-hosted Noto Color Emoji
+    // font (not the OS font), including country flags on Windows.
+    const notoLoaded = (sample: string) =>
+      page.evaluate(
+        (text) => document.fonts.check('25px "TutorHub Noto Emoji"', text),
+        sample,
+      );
+    await expect.poll(() => notoLoaded("😀")).toBe(true);
+    await expect(
+      emojiPanel.locator(".classroom-chat-emoji__cell").first(),
+    ).toHaveCSS("font-family", /^"TutorHub Noto Emoji"/);
     await expectNoAxeViolations(page, `emoji tab ${variant.name}`);
     await evidence(page, `picker-emoji-tab-${variant.name}`, popover);
+    await emojiPanel
+      .getByRole("tab", {
+        name: variant.language === "vi" ? "Cờ" : "Flags",
+      })
+      .click();
+    const vietnam = emojiPanel.getByRole("button", {
+      name: variant.language === "vi" ? "cờ: Việt Nam" : "flag: Vietnam",
+    });
+    await expect(vietnam).toBeVisible();
+    await expect.poll(() => notoLoaded("🇻🇳")).toBe(true);
+    await evidence(page, `picker-emoji-flags-${variant.name}`, popover);
     await page.keyboard.press("Escape");
     await expect(popover).toBeHidden();
     await expect(page.getByRole("button", { name: text.emoji })).toBeFocused();

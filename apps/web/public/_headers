@@ -17,3 +17,7 @@
 /stickers/*
   Cache-Control: public, max-age=31536000, immutable
   X-Content-Type-Options: nosniff
+
+/fonts/noto-emoji/*
+  Cache-Control: public, max-age=31536000, immutable
+  X-Content-Type-Options: nosniff

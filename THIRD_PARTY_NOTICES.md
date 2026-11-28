@@ -38,3 +38,19 @@ TutorHub modified the material on 2026-11-28:
 The material is provided as-is under CC BY 4.0. To the extent possible, the
 licensor offers it without warranties of any kind (see Section 5 of the
 license). Google does not endorse TutorHub or its use of the material.
+
+## Noto Color Emoji (emoji font)
+
+- **Material:** the Noto Color Emoji font (vector COLRv1 build), used to draw
+  emoji in the chat emoji picker, message bubbles and composers.
+- **Copyright:** Copyright 2013 Google LLC — <https://github.com/googlefonts/noto-emoji>
+- **Source:** release `v2026-09-24-unicode18_0` (commit `e20cbc2`),
+  `2D/fonts/Noto-COLRv1.ttf`, pinned by SHA-256 in
+  `apps/web/scripts/generate-emoji-font.mjs`.
+- **License:** SIL Open Font License, Version 1.1 —
+  <https://openfontlicense.org>; the full text ships next to the font at
+  `apps/web/public/fonts/noto-emoji/v1/OFL.txt` (served at
+  `/fonts/noto-emoji/v1/OFL.txt`).
+- **Modifications:** subset with fontTools into two WOFF2 files (all emoji
+  except flags; regional-indicator flags) with the original name and license
+  metadata kept. The font is not sold on its own.
