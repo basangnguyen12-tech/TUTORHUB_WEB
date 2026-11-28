@@ -87,6 +87,7 @@ import {
   ConversationMessages,
 } from "../components/ConversationMessages";
 import { parseQuotedMessage } from "../components/ConversationQuote";
+import { chatMarkupToPlainText } from "../features/chat-format/chatMarkup";
 import { cardPreviewText } from "../components/conversation-composer/composerCards";
 import { TenantOperationNotice } from "../components/TenantOperationNotice";
 import "./ConversationsPage.css";
@@ -400,7 +401,9 @@ export function ConversationsPage() {
     const text =
       newest.state === "deleted"
         ? t("conversations.messageDeleted")
-        : parseQuotedMessage(newest.content).body.replace(/\s+/g, " ").trim() ||
+        : chatMarkupToPlainText(parseQuotedMessage(newest.content).body)
+            .replace(/\s+/g, " ")
+            .trim() ||
           // MSG-COMPOSER-TOOLS-01: cards read as cards, not attachments.
           cardPreviewText(newest.embed, t, language) ||
           t("conversations.attachmentPreview");

@@ -263,6 +263,36 @@ describe("ClassroomChatPanel", () => {
     await waitFor(() => expect(composer()).toHaveValue(""));
   });
 
+  it("formats with the Zoom-style toolbar, sends markup with Enter and renders it", async () => {
+    const { props } = renderPanel({
+      messages: [message("Hạn nộp **thứ Sáu**\n- [câu 1]{.green}")],
+    });
+    expect(screen.getByText("thứ Sáu").tagName).toBe("STRONG");
+    expect(screen.getByText("câu 1")).toHaveClass("chat-fmt-color--green");
+
+    const toggle = screen.getByRole("button", { name: "Định dạng văn bản" });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("toolbar", { name: "Thanh định dạng văn bản" }),
+    ).toBeInTheDocument();
+    const editor = composer();
+    expect(editor).toHaveAttribute("contenteditable", "true");
+    await waitFor(() => expect(editor).toHaveFocus());
+
+    // Test fixture only: what the browser's Italic + bullet commands produce.
+    editor.innerHTML = "<ul><li><i>Nhớ</i> mang máy tính</li></ul>";
+    fireEvent.input(editor);
+    fireEvent.keyDown(editor, { key: "Enter", isComposing: true });
+    expect(props.onSend).not.toHaveBeenCalled();
+    fireEvent.keyDown(editor, { key: "Enter" });
+    await waitFor(() => expect(props.onSend).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(props.onSend).mock.calls[0]?.[0]?.content).toBe(
+      "- *Nhớ* mang máy tính",
+    );
+    await waitFor(() => expect(composer()).toBeEmptyDOMElement());
+  });
+
   it("retries a failed send with the same idempotency key", async () => {
     const onSend = vi
       .fn()

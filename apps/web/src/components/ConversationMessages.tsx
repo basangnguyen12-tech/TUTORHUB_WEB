@@ -31,6 +31,7 @@ import {
   Lock,
   MessageCircle,
   Pencil,
+  PenLine,
   Presentation,
   RefreshCw,
   Reply,
@@ -78,6 +79,15 @@ import {
 import { useI18n } from "../app/i18n";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
+import {
+  ChatRichComposer,
+  type ChatRichEditorHandle,
+} from "../features/chat-format/ChatRichComposer";
+import { ChatFormattedText } from "../features/chat-format/ChatFormattedText";
+import {
+  chatMarkupHasFormatting,
+  chatMarkupToPlainText,
+} from "../features/chat-format/chatMarkup";
 import { ChatExpressionPicker } from "../features/media/ChatExpressionPicker";
 import {
   CHAT_FILE_ACCEPT,
@@ -87,7 +97,6 @@ import {
   checkChatFile,
   createClientID,
   formatAttachmentSize,
-  linkifyChatText,
   prepareChatImage,
   splitChatMentions,
   type ChatAttachmentKind,
@@ -298,6 +307,13 @@ export function ConversationMessages({
   const focusComposerAfterSuccess = useRef(false);
   const composer = useRef<HTMLTextAreaElement>(null);
   const composerCard = useRef<HTMLFormElement>(null);
+  // MSG-RICH-COMPOSE-01: "Format text" swaps the textarea for the rich
+  // editor. The editor stays while its draft carries formatting, even with
+  // the toolbar hidden (Zoom), and the draft is always chat markup.
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [richMode, setRichMode] = useState(false);
+  const richEditor = useRef<ChatRichEditorHandle>(null);
+  const richField = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const oldestMessage = useRef<HTMLLIElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -321,12 +337,20 @@ export function ConversationMessages({
     [actorID, tenantID],
   );
 
+  const focusComposer = useCallback(() => {
+    if (richMode) {
+      richEditor.current?.focus();
+    } else {
+      composer.current?.focus();
+    }
+  }, [richMode]);
+
   useEffect(() => {
     if (!sendMessage.isPending && focusComposerAfterSuccess.current) {
       focusComposerAfterSuccess.current = false;
-      composer.current?.focus();
+      focusComposer();
     }
-  }, [sendMessage.isPending]);
+  }, [focusComposer, sendMessage.isPending]);
 
   const items = useMemo(() => {
     const byID = new Map<string, Message>();
@@ -402,7 +426,7 @@ export function ConversationMessages({
       const haystack = foldSearchText(
         [
           row.message.author.display_name,
-          row.message.content,
+          chatMarkupToPlainText(row.message.content),
           ...(row.message.attachments ?? []).map(
             (attachment) => attachment.display_name,
           ),
@@ -496,6 +520,10 @@ export function ConversationMessages({
   };
 
   const insertIntoDraft = (text: string, focus: boolean) => {
+    if (richMode) {
+      richEditor.current?.insertText(text, { focus });
+      return;
+    }
     const element = composer.current;
     const start = Math.min(
       selection.current?.start ?? draft.length,
@@ -808,6 +836,8 @@ export function ConversationMessages({
         onSuccess: () => {
           pendingMessage.current = null;
           setDraft("");
+          richEditor.current?.clear();
+          if (!formatOpen) setRichMode(false);
           selection.current = null;
           setReplyTarget(null);
           setStaged([]);
@@ -831,6 +861,44 @@ export function ConversationMessages({
     }
   };
 
+  const updateDraft = (value: string) => {
+    setDraft(value);
+    setValidationError(null);
+    setSentFeedback(false);
+    if (sendMessage.isError) {
+      sendMessage.reset();
+    }
+  };
+
+  const toggleFormatting = () => {
+    if (!richMode) {
+      setRichMode(true);
+      setFormatOpen(true);
+      window.requestAnimationFrame(() =>
+        richEditor.current?.focus({ atEnd: true }),
+      );
+      return;
+    }
+    if (!formatOpen) {
+      setFormatOpen(true);
+      window.requestAnimationFrame(() => richEditor.current?.focus());
+      return;
+    }
+    setFormatOpen(false);
+    if (chatMarkupHasFormatting(draft)) {
+      window.requestAnimationFrame(() => richEditor.current?.focus());
+      return;
+    }
+    // Nothing formatted: back to the plain textarea, caret at the end.
+    setRichMode(false);
+    selection.current = { end: draft.length, start: draft.length };
+    window.requestAnimationFrame(() => {
+      const element = composer.current;
+      element?.focus();
+      element?.setSelectionRange(draft.length, draft.length);
+    });
+  };
+
   const loadOlderMessages = async () => {
     const result = await messages.fetchNextPage();
     if (!result.isError && !result.hasNextPage) {
@@ -844,7 +912,7 @@ export function ConversationMessages({
 
   const startReply = (message: ActiveMessage) => {
     const excerpt =
-      quoteExcerpt(message.content) ||
+      quoteExcerpt(chatMarkupToPlainText(message.content)) ||
       message.attachments?.map((item) => item.display_name).join(", ") ||
       cardPreviewText(message.embed, t, language) ||
       t("conversations.attachmentPreview");
@@ -854,7 +922,7 @@ export function ConversationMessages({
       messageID: message.id,
     });
     setEditingID(null);
-    focusLater(composer.current);
+    focusLater(richMode ? richField.current : composer.current);
   };
 
   const copyMessage = async (text: string) => {
@@ -953,7 +1021,10 @@ export function ConversationMessages({
           if (replyTarget?.messageID === message.id) {
             setReplyTarget(null);
           }
-          focusLater(composer.current ?? scroller.current);
+          focusLater(
+            (richMode ? richField.current : composer.current) ??
+              scroller.current,
+          );
         },
       },
     );
@@ -1305,12 +1376,12 @@ export function ConversationMessages({
                             {(body ||
                               (!active.attachments?.length &&
                                 !active.embed)) && (
-                              <p className="conversation-message__content">
-                                <LinkifiedText
-                                  mentions={mentionNames}
-                                  text={body}
-                                />
-                              </p>
+                              <ChatFormattedText
+                                className="conversation-message__content"
+                                mentionClassName="conversation-mention"
+                                mentions={mentionNames}
+                                text={body}
+                              />
                             )}
                             {active.attachments &&
                               active.attachments.length > 0 && (
@@ -1385,7 +1456,9 @@ export function ConversationMessages({
                           {canCopy && (
                             <MessageActionButton
                               label={t("conversations.copy")}
-                              onClick={() => void copyMessage(body)}
+                              onClick={() =>
+                                void copyMessage(chatMarkupToPlainText(body))
+                              }
                             >
                               <Copy />
                             </MessageActionButton>
@@ -1467,7 +1540,7 @@ export function ConversationMessages({
                 className="conversation-composer__chip-close"
                 onClick={() => {
                   setReplyTarget(null);
-                  composer.current?.focus();
+                  focusComposer();
                 }}
                 type="button"
               >
@@ -1535,7 +1608,7 @@ export function ConversationMessages({
                           (entry) => entry.localID !== item.localID,
                         ),
                       );
-                      composer.current?.focus();
+                      focusComposer();
                     }}
                     type="button"
                   >
@@ -1545,65 +1618,87 @@ export function ConversationMessages({
               ))}
             </div>
           )}
-          <label
-            className="visually-hidden"
-            htmlFor={`conversation-composer-${conversationID}`}
-          >
-            {t("conversations.composerLabel")}
-          </label>
-          {/* MSG-MENTION-BLUE-01: while the draft names a member, a mirror
+          {richMode ? (
+            <ChatRichComposer
+              ariaDescribedBy={`conversation-composer-hint-${conversationID}`}
+              ariaLabel={t("conversations.composerLabel")}
+              disabled={sendMessage.isPending}
+              editorRef={richField}
+              handleRef={richEditor}
+              id={`conversation-composer-${conversationID}`}
+              initialMarkup={draft}
+              menuClassName="conversation-mention-menu"
+              onChange={updateDraft}
+              onEscape={() => {
+                if (!replyTarget) return false;
+                setReplyTarget(null);
+                return true;
+              }}
+              onPasteFiles={canUpload ? addFiles : undefined}
+              onSubmit={() => composerCard.current?.requestSubmit()}
+              placeholder={t("conversations.composerPlaceholder")}
+              submitOnEnter={false}
+              toolbarOpen={formatOpen}
+              variant="conversation"
+            />
+          ) : (
+            <>
+              <label
+                className="visually-hidden"
+                htmlFor={`conversation-composer-${conversationID}`}
+              >
+                {t("conversations.composerLabel")}
+              </label>
+              {/* MSG-MENTION-BLUE-01: while the draft names a member, a mirror
               behind the transparent textarea paints "@Name" in blue. The
               textarea stays the only editable, focusable, readable element. */}
-          <div
-            className="conversation-composer__field"
-            data-mentions={draftHasMention ? "true" : undefined}
-          >
-            {draftHasMention && (
               <div
-                aria-hidden="true"
-                className="conversation-composer__mirror"
-                data-testid="conversation-composer-mirror"
-                ref={mentionMirror}
+                className="conversation-composer__field"
+                data-mentions={draftHasMention ? "true" : undefined}
               >
-                {composerPieces.map((piece, index) =>
-                  piece.kind === "mention" ? (
-                    <span className="conversation-mention" key={index}>
-                      {piece.text}
-                    </span>
-                  ) : (
-                    <span key={index}>{piece.text}</span>
-                  ),
+                {draftHasMention && (
+                  <div
+                    aria-hidden="true"
+                    className="conversation-composer__mirror"
+                    data-testid="conversation-composer-mirror"
+                    ref={mentionMirror}
+                  >
+                    {composerPieces.map((piece, index) =>
+                      piece.kind === "mention" ? (
+                        <span className="conversation-mention" key={index}>
+                          {piece.text}
+                        </span>
+                      ) : (
+                        <span key={index}>{piece.text}</span>
+                      ),
+                    )}
+                    {draft.endsWith("\n") ? "​" : null}
+                  </div>
                 )}
-                {draft.endsWith("\n") ? "​" : null}
+                <textarea
+                  aria-describedby={`conversation-composer-hint-${conversationID}`}
+                  disabled={sendMessage.isPending}
+                  id={`conversation-composer-${conversationID}`}
+                  onChange={(event) => {
+                    updateDraft(event.target.value);
+                    selection.current = {
+                      end: event.target.selectionEnd,
+                      start: event.target.selectionStart,
+                    };
+                  }}
+                  onKeyDown={handleComposerKeyDown}
+                  onPaste={onComposerPaste}
+                  onScroll={syncMentionMirror}
+                  onSelect={rememberSelection}
+                  placeholder={t("conversations.composerPlaceholder")}
+                  ref={composer}
+                  rows={1}
+                  spellCheck={draftHasMention ? false : undefined}
+                  value={draft}
+                />
               </div>
-            )}
-            <textarea
-              aria-describedby={`conversation-composer-hint-${conversationID}`}
-              disabled={sendMessage.isPending}
-              id={`conversation-composer-${conversationID}`}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                selection.current = {
-                  end: event.target.selectionEnd,
-                  start: event.target.selectionStart,
-                };
-                setValidationError(null);
-                setSentFeedback(false);
-                if (sendMessage.isError) {
-                  sendMessage.reset();
-                }
-              }}
-              onKeyDown={handleComposerKeyDown}
-              onPaste={onComposerPaste}
-              onScroll={syncMentionMirror}
-              onSelect={rememberSelection}
-              placeholder={t("conversations.composerPlaceholder")}
-              ref={composer}
-              rows={1}
-              spellCheck={draftHasMention ? false : undefined}
-              value={draft}
-            />
-          </div>
+            </>
+          )}
           {validationError && (
             <p className="conversations-page__form-error" role="alert">
               {validationError}
@@ -1712,9 +1807,20 @@ export function ConversationMessages({
           )}
           <div className="conversation-composer__toolbar">
             <div className="conversation-composer__tools">
+              <button
+                aria-label={t("chatFormat.toggle")}
+                aria-pressed={formatOpen}
+                className="conversation-composer__tool conversation-composer__format"
+                data-tooltip={t("chatFormat.toggle")}
+                disabled={sendMessage.isPending}
+                onClick={toggleFormatting}
+                type="button"
+              >
+                <PenLine aria-hidden="true" />
+              </button>
               <ChatExpressionPicker
                 boundaryRef={composerCard}
-                composerRef={composer}
+                composerRef={richMode ? richField : composer}
                 disabled={sendMessage.isPending}
                 onOpenChange={setEmojiOpen}
                 onSelectEmoji={(emoji) => insertIntoDraft(emoji, false)}
@@ -1743,7 +1849,7 @@ export function ConversationMessages({
                     if (mentionInserted.current) {
                       event.preventDefault();
                       mentionInserted.current = false;
-                      composer.current?.focus();
+                      focusComposer();
                     }
                   }}
                   side="top"
@@ -1869,7 +1975,7 @@ export function ConversationMessages({
           onCancel={screenshot.cancelEditor}
           onConfirm={screenshot.confirm}
           onRetake={screenshot.retake}
-          returnFocus={() => composer.current?.focus()}
+          returnFocus={focusComposer}
         />
       )}
       {cardDialog === "contact" && (
@@ -2002,44 +2108,6 @@ function MessageEditor({
         </Button>
       </div>
     </form>
-  );
-}
-
-function LinkifiedText({
-  mentions,
-  text,
-}: {
-  mentions: readonly string[];
-  text: string;
-}) {
-  const pieces = useMemo(
-    () => linkifyChatText(text, mentions),
-    [mentions, text],
-  );
-  if (pieces.length === 1 && pieces[0]?.kind === "text") {
-    return <>{text}</>;
-  }
-  return (
-    <>
-      {pieces.map((piece, index) =>
-        piece.kind === "mention" ? (
-          <span className="conversation-mention" key={`${index}-mention`}>
-            {piece.text}
-          </span>
-        ) : piece.kind === "link" ? (
-          <a
-            href={piece.href}
-            key={`${index}-${piece.href}`}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {piece.text}
-          </a>
-        ) : (
-          <span key={`${index}-text`}>{piece.text}</span>
-        ),
-      )}
-    </>
   );
 }
 

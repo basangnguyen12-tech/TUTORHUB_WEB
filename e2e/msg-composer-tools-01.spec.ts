@@ -461,9 +461,19 @@ test("composer tools capture, share cards and stay accessible", async ({
   };
   await openComposer(page, sent);
 
-  // Toolbar in the ClassIn order, with the cards rendered from embeds only.
+  // Toolbar in the ClassIn/Zoom order, with the cards rendered from embeds only.
   const tools = page.locator(".conversation-composer__tools > *");
-  await expect(tools).toHaveCount(7);
+  await expect(tools).toHaveCount(8);
+  const formatToggle = page.getByRole("button", { name: "Định dạng văn bản" });
+  await expect(formatToggle).toHaveAttribute("aria-pressed", "false");
+  await formatToggle.click();
+  await expect(formatToggle).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("toolbar", { name: "Định dạng văn bản" }),
+  ).toBeVisible();
+  await expectNoAxeViolations(page, "rich format toolbar");
+  await formatToggle.click();
+  await expect(formatToggle).toHaveAttribute("aria-pressed", "false");
   await expect(
     page.getByRole("region", { name: "Danh thiếp của Lê Thu Hà" }),
   ).toBeVisible();

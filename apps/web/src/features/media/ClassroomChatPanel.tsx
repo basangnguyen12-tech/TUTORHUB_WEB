@@ -21,6 +21,7 @@ import {
   MessagesSquare,
   Paperclip,
   Pencil,
+  PenLine,
   RotateCcw,
   SendHorizontal,
   SquareCode,
@@ -45,6 +46,15 @@ import {
 } from "react";
 import { useSendConversationMessage } from "../../app/conversations";
 import { useI18n, type TranslationKey } from "../../app/i18n";
+import { ChatFormattedText } from "../chat-format/ChatFormattedText";
+import {
+  ChatRichComposer,
+  type ChatRichEditorHandle,
+} from "../chat-format/ChatRichComposer";
+import {
+  chatMarkupHasFormatting,
+  chatMarkupToPlainText,
+} from "../chat-format/chatMarkup";
 import type { ChatCodeToken } from "../classroom-tools/chatCodeHighlight";
 import { splitChatCodeBlocks } from "../classroom-tools/codeFence";
 import {
@@ -74,7 +84,6 @@ import {
   fileTypeLabel,
   formatAttachmentSize,
   isJumboEmoji,
-  linkifyChatText,
   prefetchClassroomEmojiCatalog,
   prepareChatImage,
   subscribeClassroomChatComposer,
@@ -313,6 +322,28 @@ export function ClassroomChatPanel({
   const pendingCaret = useRef<number | null>(null);
   const composerRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // MSG-RICH-COMPOSE-01: Zoom-style "Format text". A kept draft that
+  // already carries formatting reopens in the rich editor (toolbar hidden).
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [richMode, setRichMode] = useState(() =>
+    chatMarkupHasFormatting(composerStore?.draft ?? ""),
+  );
+  const richEditor = useRef<ChatRichEditorHandle>(null);
+  const richField = useRef<HTMLDivElement>(null);
+  const focusAfterModeSwitch = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusAfterModeSwitch.current) return;
+    focusAfterModeSwitch.current = false;
+    if (richMode) {
+      richEditor.current?.focus({ atEnd: true });
+    } else {
+      const element = textareaRef.current;
+      element?.focus();
+      element?.setSelectionRange(element.value.length, element.value.length);
+    }
+  }, [richMode]);
+  const focusComposer = () =>
+    (richField.current ?? textareaRef.current)?.focus();
   const emojiScope = useMemo(
     () => ({ actorID, tenantID }),
     [actorID, tenantID],
@@ -467,6 +498,10 @@ export function ClassroomChatPanel({
     };
     focusComposer();
     return subscribeClassroomChatComposer(composerStore, () => {
+      // A prefill (e.g. code from the Code tool) is plain text: review it
+      // in the plain composer so code is never reformatted.
+      setRichMode(false);
+      setFormatOpen(false);
       setDraftState(composerStore.draft);
       focusComposer();
     });
@@ -609,7 +644,7 @@ export function ClassroomChatPanel({
       if (removed?.previewURL) URL.revokeObjectURL(removed.previewURL);
       return items.filter((item) => item.localID !== localID);
     });
-    textareaRef.current?.focus();
+    focusComposer();
   };
 
   const retryStaged = (localID: string) => {
@@ -662,6 +697,11 @@ export function ClassroomChatPanel({
       await onSend(input);
       pendingSend.current = null;
       setDraft("");
+      richEditor.current?.clear();
+      if (richMode && !formatOpen) {
+        focusAfterModeSwitch.current = true;
+        setRichMode(false);
+      }
       updateStaged((items) => {
         for (const item of items) {
           if (item.previewURL) URL.revokeObjectURL(item.previewURL);
@@ -673,7 +713,7 @@ export function ClassroomChatPanel({
     } finally {
       if (mountedRef.current) {
         setSending(false);
-        textareaRef.current?.focus();
+        focusComposer();
       }
     }
   };
@@ -730,12 +770,38 @@ export function ClassroomChatPanel({
 
   // Multi-pick: the textarea keeps its caret while focus stays in the picker.
   const insertEmoji = (emoji: string) => {
+    if (richMode) {
+      richEditor.current?.insertText(emoji, { focus: false });
+      return;
+    }
     const element = textareaRef.current;
     const current = element?.value ?? draft;
     const start = element?.selectionStart ?? current.length;
     const end = element?.selectionEnd ?? current.length;
     pendingCaret.current = start + emoji.length;
     setDraft(`${current.slice(0, start)}${emoji}${current.slice(end)}`);
+  };
+
+  const toggleFormatting = () => {
+    if (!richMode) {
+      focusAfterModeSwitch.current = true;
+      setRichMode(true);
+      setFormatOpen(true);
+      return;
+    }
+    if (!formatOpen) {
+      setFormatOpen(true);
+      richEditor.current?.focus();
+      return;
+    }
+    setFormatOpen(false);
+    if (chatMarkupHasFormatting(draft)) {
+      richEditor.current?.focus();
+      return;
+    }
+    // Nothing formatted: back to the plain composer.
+    focusAfterModeSwitch.current = true;
+    setRichMode(false);
   };
 
   const onPick =
@@ -808,7 +874,9 @@ export function ClassroomChatPanel({
 
   const copy = async (message: ActiveMessage) => {
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(
+        chatMarkupToPlainText(message.content),
+      );
       setAnnouncement(t("media.chat.copied"));
     } catch {
       setAnnouncement(t("media.chat.copyFailed"));
@@ -1301,22 +1369,43 @@ export function ClassroomChatPanel({
               ))}
             </ul>
           )}
-          <label className="classroom-chat__sr" htmlFor={`${id}-composer`}>
-            {t("media.chat.composerLabel")}
-          </label>
-          <textarea
-            aria-describedby={`${composerHintID}${count >= CHAT_COUNTER_THRESHOLD ? ` ${counterID}` : ""}`}
-            aria-invalid={tooLong || undefined}
-            className="classroom-chat__input"
-            id={`${id}-composer`}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onComposerKeyDown}
-            onPaste={onComposerPaste}
-            placeholder={t("media.chat.placeholder")}
-            ref={textareaRef}
-            rows={1}
-            value={draft}
-          />
+          {richMode ? (
+            <ChatRichComposer
+              ariaDescribedBy={`${composerHintID}${count >= CHAT_COUNTER_THRESHOLD ? ` ${counterID}` : ""}`}
+              ariaInvalid={tooLong}
+              ariaLabel={t("media.chat.composerLabel")}
+              editorRef={richField}
+              handleRef={richEditor}
+              id={`${id}-composer`}
+              initialMarkup={draft}
+              onChange={setDraft}
+              onPasteFiles={canUpload ? addFiles : undefined}
+              onSubmit={() => void submit()}
+              placeholder={t("media.chat.placeholder")}
+              submitOnEnter
+              toolbarOpen={formatOpen}
+              variant="classroom"
+            />
+          ) : (
+            <>
+              <label className="classroom-chat__sr" htmlFor={`${id}-composer`}>
+                {t("media.chat.composerLabel")}
+              </label>
+              <textarea
+                aria-describedby={`${composerHintID}${count >= CHAT_COUNTER_THRESHOLD ? ` ${counterID}` : ""}`}
+                aria-invalid={tooLong || undefined}
+                className="classroom-chat__input"
+                id={`${id}-composer`}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={onComposerKeyDown}
+                onPaste={onComposerPaste}
+                placeholder={t("media.chat.placeholder")}
+                ref={textareaRef}
+                rows={1}
+                value={draft}
+              />
+            </>
+          )}
           <span className="classroom-chat__sr" id={composerHintID}>
             {t(
               canUpload
@@ -1358,9 +1447,19 @@ export function ClassroomChatPanel({
             </div>
           )}
           <div className="classroom-chat__actions">
+            <button
+              aria-label={t("chatFormat.toggle")}
+              aria-pressed={formatOpen}
+              className="classroom-chat-tool classroom-chat-format"
+              data-tooltip={t("chatFormat.toggle")}
+              onClick={toggleFormatting}
+              type="button"
+            >
+              <PenLine aria-hidden="true" />
+            </button>
             <ChatExpressionPicker
               boundaryRef={composerRef}
-              composerRef={textareaRef}
+              composerRef={richMode ? richField : textareaRef}
               disabled={sending}
               onOpenChange={setEmojiOpen}
               onSelectEmoji={insertEmoji}
@@ -1540,13 +1639,24 @@ function ChatBubble({
               tag={piece.tag}
             />
           ) : (
-            <p className="classroom-chat__text-piece" key={`text-${index}`}>
-              <ChatText mentions={mentions} text={piece.text} />
-            </p>
+            <ChatFormattedText
+              className="classroom-chat__text-piece"
+              key={`text-${index}`}
+              linkClassName="classroom-chat__link"
+              mentionClassName="classroom-chat__mention"
+              mentions={mentions}
+              text={piece.text}
+            />
           ),
         )
       ) : (
-        <ChatText mentions={mentions} text={text} />
+        <ChatFormattedText
+          as="span"
+          linkClassName="classroom-chat__link"
+          mentionClassName="classroom-chat__mention"
+          mentions={mentions}
+          text={text}
+        />
       )}
     </div>
   );
@@ -1799,42 +1909,6 @@ function ChatCodeCard({
         </code>
       </pre>
     </figure>
-  );
-}
-
-function ChatText({
-  mentions,
-  text,
-}: {
-  mentions: readonly string[];
-  text: string;
-}) {
-  const pieces = useMemo(
-    () => linkifyChatText(text, mentions),
-    [mentions, text],
-  );
-  return (
-    <>
-      {pieces.map((piece, index) =>
-        piece.kind === "mention" ? (
-          <span className="classroom-chat__mention" key={`${index}-mention`}>
-            {piece.text}
-          </span>
-        ) : piece.kind === "link" ? (
-          <a
-            className="classroom-chat__link"
-            href={piece.href}
-            key={`${index}-${piece.href}`}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            {piece.text}
-          </a>
-        ) : (
-          <span key={`${index}-text`}>{piece.text}</span>
-        ),
-      )}
-    </>
   );
 }
 

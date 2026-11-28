@@ -1,0 +1,611 @@
+/*
+ * MSG-RICH-COMPOSE-01: formatted chat text and the "Format text" composer
+ * (Gmail compose toolbar x Zoom chat format bar).
+ *
+ * Text colour contrast (WCAG 2.1 AA, text >= 4.5:1), computed per pair:
+ *   light  on #ffffff / #f3f4f6 / #e6f4ec / #f7f8fa
+ *     red #c5221f 5.80/5.27/5.11/5.46   orange #a14800 6.10/5.54/5.38/5.74
+ *     green #137333 5.95/5.41/5.25/5.60 blue #1967d2 5.37/4.88/4.73/5.05
+ *     purple #8430ce 6.37/5.79/5.62/6.00 gray #5f6368 6.05/5.50/5.33/5.69
+ *   dark   on #232b36 / #183c34 / #181e26 / #33373e (room bubbles)
+ *     red #f28b82 5.98/5.07/7.02/5.00   orange #fbae6f 7.74/6.56/9.09/6.48
+ *     green #81c995 7.29/6.18/8.56/6.10 blue #8ab4f8 6.78/5.74/7.96/5.67
+ *     purple #d7aefb 7.71/6.54/9.05/6.45 gray #c4c7cc 8.43/7.14/9.89/7.05
+ *   accent on the room's own blue bubble (#2c5ccc / #2347b0)
+ *     red #ffe0dc 4.83/6.5 orange #ffe6c4 4.95/6.7 green #b8f5c8 4.82/6.51
+ *     blue #d4e6ff 4.72/6.37 purple #f6e4ff 4.97/6.7 gray #e2e5ea 4.74/6.40
+ */
+
+.chat-fmt,
+.chat-rich,
+.chat-format-menu {
+  --chat-fmt-red: #c5221f;
+  --chat-fmt-orange: #a14800;
+  --chat-fmt-green: #137333;
+  --chat-fmt-blue: #1967d2;
+  --chat-fmt-purple: #8430ce;
+  --chat-fmt-gray: #5f6368;
+}
+
+[data-theme="dark"] :is(.chat-fmt, .chat-rich, .chat-format-menu),
+:is(.chat-fmt, .chat-rich, .chat-format-menu)[data-theme="dark"],
+.classroom-chat :is(.chat-fmt, .chat-rich) {
+  --chat-fmt-red: #f28b82;
+  --chat-fmt-orange: #fbae6f;
+  --chat-fmt-green: #81c995;
+  --chat-fmt-blue: #8ab4f8;
+  --chat-fmt-purple: #d7aefb;
+  --chat-fmt-gray: #c4c7cc;
+}
+
+.classroom-chat__message[data-own] .chat-fmt {
+  --chat-fmt-red: #ffe0dc;
+  --chat-fmt-orange: #ffe6c4;
+  --chat-fmt-green: #b8f5c8;
+  --chat-fmt-blue: #d4e6ff;
+  --chat-fmt-purple: #f6e4ff;
+  --chat-fmt-gray: #e2e5ea;
+}
+
+/* ---------- Rendered messages ---------- */
+.chat-fmt-color--red {
+  color: var(--chat-fmt-red);
+}
+
+.chat-fmt-color--orange {
+  color: var(--chat-fmt-orange);
+}
+
+.chat-fmt-color--green {
+  color: var(--chat-fmt-green);
+}
+
+.chat-fmt-color--blue {
+  color: var(--chat-fmt-blue);
+}
+
+.chat-fmt-color--purple {
+  color: var(--chat-fmt-purple);
+}
+
+.chat-fmt-color--gray {
+  color: var(--chat-fmt-gray);
+}
+
+.chat-fmt-size--small {
+  font-size: 0.857em;
+}
+
+.chat-fmt-size--large {
+  font-size: 1.25em;
+  line-height: 1.35;
+}
+
+.chat-fmt-size--huge {
+  font-size: 1.6em;
+  line-height: 1.25;
+}
+
+.chat-fmt strong {
+  font-weight: 700;
+}
+
+.chat-fmt :is(u, s) {
+  text-decoration-thickness: from-font;
+}
+
+.chat-fmt u {
+  text-underline-offset: 0.16em;
+}
+
+.chat-fmt--blocks {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.chat-fmt__block,
+.chat-fmt__list {
+  min-width: 0;
+  margin: 0;
+}
+
+.chat-fmt__list {
+  padding-inline-start: 1.45em;
+}
+
+/* The message stream is itself a list; keep top-level markers. */
+ul.chat-fmt__list,
+.chat-rich__editor ul {
+  list-style-type: disc;
+}
+
+ol.chat-fmt__list,
+.chat-rich__editor ol {
+  list-style-type: decimal;
+}
+
+.chat-fmt__list li {
+  padding-inline-start: 0.15em;
+}
+
+.chat-fmt__list li::marker {
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-fmt :is(.chat-fmt__block, .chat-fmt__list)[data-align="center"] {
+  text-align: center;
+}
+
+.chat-fmt :is(.chat-fmt__block, .chat-fmt__list)[data-align="right"] {
+  text-align: right;
+}
+
+/* Alignment needs room to show: a message with centred or right-aligned
+   lines takes its column's full width instead of shrink-wrapping. */
+.conversation-message__stack:has(.chat-fmt--aligned) {
+  width: 100%;
+}
+
+.conversation-message__stack:has(.chat-fmt--aligned)
+  > .conversation-message__bubble {
+  justify-self: stretch;
+}
+
+.classroom-chat__column:has(.chat-fmt--aligned) {
+  width: 100%;
+}
+
+.classroom-chat__column:has(.chat-fmt--aligned) > .classroom-chat__bubble {
+  align-self: stretch;
+}
+
+/* Aligned lists keep their markers next to the text. */
+.chat-fmt .chat-fmt__list[data-align] {
+  padding-inline-start: 0;
+  list-style-position: inside;
+}
+
+/* ---------- Composer ---------- */
+.chat-rich {
+  display: grid;
+  min-width: 0;
+  container-type: inline-size;
+  gap: 6px;
+}
+
+.chat-rich__editor {
+  position: relative;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 240px;
+  padding: 4px 2px;
+  overflow-y: auto;
+  color: var(--msg-ink, inherit);
+  cursor: text;
+  font: inherit;
+  font-family: "TutorHub Noto Emoji", var(--font-family-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  outline: none;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chat-rich[data-toolbar="open"] .chat-rich__editor {
+  min-height: 64px;
+}
+
+/* The composer card's own focus ring (:focus-within) marks the field, as it
+   does for the plain textarea. */
+.conversations-page .conversation-composer .chat-rich__editor:focus-visible,
+.classroom-chat .classroom-chat__composer .chat-rich__editor:focus-visible {
+  outline: none;
+}
+
+.chat-rich__editor[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.chat-rich__editor[data-empty="true"]::before {
+  position: absolute;
+  top: 4px;
+  left: 2px;
+  color: var(--msg-muted, #6b7280);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.chat-rich__editor :is(ul, ol) {
+  margin: 0;
+  padding-inline-start: 1.45em;
+}
+
+.chat-rich__editor :is(b, strong) {
+  font-weight: 700;
+}
+
+.chat-rich__editor font[size="1"],
+.chat-rich__editor font[size="2"] {
+  font-size: 0.857em;
+}
+
+.chat-rich__editor font[size="3"] {
+  font-size: 1em;
+}
+
+.chat-rich__editor font[size="4"],
+.chat-rich__editor font[size="5"] {
+  font-size: 1.25em;
+}
+
+.chat-rich__editor font[size="6"],
+.chat-rich__editor font[size="7"] {
+  font-size: 1.6em;
+}
+
+/* The editor stores swatch colours; show the themed, contrast-checked ones. */
+.chat-rich__editor font[color="#d93025" i] {
+  color: var(--chat-fmt-red);
+}
+
+.chat-rich__editor font[color="#e8710a" i] {
+  color: var(--chat-fmt-orange);
+}
+
+.chat-rich__editor font[color="#188038" i] {
+  color: var(--chat-fmt-green);
+}
+
+.chat-rich__editor font[color="#1a73e8" i] {
+  color: var(--chat-fmt-blue);
+}
+
+.chat-rich__editor font[color="#9334e6" i] {
+  color: var(--chat-fmt-purple);
+}
+
+.chat-rich__editor font[color="#5f6368" i] {
+  color: var(--chat-fmt-gray);
+}
+
+.chat-rich__editor font[color="#010203" i] {
+  color: inherit;
+}
+
+/* ---------- "Format text" toggle in both composers ---------- */
+.conversation-composer__tool[aria-pressed="true"] {
+  background: var(--msg-active);
+  color: var(--msg-active-ink);
+}
+
+.conversation-composer__tool[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--msg-active);
+  color: var(--msg-active-ink);
+}
+
+.classroom-chat .classroom-chat-tool[aria-pressed="true"] {
+  background: rgb(96 165 250 / 22%);
+  color: #dbeafe;
+}
+
+.classroom-chat
+  .classroom-chat__actions
+  > .classroom-chat-format[data-tooltip]:is(:hover, :focus-visible)::after {
+  left: 0;
+  transform: none;
+}
+
+/* ---------- Toolbar (APG toolbar, Gmail order) ---------- */
+.chat-rich-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--msg-line, rgb(127 127 127 / 25%));
+  animation: chat-rich-toolbar-in 140ms ease-out;
+}
+
+.chat-rich-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.chat-rich-toolbar__group + .chat-rich-toolbar__group::before {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--msg-line, rgb(127 127 127 / 30%));
+  content: "";
+}
+
+.chat-rich-toolbar__button {
+  position: relative;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--msg-muted, currentColor);
+  cursor: pointer;
+  place-items: center;
+}
+
+.chat-rich-toolbar__button--menu {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  gap: 0;
+  padding: 0 3px 0 6px;
+}
+
+.chat-rich-toolbar__button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.chat-rich-toolbar__button .chat-rich-toolbar__chevron {
+  width: 12px;
+  height: 12px;
+  opacity: 0.8;
+}
+
+.chat-rich-toolbar__button:is(:hover, [aria-expanded="true"]):not(:disabled) {
+  background: var(--msg-hover, rgb(127 127 127 / 14%));
+  color: var(--msg-ink, currentColor);
+}
+
+.chat-rich-toolbar__button[aria-pressed="true"] {
+  background: var(--msg-active, rgb(147 197 253 / 20%));
+  color: var(--msg-active-ink, currentColor);
+}
+
+.chat-rich-toolbar__button:focus-visible {
+  outline: 2px solid var(--msg-focus, #93c5fd);
+  outline-offset: 1px;
+}
+
+.chat-rich-toolbar__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.chat-rich-toolbar__color {
+  display: inline-grid;
+  place-items: center;
+}
+
+.chat-rich-toolbar__color[data-color="red"] svg {
+  color: var(--chat-fmt-red);
+}
+
+.chat-rich-toolbar__color[data-color="orange"] svg {
+  color: var(--chat-fmt-orange);
+}
+
+.chat-rich-toolbar__color[data-color="green"] svg {
+  color: var(--chat-fmt-green);
+}
+
+.chat-rich-toolbar__color[data-color="blue"] svg {
+  color: var(--chat-fmt-blue);
+}
+
+.chat-rich-toolbar__color[data-color="purple"] svg {
+  color: var(--chat-fmt-purple);
+}
+
+.chat-rich-toolbar__color[data-color="gray"] svg {
+  color: var(--chat-fmt-gray);
+}
+
+/* Messages composer tooltips (the room uses its own tooltip layer). */
+.chat-rich[data-variant="conversation"]
+  .chat-rich-toolbar__button[data-tooltip]:is(:hover, :focus-visible):not(
+    [aria-expanded="true"]
+  )::after {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--msg-tooltip-bg, #1c222b);
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.18);
+  color: var(--msg-tooltip-ink, #ffffff);
+  content: attr(data-tooltip);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.chat-rich[data-variant="conversation"]
+  .chat-rich-toolbar__group:first-child
+  .chat-rich-toolbar__button[data-tooltip]:is(:hover, :focus-visible)::after {
+  left: 0;
+  transform: none;
+}
+
+/* Narrow composers (the room's side panel): undo/redo stay on Ctrl+Z/Y. */
+@container (max-width: 400px) {
+  .chat-rich-toolbar__group--history,
+  .chat-rich-toolbar__group--history > .chat-rich-toolbar__button {
+    display: none;
+  }
+
+  .chat-rich-toolbar__group--history + .chat-rich-toolbar__group::before {
+    display: none;
+  }
+
+  .chat-rich-toolbar,
+  .chat-rich-toolbar__group {
+    gap: 1px;
+  }
+
+  .chat-rich-toolbar__group + .chat-rich-toolbar__group::before {
+    margin: 0 2px;
+  }
+
+  .chat-rich-toolbar__button {
+    width: 28px;
+    height: 28px;
+  }
+
+  /* Zoom's narrow bar: menus keep aria-haspopup, drop the chevron. */
+  .chat-rich-toolbar__button--menu {
+    width: 28px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .chat-rich-toolbar__button .chat-rich-toolbar__chevron {
+    display: none;
+  }
+}
+
+/* ---------- Classroom (Zoom-like dark panel) ---------- */
+.chat-rich[data-variant="classroom"] .chat-rich__editor {
+  min-height: 22px;
+  max-height: calc(1.45em * 8 + 6px);
+  padding: 3px 2px;
+  color: #f8fafc;
+  font-size: 0.9063rem;
+  line-height: 1.45;
+}
+
+.chat-rich[data-variant="classroom"][data-toolbar="open"] .chat-rich__editor {
+  min-height: calc(1.45em * 2 + 6px);
+}
+
+.chat-rich[data-variant="classroom"]
+  .chat-rich__editor[data-empty="true"]::before {
+  top: 3px;
+  color: #a3acb9;
+}
+
+.chat-rich[data-variant="classroom"] .chat-rich-toolbar {
+  border-bottom-color: rgb(255 255 255 / 10%);
+}
+
+.chat-rich[data-variant="classroom"]
+  .chat-rich-toolbar__group
+  + .chat-rich-toolbar__group::before {
+  background: rgb(255 255 255 / 14%);
+}
+
+.chat-rich[data-variant="classroom"] .chat-rich-toolbar__button {
+  color: #cbd5e1;
+}
+
+.chat-rich[data-variant="classroom"]
+  .chat-rich-toolbar__button:is(:hover, [aria-expanded="true"]):not(:disabled) {
+  background: rgb(255 255 255 / 10%);
+  color: #f8fafc;
+}
+
+.chat-rich[data-variant="classroom"]
+  .chat-rich-toolbar__button[aria-pressed="true"] {
+  background: rgb(96 165 250 / 24%);
+  color: #dbeafe;
+}
+
+/* ---------- Toolbar menus (portalled) ---------- */
+.chat-format-menu {
+  min-width: 188px;
+}
+
+.th-menu-content.chat-format-menu .th-menu-item {
+  min-height: 32px;
+  gap: 10px;
+  padding: 4px 12px 4px 30px;
+}
+
+.th-menu-content.chat-format-menu .th-menu-item__indicator {
+  left: 10px;
+}
+
+.th-menu-content.chat-format-menu .th-menu-item__indicator svg {
+  width: 8px;
+  height: 8px;
+}
+
+.chat-format-menu__swatch {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 1px solid rgb(127 127 127 / 45%);
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.chat-format-menu__swatch[data-color="red"] {
+  background: var(--chat-fmt-red);
+}
+
+.chat-format-menu__swatch[data-color="orange"] {
+  background: var(--chat-fmt-orange);
+}
+
+.chat-format-menu__swatch[data-color="green"] {
+  background: var(--chat-fmt-green);
+}
+
+.chat-format-menu__swatch[data-color="blue"] {
+  background: var(--chat-fmt-blue);
+}
+
+.chat-format-menu__swatch[data-color="purple"] {
+  background: var(--chat-fmt-purple);
+}
+
+.chat-format-menu__swatch[data-color="gray"] {
+  background: var(--chat-fmt-gray);
+}
+
+.chat-format-menu__icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.chat-format-menu__label {
+  flex: 1 1 auto;
+}
+
+.chat-format-menu__shortcut {
+  margin-left: 12px;
+  opacity: 0.7;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes chat-rich-toolbar-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-rich-toolbar {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .chat-rich-toolbar__button[aria-pressed="true"] {
+    outline: 2px solid Highlight;
+  }
+
+  .chat-format-menu__swatch {
+    forced-color-adjust: none;
+  }
+}

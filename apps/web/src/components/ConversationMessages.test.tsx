@@ -780,6 +780,79 @@ describe("ConversationMessages", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("formats a message with the Format text toolbar and renders it", async () => {
+    const announcement = message(
+      1,
+      "::: center\n**Thông báo**\n:::\n- Hạn nộp [thứ Sáu]{.red}",
+    );
+    let current: Message[] = [announcement];
+    const sendRequests: Request[] = [];
+    const fetchMock = vi.fn().mockImplementation(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/api/v1/auth/csrf")) {
+        return jsonResponse({ csrf_token: "format-csrf" });
+      }
+      if (request.method === "POST") {
+        sendRequests.push(request);
+        const body = (await request.clone().json()) as { content: string };
+        const sent = message(2, body.content, { own: true });
+        current = [announcement, sent];
+        return jsonResponse(sent, 201);
+      }
+      return jsonResponse(page([...current].reverse()));
+    });
+
+    renderMessages(fetchMock);
+
+    const heading = await screen.findByText("Thông báo");
+    expect(heading.tagName).toBe("STRONG");
+    expect(heading.closest("[data-align]")).toHaveAttribute(
+      "data-align",
+      "center",
+    );
+    expect(screen.getByText("thứ Sáu")).toHaveClass("chat-fmt-color--red");
+    expect(screen.getByText("thứ Sáu").closest("li")).not.toBeNull();
+
+    const toggle = screen.getByRole("button", { name: "Format text" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("toolbar", { name: "Text formatting" }),
+    ).toBeInTheDocument();
+    const editor = screen.getByRole("textbox", { name: "New message" });
+    expect(editor).toHaveAttribute("contenteditable", "true");
+
+    // Test fixture only: the DOM the browser's Bold/Center commands produce.
+    editor.innerHTML =
+      '<div style="text-align: center;"><b>Chúc mừng</b> cả lớp</div>';
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText("Message saved.")).toBeInTheDocument();
+    await expect(sendRequests[0]?.clone().json()).resolves.toEqual({
+      client_message_id: expect.any(String),
+      content: "::: center\n**Chúc mừng** cả lớp\n:::",
+    });
+    expect(await screen.findByText("Chúc mừng")).toHaveProperty(
+      "tagName",
+      "STRONG",
+    );
+    // The toolbar stays open for the next message; the editor is cleared.
+    expect(
+      screen.getByRole("textbox", { name: "New message" }),
+    ).toBeEmptyDOMElement();
+
+    // Hiding the toolbar with nothing formatted returns the plain textarea.
+    fireEvent.click(toggle);
+    expect(
+      screen.queryByRole("toolbar", { name: "Text formatting" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "New message" }).tagName).toBe(
+      "TEXTAREA",
+    );
+  });
+
   it("edits an own message with PATCH and unsends it with DELETE", async () => {
     const original = message(1, "Draft answer", { own: true });
     let current: Message = original;
