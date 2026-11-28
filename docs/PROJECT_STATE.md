@@ -4,18 +4,34 @@
 
 ## Snapshot
 
-| Thuộc tính           | Trạng thái                                                                                                                                                                                                |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ngày cập nhật        | 2026-11-28                                                                                                                                                                                                |
-| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                                                                     |
-| Nhánh làm việc       | `main`                                                                                                                                                                                                    |
-| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                                                               |
-| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                                                                 |
-| Phase hiện tại       | Xây dựng Hệ Công cụ Lớp học Phòng học Studio (`ADR-0043` Code/Snippet LIVE, `ADR-0045` Files/PDF Slice 1–3 LIVE, `ADR-0046` Structured Message Embeds LIVE); Phase 3 deferred carry-over vẫn hoạt động    |
-| Task `DONE` gần nhất | `SHELL-TOPBAR-SETTINGS-01` & `MSG-AVATAR-SEARCH-CLASSIN-01` (F1–F4): Bộ lọc Tin nhắn Kiểu Zalo (`Phân loại ▾`), Ẩn Thanh Cuộn Tự động & Gỡ Topbar Desktop Đưa Về `Thiết lập > Hệ thống` (`DONE`)          |
-| Mốc repository mới   | `@tutorhub/web` `1639/1639` (`146` file), `@tutorhub/collaboration-client` `70/70`, `@tutorhub/whiteboard-runtime` `171/171`, `@tutorhub/api-client` `156/156`, Chromium E2E `81/81` PASS (`yjsCopies=1`) |
-| Task hiện tại        | Hoàn tất 100% `SHELL-TOPBAR-SETTINGS-01`, `MSG-AVATAR-SEARCH-CLASSIN-01` và `MSG-COMPOSER-TOOLS-01` (`000059` + exact ACL trên Neon staging `59 false`); sẵn sàng mở đề tài tiếp theo                     |
-| Task tiếp theo       | `MSG-COMPOSER-TOOLS-02` (`Gửi từ Tài liệu / Drive`) hoặc `ADR-0044` Thực thi Cô lập Máy chủ `C/C++/Java`                                                                                                  |
+| Thuộc tính           | Trạng thái                                                                                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ngày cập nhật        | 2026-11-28                                                                                                                                                                                                                                |
+| Repository           | `https://github.com/basangnguyen12-tech/TUTORHUB_WEB`                                                                                                                                                                                     |
+| Nhánh làm việc       | `main`                                                                                                                                                                                                                                    |
+| Quy trình            | Antigravity làm PM/Gatekeeper điều phối Codex và Claude Code qua prompt; Antigravity nghiệm thu và commit/push thẳng `main`                                                                                                               |
+| Phase hoàn thành     | Phase 0, Phase 1, Phase 2, Phase 4, Phase 5 collaboration                                                                                                                                                                                 |
+| Phase hiện tại       | Xây dựng Hệ Công cụ Lớp học Phòng học Studio (`ADR-0043` Code/Snippet LIVE, `ADR-0045` Files/PDF Slice 1–3 LIVE, `ADR-0046` Structured Message Embeds LIVE, `ADR-0047` Chat Stickers ACCEPTED); Phase 3 deferred carry-over vẫn hoạt động |
+| Task `DONE` gần nhất | `MSG-STICKER-00` & `ADR-0047` Chốt Kiến trúc Hệ thống Sticker (`Noto Animated Emoji CC BY 4.0`, `000060`, `GET /api/v1/conversations/sticker-packs`, Bật ở cả Tin nhắn & Phòng học trực tuyến) (`DONE`)                                   |
+| Mốc repository mới   | `@tutorhub/web` `1639/1639` (`146` file), `@tutorhub/collaboration-client` `70/70`, `@tutorhub/whiteboard-runtime` `171/171`, `@tutorhub/api-client` `156/156`, Chromium E2E `81/81` PASS (`yjsCopies=1`)                                 |
+| Task hiện tại        | Đã duyệt `MSG-STICKER-00` và ban hành `ADR-0047`; sẵn sàng giao `MSG-STICKER-01..03` (Catalog Noto + Migration `000060` + Core API + `ChatExpressionPicker` Web)                                                                          |
+| Task tiếp theo       | `MSG-STICKER-01..03` (Triển khai Sticker Noto Animated Emoji), sau đó `MSG-COMPOSER-TOOLS-02` (`Gửi từ Tài liệu / Drive`) hoặc `ADR-0044` Thực thi Cô lập Máy chủ `C/C++/Java`                                                            |
+
+### Checkpoint `MSG-STICKER-00` & `ADR-0047` Đề xuất Kỹ thuật & Chốt Kiến trúc Hệ thống Sticker (`Noto Animated Emoji CC BY 4.0`, `000060_message_embed_stickers`, `ChatExpressionPicker`) (`DONE`) — 2026-11-28
+
+Claude Code hoàn thành khảo sát nguồn sticker, giấy phép và soạn đề xuất kỹ thuật tại `docs/MSG_STICKER_00_PROPOSAL.md`; chủ dự án và Gatekeeper (Antigravity) chốt toàn bộ 5 câu hỏi kiến trúc/sản phẩm (`Q1–Q5`) và ban hành [ADR-0047](adr/0047-sticker-packs-and-message-embeds.md) (`Accepted`):
+
+- **Nguồn Sticker, Giấy phép `CC BY 4.0` & Ngân sách Tài nguyên (`Q3`, `Q4`, `Q5`)**:
+  - Chọn **Google Noto Animated Emoji (`CC BY 4.0`)** làm bộ sticker duy nhất cho đợt phát hành này (tuyển chọn `80–120` sticker biểu cảm khuôn mặt, cử chỉ khích lệ, chúc mừng và học tập; chưa làm bộ Mascot riêng `MSG-STICKER-04` và chưa làm Tab GIF bên thứ ba).
+  - Script `apps/web/scripts/generate-sticker-catalog.mjs` ghim phiên bản/checksum upstream, sinh cặp ảnh tĩnh & động cùng origin tại `apps/web/public/stickers/<pack_id>/<pack_version>/<codepoint>.webp` (`160x160`, `<= 100 KB`) + `<codepoint>.static.webp` (`<= 15 KB`, **tổng dung lượng toàn thư mục `<= 10 MB`**), kèm `_headers` `Cache-Control: public, max-age=31536000, immutable` + `X-Content-Type-Options: nosniff` (giữ nguyên CSP `img-src 'self'`, `0` request ra bên thứ ba) và xuất `catalog.json` trực tiếp vào thư mục `go:embed` của Core API.
+  - Ghi nguồn `CC BY 4.0` tại `THIRD_PARTY_NOTICES.md` (gốc repo), `apps/web/public/THIRD_PARTY_NOTICES.txt` (`/THIRD_PARTY_NOTICES.txt`) và dòng ghi nguồn cuối tab Sticker.
+- **Mô hình Dữ liệu (`000060`), Feature Control & Contract (`Q1`, `Q2`, `Q5`)**:
+  - Mở rộng `tutorhub.message_embeds` qua migration `000060_message_embed_stickers` (`ADD COLUMN sticker_id text`, cập nhật `CHECK message_embeds_kind_valid` cho nhánh `kind = 'sticker'`, giữ nguyên bảng insert-only với quyền runtime `SELECT, INSERT`).
+  - Đăng ký cờ tính năng `chat_stickers` mặc định **BẬT (`default_enabled: true`)**; hỗ trợ gửi và đọc sticker ở **cả Tab Tin nhắn (`direct`, `class`) lẫn Chat Phòng học trực tuyến (`room` — `ClassroomChatPanel`)**, kế thừa toàn bộ kiểm tra quyền `authorizeMessageWrite` (`ADR-0042`) và fingerprint idempotency tách miền `\x00embed:sticker\x00` (`ADR-0046`).
+  - Cung cấp `GET /api/v1/conversations/sticker-packs` (`ETag`, `Cache-Control: private, max-age=300`) và chiếu URL ảnh từ manifest phía server theo vòng đời `active | retired | removed`.
+- **Giao diện `ChatExpressionPicker` & Bảo vệ CPU**:
+  - Hộp chọn biểu cảm có `tablist` `Sticker | Emoji` (tái dùng nguyên `ClassroomEmojiPicker`, tìm kiếm không dấu `vi`/`en`, hàng `Gần đây` xóa khi đăng xuất, bấm gửi ngay không mất chữ đang gõ dở).
+  - Bảo vệ CPU: lưới picker mặc định hiển thị khung tĩnh `static_url` và chỉ phát `animated_url` khi hover/focus; luồng tin nhắn dùng `<picture>` cho `prefers-reduced-motion: reduce` kết hợp `IntersectionObserver` tự chuyển sticker ngoài khung nhìn về `static_url`.
 
 ### Checkpoint `SHELL-TOPBAR-SETTINGS-01` & `MSG-AVATAR-SEARCH-CLASSIN-01` (F1–F4) Bộ Lọc Hội thoại Kiểu Zalo (`Phân loại ▾`), Thanh Cuộn Tự Ẩn & Gỡ Topbar Desktop Chuyển Về `Thiết lập > Hệ thống` (`DONE`) — 2026-11-28
 
