@@ -2850,54 +2850,226 @@
   color: var(--color-danger);
 }
 
-/* ---------- MSG-COMPOSER-TOOLS-01: card dialogs ---------- */
+/* ---------- MSG-COMPOSER-TOOLS-01: card dialogs ----------
+ * Neutral look for the contact-card and instant-class dialogs: hairline
+ * borders, pill fields and buttons, an ink primary button. The field wrapper
+ * draws the only focus ring; the bare <input> inside it gets none, so no
+ * second box appears inside the pill.
+ * Contrast (WCAG 2.1 AA): light ink #0d0d0d 19.3:1 and muted #5d5d5d 6.6:1 on
+ * #ffffff; dark ink #ececec 14.2:1 and muted #b4b4b4 8.1:1 on #181e26;
+ * primary labels #ffffff on #0d0d0d 19.3:1, #0d0d0d on #ececec 16.5:1.
+ */
+.th-dialog-content.composer-card-dialog {
+  --card-ink: #0d0d0d;
+  --card-muted: #5d5d5d;
+  --card-line: rgb(0 0 0 / 0.14);
+  --card-line-strong: rgb(0 0 0 / 0.28);
+  --card-field: rgb(0 0 0 / 0.02);
+  --card-hover: rgb(0 0 0 / 0.04);
+  --card-selected: rgb(0 0 0 / 0.07);
+  --card-primary: #0d0d0d;
+  --card-primary-hover: #2f2f2f;
+  --card-primary-ink: #ffffff;
+  border-color: rgb(0 0 0 / 0.06);
+  border-radius: 20px;
+  box-shadow:
+    0 12px 48px rgb(0 0 0 / 0.14),
+    0 2px 8px rgb(0 0 0 / 0.04);
+  color: var(--card-ink);
+}
+
+[data-theme="dark"] .th-dialog-content.composer-card-dialog,
+.th-dialog-content.composer-card-dialog[data-theme="dark"] {
+  --card-ink: #ececec;
+  --card-muted: #b4b4b4;
+  --card-line: rgb(255 255 255 / 0.16);
+  --card-line-strong: rgb(255 255 255 / 0.3);
+  --card-field: rgb(255 255 255 / 0.04);
+  --card-hover: rgb(255 255 255 / 0.06);
+  --card-selected: rgb(255 255 255 / 0.1);
+  --card-primary: #ececec;
+  --card-primary-hover: #d4d4d4;
+  --card-primary-ink: #0d0d0d;
+  border-color: rgb(255 255 255 / 0.08);
+  box-shadow: 0 16px 56px rgb(0 0 0 / 0.5);
+}
+
+.composer-card-dialog .th-dialog-title {
+  color: var(--card-ink);
+  font-weight: 600;
+}
+
+.composer-card-dialog .th-dialog-description {
+  color: var(--card-muted);
+}
+
+.composer-card-dialog .th-dialog-close {
+  border-radius: 999px;
+  color: var(--card-muted);
+}
+
+.composer-card-dialog .th-dialog-close:hover {
+  background: var(--card-hover);
+  color: var(--card-ink);
+}
+
+.composer-card-dialog :is(a, button, input):focus-visible {
+  outline: 2px solid var(--card-ink);
+  outline-offset: 2px;
+}
+
 .composer-card-dialog__form {
   display: grid;
   gap: 12px;
+  margin-top: 16px;
 }
 
 .composer-card-dialog__search,
 .composer-card-dialog__field {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  border: 1px solid var(--msg-control);
-  background: var(--msg-surface);
+  gap: 10px;
+  min-height: 44px;
+  border: 1px solid var(--card-line);
+  border-radius: 999px;
+  background: var(--card-field);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
 }
 
 .composer-card-dialog__search {
-  padding: 0 12px;
-  border-radius: 999px;
+  padding: 0 16px;
 }
 
 .composer-card-dialog__field {
-  padding: 0 4px 0 12px;
-  border-radius: 10px;
+  padding: 0 6px 0 16px;
+}
+
+.composer-card-dialog__search:hover,
+.composer-card-dialog__field:hover {
+  border-color: var(--card-line-strong);
 }
 
 .composer-card-dialog__search:focus-within,
 .composer-card-dialog__field:focus-within {
-  border-color: var(--msg-focus);
-  box-shadow: 0 0 0 1px var(--msg-focus);
+  border-color: var(--card-ink);
+  background: transparent;
+}
+
+.composer-card-dialog__field:has(input[aria-invalid="true"]) {
+  border-color: var(--color-danger);
 }
 
 .composer-card-dialog__search svg {
   width: 16px;
   height: 16px;
   flex: none;
-  color: var(--msg-muted);
+  color: var(--card-muted);
 }
 
 .composer-card-dialog__search input,
 .composer-card-dialog__field input {
   flex: 1 1 auto;
   min-width: 0;
+  height: 40px;
+  padding: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
-  color: var(--msg-ink);
+  box-shadow: none;
+  color: var(--card-ink);
   font: inherit;
+  font-size: 14px;
   outline: none;
+  appearance: none;
+}
+
+/* The wrapper's border is the focus indicator; drop the global input ring. */
+.composer-card-dialog
+  :is(.composer-card-dialog__search, .composer-card-dialog__field)
+  input:focus-visible {
+  outline: none;
+}
+
+.composer-card-dialog__search input::placeholder,
+.composer-card-dialog__field input::placeholder {
+  color: var(--card-muted);
+  opacity: 1;
+}
+
+/* Native search clear button, redrawn as the same muted X as the title field. */
+.composer-card-dialog__search input::-webkit-search-cancel-button {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  background-color: var(--card-muted);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-mask: var(--card-clear-icon) center / 14px no-repeat;
+  mask: var(--card-clear-icon) center / 14px no-repeat;
+  --card-clear-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M18 6 6 18M6 6l12 12'/%3E%3C/svg%3E");
+}
+
+.composer-card-dialog__search input::-webkit-search-cancel-button:hover {
+  background-color: var(--card-ink);
+}
+
+.composer-card-dialog__field .conversation-composer__chip-close {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: var(--card-muted);
+}
+
+.composer-card-dialog__field .conversation-composer__chip-close:hover {
+  background: var(--card-hover);
+  color: var(--card-ink);
+}
+
+.composer-card-dialog .th-button {
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.composer-card-dialog .th-button:hover:not(:disabled) {
+  transform: none;
+}
+
+.composer-card-dialog .th-dialog-footer .th-button {
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+.composer-card-dialog .th-button--primary {
+  background: var(--card-primary);
+  color: var(--card-primary-ink);
+}
+
+.composer-card-dialog .th-button--primary:is(:hover, :active):not(:disabled) {
+  background: var(--card-primary-hover);
+}
+
+.composer-card-dialog .th-button--secondary {
+  border-color: var(--card-line);
+  background: transparent;
+  color: var(--card-ink);
+}
+
+.composer-card-dialog .th-button--secondary:hover:not(:disabled) {
+  border-color: var(--card-line-strong);
+  background: var(--card-hover);
+  color: var(--card-ink);
+}
+
+.composer-card-dialog .th-button--quiet {
+  color: var(--card-muted);
+}
+
+.composer-card-dialog .th-button--quiet:hover:not(:disabled) {
+  background: var(--card-hover);
+  color: var(--card-ink);
 }
 
 .composer-card-dialog__options {
@@ -2913,20 +3085,21 @@
 .composer-card-option {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 6px 10px;
-  border-radius: 10px;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  color: var(--card-ink);
   cursor: pointer;
 }
 
 .composer-card-option:hover {
-  background: var(--msg-hover);
+  background: var(--card-hover);
 }
 
 .composer-card-option:has(input:checked) {
-  background: var(--msg-active);
-  color: var(--msg-active-ink);
+  background: var(--card-selected);
+  color: var(--card-ink);
 }
 
 .composer-card-option input {
@@ -2934,11 +3107,11 @@
   height: 16px;
   flex: none;
   margin: 0;
-  accent-color: var(--msg-green);
+  accent-color: var(--card-primary);
 }
 
 .composer-card-option input:focus-visible {
-  outline: 2px solid var(--msg-focus);
+  outline: 2px solid var(--card-ink);
   outline-offset: 2px;
 }
 
@@ -2951,7 +3124,7 @@
 .composer-card-dialog__hint,
 .composer-card-dialog__empty,
 .composer-card-dialog__preview-label {
-  color: var(--msg-muted);
+  color: var(--card-muted);
 }
 
 .composer-card-dialog__hint,
@@ -2976,9 +3149,10 @@
 .composer-card-dialog__preview {
   display: grid;
   gap: 6px;
-  padding: 10px 12px;
-  border: 1px dashed var(--msg-control);
-  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--card-line);
+  border-radius: 16px;
+  background: var(--card-field);
 }
 
 .composer-card-dialog__preview-label {
@@ -2988,6 +3162,7 @@
 
 .composer-card-dialog__label {
   padding: 0;
+  color: var(--card-ink);
   font-size: 13px;
   font-weight: 600;
 }
@@ -3021,20 +3196,29 @@
   display: inline-flex;
   align-items: center;
   min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--msg-control);
+  padding: 0 16px;
+  border: 1px solid var(--card-line);
   border-radius: 999px;
+  color: var(--card-ink);
   font-size: 13px;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.composer-duration:hover span {
+  border-color: var(--card-line-strong);
+  background: var(--card-hover);
 }
 
 .composer-duration input:checked + span {
-  border-color: var(--msg-green);
-  background: color-mix(in srgb, var(--msg-green) 12%, transparent);
+  border-color: var(--card-ink);
+  background: var(--card-selected);
   font-weight: 600;
 }
 
 .composer-duration input:focus-visible + span {
-  outline: 2px solid var(--msg-focus);
+  outline: 2px solid var(--card-ink);
   outline-offset: 2px;
 }
 
@@ -3046,7 +3230,9 @@
   }
 
   .composer-card-option:has(input:checked),
-  .composer-duration input:checked + span {
+  .composer-duration input:checked + span,
+  .composer-card-dialog__search:focus-within,
+  .composer-card-dialog__field:focus-within {
     outline: 2px solid Highlight;
   }
 }
