@@ -446,6 +446,8 @@ func TestConversationMessageHandlersRequireCSRFAndMapConflictsAndRateLimit(t *te
 }
 
 type fakeConversationService struct {
+	cardDirectSourceMessageID uuid.UUID
+
 	page                      conversation.Page
 	listError                 error
 	listCalls                 int
@@ -532,6 +534,17 @@ func (service *fakeConversationService) CreateDirect(
 	service.directCalls++
 	service.directAccess = access
 	service.directEmail = email
+	return service.directResult, service.directError
+}
+
+func (service *fakeConversationService) CreateDirectFromContactCard(
+	_ context.Context,
+	access conversation.AccessContext,
+	sourceMessageID uuid.UUID,
+) (conversation.CreateResult, error) {
+	service.directCalls++
+	service.directAccess = access
+	service.cardDirectSourceMessageID = sourceMessageID
 	return service.directResult, service.directError
 }
 
@@ -1100,6 +1113,113 @@ func TestAttachmentContentDispositionEncodesRFC5987(t *testing.T) {
 	} {
 		if got := attachmentContentDisposition(name); got != want {
 			t.Fatalf("attachmentContentDisposition(%q)=%q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestConversationCardHandlersParseEmbedsAndContactCardDirects(t *testing.T) {
+	t.Parallel()
+	tenantID := uuid.New()
+	conversationID := uuid.New()
+	service := &fakeConversationService{}
+	handler := conversationTestHandler(classIdentityService(tenantID, uuid.New(), nil), service)
+	path := "/api/v1/conversations/" + conversationID.String() + "/messages"
+	cardUserID := uuid.New()
+	displayName := "TutorHub Student"
+	available := true
+	content := ""
+	service.messageResult = conversation.MessageMutationResult{Created: true, Message: conversation.Message{
+		ID: uuid.New(), ConversationID: conversationID, Sequence: 1, ClientMessageID: uuid.New(),
+		Content: &content, State: conversation.MessageStateActive, Version: 1,
+		Embed: &conversation.MessageEmbed{
+			Kind: conversation.EmbedKindContactCard, Available: &available,
+			UserID: &cardUserID, DisplayName: &displayName,
+		},
+		CreatedAt: conversationTestTime, UpdatedAt: conversationTestTime,
+	}}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+		`{"client_message_id":"`+uuid.NewString()+`","content":"","embed":{"kind":"contact_card","user_id":"`+cardUserID.String()+`"}}`,
+		tenantID,
+	))
+	embed := service.messageInput.Embed
+	if response.Code != http.StatusCreated || embed == nil ||
+		embed.Kind != conversation.EmbedKindContactCard || embed.UserID != cardUserID ||
+		embed.MediaSpaceID != uuid.Nil {
+		t.Fatalf("contact card send status=%d input=%+v", response.Code, service.messageInput)
+	}
+	if !strings.Contains(response.Body.String(), `"embed":{"kind":"contact_card","available":true`) {
+		t.Fatalf("card response must project the embed: %s", response.Body.String())
+	}
+	spaceID := uuid.New()
+	handler.ServeHTTP(httptest.NewRecorder(), conversationAuthenticatedMutationRequest(http.MethodPost, path,
+		`{"client_message_id":"`+uuid.NewString()+`","content":"","embed":{"kind":"instant_class","media_space_id":"`+spaceID.String()+`"}}`,
+		tenantID,
+	))
+	if embed := service.messageInput.Embed; embed == nil ||
+		embed.Kind != conversation.EmbedKindInstantClass || embed.MediaSpaceID != spaceID {
+		t.Fatalf("instant class send input=%+v", service.messageInput)
+	}
+
+	calls := service.messageCalls
+	for name, body := range map[string]string{
+		"missing kind":       `{"user_id":"` + cardUserID.String() + `"}`,
+		"unknown kind":       `{"kind":"poll","user_id":"` + cardUserID.String() + `"}`,
+		"contact with space": `{"kind":"contact_card","user_id":"` + cardUserID.String() + `","media_space_id":"` + spaceID.String() + `"}`,
+		"class with user":    `{"kind":"instant_class","user_id":"` + cardUserID.String() + `","media_space_id":"` + spaceID.String() + `"}`,
+		"bad user id":        `{"kind":"contact_card","user_id":"nope"}`,
+		"unknown field":      `{"kind":"contact_card","user_id":"` + cardUserID.String() + `","email":"x@example.test"}`,
+	} {
+		invalid := httptest.NewRecorder()
+		handler.ServeHTTP(invalid, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+			`{"client_message_id":"`+uuid.NewString()+`","content":"","embed":`+body+`}`, tenantID,
+		))
+		assertConversationProblem(t, invalid, http.StatusBadRequest, "conversation_invalid")
+		if service.messageCalls != calls {
+			t.Fatalf("%s embed reached the service", name)
+		}
+	}
+
+	service.messageError = conversation.ErrEmbedUnavailable
+	unavailable := httptest.NewRecorder()
+	handler.ServeHTTP(unavailable, conversationAuthenticatedMutationRequest(http.MethodPost, path,
+		`{"client_message_id":"`+uuid.NewString()+`","content":"","embed":{"kind":"contact_card","user_id":"`+cardUserID.String()+`"}}`,
+		tenantID,
+	))
+	assertConversationProblem(t, unavailable, http.StatusConflict, "message_embed_unavailable")
+
+	service.editError = conversation.ErrMessageNotEditable
+	edit := httptest.NewRecorder()
+	handler.ServeHTTP(edit, conversationAuthenticatedMutationRequest(http.MethodPatch,
+		path+"/"+uuid.NewString(), `{"content":"x","expected_version":1}`, tenantID,
+	))
+	assertConversationProblem(t, edit, http.StatusConflict, "message_not_editable")
+
+	directID := uuid.New()
+	service.directResult = conversation.CreateResult{Created: true, Conversation: conversation.Conversation{
+		ID: directID, Kind: conversation.KindDirect, Title: displayName,
+		Participants: []conversation.Participant{}, CreatedAt: conversationTestTime, UpdatedAt: conversationTestTime,
+	}}
+	sourceID := uuid.New()
+	direct := httptest.NewRecorder()
+	handler.ServeHTTP(direct, conversationAuthenticatedMutationRequest(http.MethodPost, conversationDirectPath,
+		`{"source_message_id":"`+sourceID.String()+`"}`, tenantID,
+	))
+	if direct.Code != http.StatusCreated || service.cardDirectSourceMessageID != sourceID ||
+		service.directEmail != "" {
+		t.Fatalf("card direct status=%d source=%s email=%q", direct.Code, service.cardDirectSourceMessageID, service.directEmail)
+	}
+	directCalls := service.directCalls
+	for name, body := range map[string]string{
+		"both targets": `{"target_member_email":"a@example.test","source_message_id":"` + sourceID.String() + `"}`,
+		"no target":    `{}`,
+		"bad source":   `{"source_message_id":"nope"}`,
+	} {
+		invalid := httptest.NewRecorder()
+		handler.ServeHTTP(invalid, conversationAuthenticatedMutationRequest(http.MethodPost, conversationDirectPath, body, tenantID))
+		assertConversationProblem(t, invalid, http.StatusBadRequest, "conversation_invalid")
+		if service.directCalls != directCalls {
+			t.Fatalf("%s direct request reached the service", name)
 		}
 	}
 }

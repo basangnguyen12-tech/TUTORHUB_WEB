@@ -48,12 +48,58 @@ type conversationHandlers struct {
 
 type createDirectConversationRequest struct {
 	TargetMemberEmail *string `json:"target_member_email"`
+	// SourceMessageID names a contact card the actor can read
+	// (MSG-COMPOSER-TOOLS-01); exactly one target field is allowed.
+	SourceMessageID *string `json:"source_message_id"`
 }
 
 type sendMessageRequest struct {
-	ClientMessageID *string  `json:"client_message_id"`
-	Content         *string  `json:"content"`
-	AttachmentIDs   []string `json:"attachment_ids"`
+	ClientMessageID *string              `json:"client_message_id"`
+	Content         *string              `json:"content"`
+	AttachmentIDs   []string             `json:"attachment_ids"`
+	Embed           *messageEmbedRequest `json:"embed"`
+}
+
+type messageEmbedRequest struct {
+	Kind         *string `json:"kind"`
+	UserID       *string `json:"user_id"`
+	MediaSpaceID *string `json:"media_space_id"`
+}
+
+// parseMessageEmbed accepts exactly the identifier of the card kind.
+func parseMessageEmbed(request *messageEmbedRequest) (*conversation.MessageEmbedInput, bool) {
+	if request == nil {
+		return nil, true
+	}
+	if request.Kind == nil {
+		return nil, false
+	}
+	switch conversation.EmbedKind(*request.Kind) {
+	case conversation.EmbedKindContactCard:
+		if request.UserID == nil || request.MediaSpaceID != nil {
+			return nil, false
+		}
+		userID, ok := parseResourceUUID(*request.UserID)
+		if !ok {
+			return nil, false
+		}
+		return &conversation.MessageEmbedInput{
+			Kind: conversation.EmbedKindContactCard, UserID: userID,
+		}, true
+	case conversation.EmbedKindInstantClass:
+		if request.MediaSpaceID == nil || request.UserID != nil {
+			return nil, false
+		}
+		spaceID, ok := parseResourceUUID(*request.MediaSpaceID)
+		if !ok {
+			return nil, false
+		}
+		return &conversation.MessageEmbedInput{
+			Kind: conversation.EmbedKindInstantClass, MediaSpaceID: spaceID,
+		}, true
+	default:
+		return nil, false
+	}
 }
 
 type roomSettingsRequest struct {
@@ -171,13 +217,26 @@ func (handlers conversationHandlers) createDirect(w http.ResponseWriter, r *http
 	var request createDirectConversationRequest
 	if err := decodeJSONRequest(
 		w, r, &request, maximumConversationBodySize,
-	); err != nil || request.TargetMemberEmail == nil {
+	); err != nil || (request.TargetMemberEmail == nil) == (request.SourceMessageID == nil) {
 		handlers.writeProblem(w, r, conversation.ErrInvalidInput)
 		return
 	}
-	result, err := handlers.service.CreateDirect(
-		r.Context(), access, *request.TargetMemberEmail,
-	)
+	var result conversation.CreateResult
+	var err error
+	if request.SourceMessageID != nil {
+		sourceMessageID, ok := parseResourceUUID(*request.SourceMessageID)
+		if !ok {
+			handlers.writeProblem(w, r, conversation.ErrInvalidInput)
+			return
+		}
+		result, err = handlers.service.CreateDirectFromContactCard(
+			r.Context(), access, sourceMessageID,
+		)
+	} else {
+		result, err = handlers.service.CreateDirect(
+			r.Context(), access, *request.TargetMemberEmail,
+		)
+	}
 	if err != nil {
 		handlers.writeProblem(w, r, err)
 		return
@@ -339,6 +398,11 @@ func (handlers conversationHandlers) messages(w http.ResponseWriter, r *http.Req
 		}
 		attachmentIDs = append(attachmentIDs, attachmentID)
 	}
+	embed, ok := parseMessageEmbed(request.Embed)
+	if !ok {
+		handlers.writeProblem(w, r, conversation.ErrInvalidInput)
+		return
+	}
 	result, err := handlers.service.SendMessage(
 		r.Context(),
 		access,
@@ -347,6 +411,7 @@ func (handlers conversationHandlers) messages(w http.ResponseWriter, r *http.Req
 			ClientMessageID: clientMessageID,
 			Content:         *request.Content,
 			AttachmentIDs:   attachmentIDs,
+			Embed:           embed,
 		},
 	)
 	if err != nil {
@@ -575,6 +640,12 @@ func (handlers conversationHandlers) writeProblem(w http.ResponseWriter, r *http
 	case errors.Is(err, conversation.ErrVersionConflict):
 		status, code = http.StatusConflict, "message_version_conflict"
 		title, detail = "Message changed", "Reload the latest message state before retrying this change."
+	case errors.Is(err, conversation.ErrMessageNotEditable):
+		status, code = http.StatusConflict, "message_not_editable"
+		title, detail = "Message cannot be edited", "Contact cards and class cards keep their content; unsend and send a new one instead."
+	case errors.Is(err, conversation.ErrEmbedUnavailable):
+		status, code = http.StatusConflict, "message_embed_unavailable"
+		title, detail = "Card unavailable", "The contact or class can no longer be shared in this conversation."
 	case errors.Is(err, conversation.ErrAttachmentUnsupported):
 		status, code = http.StatusUnsupportedMediaType, "conversation_attachment_unsupported"
 		title, detail = "Attachment type not allowed", "Send PNG, JPEG, WebP or GIF images, or PDF, Office, text, CSV, Markdown or ZIP lesson files."

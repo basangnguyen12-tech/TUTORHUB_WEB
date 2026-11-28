@@ -25,13 +25,13 @@ import {
   Check,
   ChevronRight,
   ChevronUp,
+  Contact,
   Copy,
-  FolderOpen,
   GraduationCap,
   Lock,
   MessageCircle,
-  Paperclip,
   Pencil,
+  Presentation,
   RefreshCw,
   Reply,
   RotateCcw,
@@ -51,6 +51,8 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -73,6 +75,7 @@ import {
   useUploadConversationAttachment,
 } from "../app/conversations";
 import { useI18n } from "../app/i18n";
+import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { shouldConcealTenantScopedData } from "../app/tenantDataAccess";
 import { ClassroomEmojiPicker } from "../features/media/ClassroomEmojiPicker";
 import {
@@ -99,6 +102,27 @@ import {
   type ParsedQuotedMessage,
   type ReplyTarget,
 } from "./ConversationQuote";
+import {
+  ComposerCaptureMenu,
+  ComposerFileMenu,
+} from "./conversation-composer/ComposerToolMenus";
+import { isScreenCaptureSupported } from "./conversation-composer/screenCapture";
+import { ScreenshotEditor } from "./conversation-composer/ScreenshotEditor";
+import {
+  useCaptureShortcut,
+  useScreenshotFlow,
+} from "./conversation-composer/useScreenshotFlow";
+import {
+  ContactCardDialog,
+  InstantClassDialog,
+} from "./conversation-composer/ComposerCardDialogs";
+import {
+  cardPreviewText,
+  createInstantClassSpace,
+  type MessageEmbed,
+  type MessageEmbedInput,
+} from "./conversation-composer/composerCards";
+import { MessageEmbedCard } from "./conversation-composer/MessageEmbedCard";
 import { FileTypeIcon } from "./FileTypeIcon";
 
 const maximumMessageCharacters = 4000;
@@ -306,6 +330,9 @@ export function ConversationMessages({
   const selection = useRef<{ end: number; start: number } | null>(null);
   const restoreFocus = useRef<HTMLElement | null>(null);
   const mentionInserted = useRef(false);
+  const dragDepth = useRef(0);
+  const [dragging, setDragging] = useState(false);
+  const [captureSupported] = useState(() => isScreenCaptureSupported());
 
   const canModerate = conversation?.viewer_access.can_moderate_chat === true;
   const canUpload =
@@ -403,6 +430,7 @@ export function ConversationMessages({
           ...(row.message.attachments ?? []).map(
             (attachment) => attachment.display_name,
           ),
+          embedSearchText(row.message.embed),
         ].join(" "),
       );
       if (haystack.includes(foldedSearch)) {
@@ -582,6 +610,123 @@ export function ConversationMessages({
     event.target.value = "";
   };
 
+  // MSG-COMPOSER-TOOLS-01: Ctrl+V and drag-and-drop reuse the staged path.
+  const onComposerPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files);
+    if (files.length === 0 || !canUpload) return;
+    if (!event.clipboardData.getData("text/plain")) event.preventDefault();
+    addFiles(files);
+  };
+  const hasDraggedFiles = (event: DragEvent) =>
+    Array.from(event.dataTransfer.types).includes("Files");
+  const onDragEnter = (event: DragEvent<HTMLElement>) => {
+    if (!canUpload || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  };
+  const onDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!canUpload || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+  const onDragLeave = () => {
+    if (!dragging) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+  const onDrop = (event: DragEvent<HTMLElement>) => {
+    if (!canUpload || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    addFiles(Array.from(event.dataTransfer.files));
+  };
+
+  const attachmentsFull = staged.length >= CHAT_MAX_ATTACHMENTS;
+  const fullReason = attachmentsFull
+    ? t("conversations.attachTooMany", { count: CHAT_MAX_ATTACHMENTS })
+    : null;
+  // Mirrors when the composer itself is rendered (see `initialError`).
+  const composerHidden =
+    messages.isPending ||
+    (messages.isError &&
+      (items.length === 0 || shouldConcealTenantScopedData(messages.error)));
+  const canCapture =
+    canUpload && captureSupported && !composerHidden && !sendMessage.isPending;
+  const screenshot = useScreenshotFlow({
+    onCancelled: () =>
+      setActionFeedback(t("conversations.screenshotCancelled")),
+    onFile: (file) => addFiles([file]),
+  });
+  useCaptureShortcut(canCapture && !attachmentsFull, () =>
+    screenshot.start("screen"),
+  );
+
+  // MSG-COMPOSER-TOOLS-01: server-authored cards (contact, instant class).
+  const capabilities = useTenantCapabilities(tenantID || undefined);
+  const [cardDialog, setCardDialog] = useState<"contact" | "class" | null>(
+    null,
+  );
+  const [cardNotice, setCardNotice] = useState<string | null>(null);
+  // Stable keys per attempt so a retry replays instead of duplicating.
+  const cardAttempt = useRef<{
+    clientMessageID: string;
+    idempotencyKey: string;
+    payload: string;
+  } | null>(null);
+  const canShareInstantClass =
+    canPostMessages &&
+    (conversation?.kind === "direct" || conversation?.kind === "class") &&
+    capabilities.data?.features.instant_study_rooms.enabled === true &&
+    capabilities.data?.features.classroom_media_rooms.enabled === true;
+  const attemptKeys = (payload: string) => {
+    if (cardAttempt.current?.payload !== payload) {
+      cardAttempt.current = {
+        clientMessageID: crypto.randomUUID(),
+        idempotencyKey: `instant-class-${crypto.randomUUID()}`,
+        payload,
+      };
+    }
+    return cardAttempt.current;
+  };
+  const sendCard = async (
+    embed: MessageEmbedInput,
+    keys: { clientMessageID: string },
+  ) => {
+    stickToBottom.current = true;
+    await sendMessage.mutateAsync({
+      client_message_id: keys.clientMessageID,
+      content: "",
+      embed,
+    });
+    cardAttempt.current = null;
+  };
+  const openCardDialog = (kind: "contact" | "class") => {
+    cardAttempt.current = null;
+    setCardNotice(null);
+    setCardDialog(kind);
+  };
+  const sendContactCard = async (userID: string) => {
+    const keys = attemptKeys(`contact:${userID}`);
+    await sendCard({ kind: "contact_card", user_id: userID }, keys);
+    setCardDialog(null);
+  };
+  const createInstantClass = async (input: {
+    durationMinutes: number;
+    title: string;
+  }) => {
+    const keys = attemptKeys(`class:${input.durationMinutes}:${input.title}`);
+    const space = await createInstantClassSpace(tenantID, {
+      durationMinutes: input.durationMinutes,
+      idempotencyKey: keys.idempotencyKey,
+      title: input.title,
+    });
+    await sendCard({ kind: "instant_class", media_space_id: space.id }, keys);
+    setCardDialog(null);
+    setCardNotice(t("conversations.instantClassCreated"));
+  };
+
   const readyAttachmentIDs = staged.flatMap((item) =>
     item.status === "ready" && item.attachment ? [item.attachment.id] : [],
   );
@@ -671,6 +816,7 @@ export function ConversationMessages({
     const excerpt =
       quoteExcerpt(message.content) ||
       message.attachments?.map((item) => item.display_name).join(", ") ||
+      cardPreviewText(message.embed, t) ||
       t("conversations.attachmentPreview");
     setReplyTarget({
       authorName: message.author.display_name,
@@ -835,6 +981,11 @@ export function ConversationMessages({
     <section
       aria-labelledby={`conversation-messages-title-${conversationID}`}
       className="conversation-messages"
+      data-dragging={dragging || undefined}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
       <h3
         className="visually-hidden"
@@ -1109,7 +1260,20 @@ export function ConversationMessages({
                                 <span>{parsed.quote.text}</span>
                               </blockquote>
                             )}
-                            {(body || !active.attachments?.length) && (
+                            {active.embed && (
+                              <MessageEmbedCard
+                                actorID={actorID}
+                                avatar={(name, seed) => (
+                                  <PersonAvatar name={name} seed={seed} />
+                                )}
+                                embed={active.embed}
+                                messageID={active.id}
+                                tenantID={tenantID}
+                              />
+                            )}
+                            {(body ||
+                              (!active.attachments?.length &&
+                                !active.embed)) && (
                               <p className="conversation-message__content">
                                 <LinkifiedText text={body} />
                               </p>
@@ -1370,6 +1534,7 @@ export function ConversationMessages({
               }
             }}
             onKeyDown={handleComposerKeyDown}
+            onPaste={onComposerPaste}
             onSelect={rememberSelection}
             placeholder={t("conversations.composerPlaceholder")}
             ref={composer}
@@ -1385,6 +1550,62 @@ export function ConversationMessages({
             <p className="conversations-page__form-error" role="alert">
               {messageMutationError(sendMessage.error, t)}
             </p>
+          )}
+          {cardNotice && (
+            <div className="conversation-composer__notice" role="status">
+              <span>{cardNotice}</span>
+              <button
+                aria-label={t("conversations.screenshotDismiss")}
+                className="conversation-composer__chip-close"
+                onClick={() => setCardNotice(null)}
+                type="button"
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          )}
+          {screenshot.phase === "countdown" && (
+            <div className="conversation-composer__notice" role="status">
+              <span>
+                {t("conversations.screenshotCountdown", {
+                  seconds: screenshot.countdown,
+                })}
+              </span>
+              <button
+                className="conversation-composer__notice-action"
+                onClick={screenshot.cancelCountdown}
+                type="button"
+              >
+                {t("conversations.screenshotCancel")}
+              </button>
+            </div>
+          )}
+          {screenshot.failedMode && (
+            <div
+              className="conversation-composer__notice"
+              data-tone="error"
+              role="alert"
+            >
+              <span>{t("conversations.screenshotFailed")}</span>
+              <button
+                className="conversation-composer__notice-action"
+                onClick={() => {
+                  const mode = screenshot.failedMode;
+                  if (mode) screenshot.start(mode);
+                }}
+                type="button"
+              >
+                {t("conversations.screenshotRetry")}
+              </button>
+              <button
+                aria-label={t("conversations.screenshotDismiss")}
+                className="conversation-composer__chip-close"
+                onClick={screenshot.dismissFailure}
+                type="button"
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
           )}
           <div className="conversation-composer__toolbar">
             <div className="conversation-composer__tools">
@@ -1445,40 +1666,58 @@ export function ConversationMessages({
                   )}
                 </MenuContent>
               </Menu>
-              {canUpload && (
-                <>
-                  <button
-                    aria-label={t("conversations.attach")}
-                    className="conversation-composer__tool"
-                    data-tooltip={t("conversations.attach")}
-                    disabled={
-                      sendMessage.isPending ||
-                      staged.length >= CHAT_MAX_ATTACHMENTS
-                    }
-                    onClick={() => fileInput.current?.click()}
-                    type="button"
-                  >
-                    <Paperclip aria-hidden="true" />
-                  </button>
-                  <input
-                    accept={CHAT_FILE_ACCEPT}
-                    hidden
-                    multiple
-                    onChange={onPickFiles}
-                    ref={fileInput}
-                    type="file"
-                  />
-                </>
+              {canUpload && captureSupported && (
+                <ComposerCaptureMenu
+                  busy={
+                    screenshot.phase === "picking" ||
+                    screenshot.phase === "countdown"
+                  }
+                  disabled={sendMessage.isPending}
+                  fullReason={fullReason}
+                  onCapture={screenshot.start}
+                />
               )}
-              {classID && (
-                <Link
-                  aria-label={t("conversations.openMaterialsTool")}
+              {(canUpload || classID) && (
+                <ComposerFileMenu
+                  canUpload={canUpload}
+                  classID={classID}
+                  disabled={sendMessage.isPending}
+                  fullReason={fullReason}
+                  onPickFromDevice={() => fileInput.current?.click()}
+                />
+              )}
+              {canUpload && (
+                <input
+                  accept={CHAT_FILE_ACCEPT}
+                  data-testid="conversation-file-input"
+                  hidden
+                  multiple
+                  onChange={onPickFiles}
+                  ref={fileInput}
+                  type="file"
+                />
+              )}
+              <button
+                aria-label={t("conversations.contactCard")}
+                className="conversation-composer__tool"
+                data-tooltip={t("conversations.contactCard")}
+                disabled={sendMessage.isPending}
+                onClick={() => openCardDialog("contact")}
+                type="button"
+              >
+                <Contact aria-hidden="true" />
+              </button>
+              {canShareInstantClass && (
+                <button
+                  aria-label={t("conversations.instantClass")}
                   className="conversation-composer__tool"
-                  data-tooltip={t("conversations.openMaterialsTool")}
-                  to={`/app/classrooms/${classID}?tab=materials`}
+                  data-tooltip={t("conversations.instantClass")}
+                  disabled={sendMessage.isPending}
+                  onClick={() => openCardDialog("class")}
+                  type="button"
                 >
-                  <FolderOpen aria-hidden="true" />
-                </Link>
+                  <Presentation aria-hidden="true" />
+                </button>
               )}
             </div>
             <div className="conversation-composer__end">
@@ -1528,8 +1767,48 @@ export function ConversationMessages({
           <p role="status">{readOnlyNotice}</p>
         </div>
       )}
+      {dragging && (
+        <div aria-hidden="true" className="conversation-messages__drop">
+          {t("conversations.dropFiles")}
+        </div>
+      )}
+      {screenshot.frame && (
+        <ScreenshotEditor
+          capture={screenshot.frame}
+          onCancel={screenshot.cancelEditor}
+          onConfirm={screenshot.confirm}
+          onRetake={screenshot.retake}
+          returnFocus={() => composer.current?.focus()}
+        />
+      )}
+      {cardDialog === "contact" && (
+        <ContactCardDialog
+          actorID={actorID}
+          avatar={(name, seed) => (
+            <PersonAvatar name={name} seed={seed} size="xs" />
+          )}
+          onClose={() => setCardDialog(null)}
+          onSend={sendContactCard}
+          tenantID={tenantID}
+        />
+      )}
+      {cardDialog === "class" && (
+        <InstantClassDialog
+          onClose={() => setCardDialog(null)}
+          onCreate={createInstantClass}
+        />
+      )}
     </section>
   );
+}
+
+/** Text a card contributes to in-thread search. */
+function embedSearchText(embed: MessageEmbed | undefined): string {
+  if (!embed) return "";
+  if (embed.kind === "contact_card") {
+    return embed.available ? (embed.display_name ?? "") : "";
+  }
+  return embed.title;
 }
 
 function MessageActionButton({

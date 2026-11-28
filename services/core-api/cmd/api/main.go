@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/tutorhub-v2/core-api/internal/config"
 	"github.com/tutorhub-v2/core-api/internal/httpapi"
@@ -205,6 +207,7 @@ func run() int {
 			cfg.Database.QueryTimeout,
 			authorizer,
 			featureControlEnforcer,
+			conversation.WithInstantSpaceSharer(shareInstantStudySpace),
 		)
 		if conversationErr != nil {
 			logger.Error("initialize conversation repository", "error", conversationErr)
@@ -1112,4 +1115,22 @@ func featureControlsWithRuntimePrerequisites(
 		configuration.DisableFileUploads = true
 	}
 	return configuration
+}
+
+// shareInstantStudySpace adapts the media instant-space share to the
+// conversation card contract (MSG-COMPOSER-TOOLS-01).
+func shareInstantStudySpace(
+	ctx context.Context,
+	transaction pgx.Tx,
+	tenantID, spaceID, ownerID uuid.UUID,
+	recipientIDs []uuid.UUID,
+	now time.Time,
+) error {
+	_, err := media.ShareInstantStudySpace(
+		ctx, transaction, tenantID, spaceID, ownerID, recipientIDs, now,
+	)
+	if errors.Is(err, media.ErrInstantShareUnavailable) {
+		return conversation.ErrEmbedUnavailable
+	}
+	return err
 }

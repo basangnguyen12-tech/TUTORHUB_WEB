@@ -89,9 +89,20 @@ func (service *Service) SendMessage(
 		return MessageMutationResult{}, err
 	}
 	var content string
-	if len(attachmentIDs) > 0 {
+	switch {
+	case input.Embed != nil:
+		// A card is the whole message: no caption and no attachments.
+		if len(attachmentIDs) > 0 || !validMessageEmbedInput(*input.Embed) {
+			return MessageMutationResult{}, ErrInvalidInput
+		}
+		if !utf8.ValidString(input.Content) || strings.TrimSpace(input.Content) != "" {
+			return MessageMutationResult{}, ErrInvalidInput
+		}
+		embed := *input.Embed
+		input.Embed = &embed
+	case len(attachmentIDs) > 0:
 		content, err = normalizeOptionalMessageContent(input.Content)
-	} else {
+	default:
 		content, err = normalizeMessageContent(input.Content)
 	}
 	if err != nil {
@@ -100,6 +111,37 @@ func (service *Service) SendMessage(
 	input.Content = content
 	input.AttachmentIDs = attachmentIDs
 	return service.repository.SendMessage(ctx, access, conversationID, input)
+}
+
+// validMessageEmbedInput requires exactly the identifier of the card kind.
+func validMessageEmbedInput(embed MessageEmbedInput) bool {
+	switch embed.Kind {
+	case EmbedKindContactCard:
+		return embed.UserID != uuid.Nil && embed.MediaSpaceID == uuid.Nil
+	case EmbedKindInstantClass:
+		return embed.MediaSpaceID != uuid.Nil && embed.UserID == uuid.Nil
+	default:
+		return false
+	}
+}
+
+// sendRequestFingerprint binds idempotent replays to the exact request,
+// keeping the historical fingerprint for text and attachment sends.
+func sendRequestFingerprint(input SendMessageInput) [32]byte {
+	if input.Embed == nil {
+		return messageRequestFingerprint(input.Content, input.AttachmentIDs)
+	}
+	target := input.Embed.UserID
+	if input.Embed.Kind == EmbedKindInstantClass {
+		target = input.Embed.MediaSpaceID
+	}
+	payload := make([]byte, 0, 64)
+	payload = append(payload, 0)
+	payload = append(payload, "embed:"...)
+	payload = append(payload, input.Embed.Kind...)
+	payload = append(payload, 0)
+	payload = append(payload, target[:]...)
+	return sha256.Sum256(payload)
 }
 
 func (service *Service) EditMessage(

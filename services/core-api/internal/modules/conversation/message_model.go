@@ -42,6 +42,43 @@ type Message struct {
 	// Attachments is non-nil (possibly empty) for active messages and nil for
 	// tombstones, whose public projection never exposes attachments.
 	Attachments *[]MessageAttachment `json:"attachments,omitempty"`
+	// Embed is the reader-specific projection of a server-authored card on an
+	// active message; tombstones never expose it.
+	Embed *MessageEmbed `json:"embed,omitempty"`
+}
+
+// EmbedKind names a server-authored card (MSG-COMPOSER-TOOLS-01).
+type EmbedKind string
+
+const (
+	EmbedKindContactCard  EmbedKind = "contact_card"
+	EmbedKindInstantClass EmbedKind = "instant_class"
+)
+
+// MessageEmbedInput is the card a sender asks the server to attach; exactly
+// one identifier is set for its kind.
+type MessageEmbedInput struct {
+	Kind         EmbedKind
+	UserID       uuid.UUID
+	MediaSpaceID uuid.UUID
+}
+
+// MessageEmbed is resolved for each reader at read time. A contact card
+// exposes only the member's display name and ID, and only while the member
+// is still active; an instant class exposes its title, window and status.
+type MessageEmbed struct {
+	Kind EmbedKind `json:"kind"`
+	// contact_card
+	Available   *bool      `json:"available,omitempty"`
+	UserID      *uuid.UUID `json:"user_id,omitempty"`
+	DisplayName *string    `json:"display_name,omitempty"`
+	// instant_class
+	MediaSpaceID     *uuid.UUID `json:"media_space_id,omitempty"`
+	Title            *string    `json:"title,omitempty"`
+	Status           *string    `json:"status,omitempty"`
+	EndsAt           *time.Time `json:"ends_at,omitempty"`
+	RemainingSeconds *int64     `json:"remaining_seconds,omitempty"`
+	ViewerCanJoin    *bool      `json:"viewer_can_join,omitempty"`
 }
 
 type MessageListInput struct {
@@ -69,6 +106,9 @@ type SendMessageInput struct {
 	// AttachmentIDs are staged uploads owned by the actor in this
 	// conversation; content may be empty only when at least one is present.
 	AttachmentIDs []uuid.UUID
+	// Embed is a server-validated card; such a message has empty content and
+	// no attachments.
+	Embed *MessageEmbedInput
 }
 
 type EditMessageInput struct {

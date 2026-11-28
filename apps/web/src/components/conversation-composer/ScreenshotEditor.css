@@ -1,0 +1,77 @@
+/* MSG-COMPOSER-TOOLS-01: screenshot crop dialog. */
+.th-dialog-content.screenshot-editor {
+  display: grid;
+  gap: 12px;
+  width: min(960px, calc(100vw - 32px));
+}
+
+.screenshot-editor .th-dialog-description {
+  margin: 0;
+}
+
+.screenshot-editor__stage {
+  position: relative;
+  width: min(100%, calc(62dvh * var(--screenshot-ratio, 1.7778)));
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--color-surface-subtle);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.screenshot-editor__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: var(--screenshot-ratio, 1.7778);
+}
+
+.screenshot-editor__selection {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #ffffff;
+  outline: 1px solid rgb(15 23 42 / 0.7);
+  box-shadow: 0 0 0 9999px rgb(15 23 42 / 0.5);
+  cursor: move;
+}
+
+.screenshot-editor__selection:focus-visible {
+  border-color: var(--color-focus);
+  outline: 2px solid #ffffff;
+  outline-offset: 1px;
+}
+
+.screenshot-editor__size {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.screenshot-editor__error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.screenshot-editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.screenshot-editor__spacer {
+  flex: 1 1 auto;
+}
+
+@media (forced-colors: active) {
+  .screenshot-editor__selection {
+    border-color: Highlight;
+    box-shadow: none;
+    outline: 2px solid CanvasText;
+  }
+}

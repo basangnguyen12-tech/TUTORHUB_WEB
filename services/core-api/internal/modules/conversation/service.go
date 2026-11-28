@@ -129,6 +129,27 @@ func (service *Service) CreateDirect(
 	)
 }
 
+// CreateDirectFromContactCard opens the direct conversation with the member
+// named on a contact card message the actor can read (MSG-COMPOSER-TOOLS-01).
+func (service *Service) CreateDirectFromContactCard(
+	ctx context.Context,
+	access AccessContext,
+	sourceMessageID uuid.UUID,
+) (CreateResult, error) {
+	if service == nil {
+		return CreateResult{}, fmt.Errorf("create direct conversation from card: service is unavailable")
+	}
+	if !validAccess(access) {
+		return CreateResult{}, ErrAccessDenied
+	}
+	if sourceMessageID == uuid.Nil {
+		return CreateResult{}, ErrNotFound
+	}
+	return service.decorateCreateResult(
+		service.repository.CreateDirectFromContactCard(ctx, access, sourceMessageID),
+	)
+}
+
 func (service *Service) CreateClass(
 	ctx context.Context,
 	access AccessContext,
@@ -170,7 +191,8 @@ func (service *Service) CreateRoom(
 // decorateConversation applies service-level capabilities the repository
 // cannot know, such as whether an attachment data plane exists.
 func (service *Service) decorateConversation(item Conversation) Conversation {
-	item.ViewerAccess.CanUploadAttachments = item.Kind == KindRoom &&
+	// MSG-COMPOSER-TOOLS-01: no longer room-only (ADR-0042 amendment).
+	item.ViewerAccess.CanUploadAttachments =
 		item.ViewerAccess.CanPostMessages && service.storage.available()
 	return item
 }

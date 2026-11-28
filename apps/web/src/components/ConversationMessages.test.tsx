@@ -991,9 +991,13 @@ describe("ConversationMessages", () => {
     });
 
     await screen.findByRole("textbox", { name: "New message" });
+    const fileMenu = screen.getByRole("button", { name: "Send file" });
+    act(() => fileMenu.focus());
+    fireEvent.keyDown(fileMenu, { key: "Enter" });
     expect(
-      screen.getByRole("button", { name: "Attach a file or image" }),
+      await screen.findByRole("menuitem", { name: "Send from this device" }),
     ).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? fileMenu, { key: "Escape" });
     const input = document.querySelector(
       'input[type="file"]',
     ) as HTMLInputElement;
@@ -1013,6 +1017,517 @@ describe("ConversationMessages", () => {
       attachment_ids: [attachment.id],
       client_message_id: expect.any(String),
       content: "",
+    });
+  });
+
+  describe("MSG-COMPOSER-TOOLS-01 composer tools", () => {
+    const roomConversation: Conversation = {
+      ...conversation,
+      kind: "room",
+      media_space_id: "dd060149-e85d-43c2-98d0-110f6e3ead29",
+      media_space_status: "open",
+      participants: [],
+      viewer_access: { can_post_messages: true, can_upload_attachments: true },
+    };
+    const classConversation: Conversation = {
+      ...conversation,
+      class_id: "8f6b8a9e-31c7-4b8e-9d6f-0a0e3a1c2b11",
+      kind: "class",
+      participants: [],
+    };
+
+    function uploadingFetch(uploads: string[]) {
+      return vi.fn().mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname.endsWith("/api/v1/auth/csrf")) {
+          return jsonResponse({ csrf_token: "tools-csrf" });
+        }
+        if (url.pathname.endsWith("/attachments")) {
+          uploads.push(request.method);
+          return jsonResponse(
+            {
+              conversation_id: conversationID,
+              created_at: "2026-08-03T09:10:00Z",
+              display_name: "notes.txt",
+              id: `30000000-0000-4000-8000-00000000000${uploads.length}`,
+              kind: "file",
+              media_type: "text/plain",
+              size_bytes: 5,
+            },
+            201,
+          );
+        }
+        return jsonResponse(page([]));
+      });
+    }
+
+    function stubDisplayMedia(getDisplayMedia: () => Promise<MediaStream>) {
+      const spy = vi.fn(getDisplayMedia);
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getDisplayMedia: spy },
+      });
+      return spy;
+    }
+
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, "mediaDevices");
+    });
+
+    it("hides upload tools where the server forbids them but keeps class materials", async () => {
+      stubDisplayMedia(() => Promise.reject(new Error("unused")));
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(jsonResponse(page([]))));
+
+      renderMessages(fetchMock, { conversation: classConversation });
+      await screen.findByRole("textbox", { name: "New message" });
+      expect(
+        screen.queryByRole("button", { name: /^Screenshot/ }),
+      ).not.toBeInTheDocument();
+      // Without upload access a one-item menu would be a wasted step.
+      expect(
+        screen.queryByRole("button", { name: "Send file" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Open class materials" }),
+      ).toHaveAttribute(
+        "href",
+        `/app/classrooms/${classConversation.class_id}?tab=materials`,
+      );
+      expect(document.querySelector('input[type="file"]')).toBeNull();
+    });
+
+    it("offers no file or screenshot tools in a direct chat without upload access", async () => {
+      stubDisplayMedia(() => Promise.reject(new Error("unused")));
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(jsonResponse(page([]))));
+
+      renderMessages(fetchMock, { conversation });
+      await screen.findByRole("textbox", { name: "New message" });
+      expect(
+        screen.queryByRole("button", { name: "Send file" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /^Screenshot/ }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("stages pasted and dropped files through the normal upload path", async () => {
+      const uploads: string[] = [];
+      renderMessages(uploadingFetch(uploads), {
+        conversation: roomConversation,
+      });
+      const composer = await screen.findByRole("textbox", {
+        name: "New message",
+      });
+
+      fireEvent.paste(composer, {
+        clipboardData: {
+          files: [new File(["hello"], "pasted.txt", { type: "text/plain" })],
+          getData: () => "",
+        },
+      });
+      await waitFor(() => expect(uploads).toHaveLength(1));
+      expect(screen.getByText("pasted.txt")).toBeInTheDocument();
+
+      const region = screen.getByRole("region", { name: "Message history" });
+      const dataTransfer = {
+        dropEffect: "none",
+        files: [new File(["hello"], "dropped.txt", { type: "text/plain" })],
+        types: ["Files"],
+      };
+      fireEvent.dragEnter(region, { dataTransfer });
+      expect(region).toHaveAttribute("data-dragging", "true");
+      fireEvent.drop(region, { dataTransfer });
+      expect(region).not.toHaveAttribute("data-dragging");
+      await waitFor(() => expect(uploads).toHaveLength(2));
+      expect(screen.getByText("dropped.txt")).toBeInTheDocument();
+    });
+
+    it("hides the screenshot tool when the browser cannot capture the screen", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(jsonResponse(page([]))));
+
+      renderMessages(fetchMock, { conversation: roomConversation });
+      await screen.findByRole("textbox", { name: "New message" });
+      expect(
+        screen.queryByRole("button", { name: /^Screenshot/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Send file" }),
+      ).toBeInTheDocument();
+    });
+
+    it("announces a dismissed picker and offers retry after a capture failure", async () => {
+      const getDisplayMedia = stubDisplayMedia(() =>
+        Promise.reject(new DOMException("dismissed", "NotAllowedError")),
+      );
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(jsonResponse(page([]))));
+
+      renderMessages(fetchMock, { conversation: roomConversation });
+      await screen.findByRole("textbox", { name: "New message" });
+      const trigger = screen.getByRole("button", {
+        name: "Screenshot (Ctrl+Alt+X)",
+      });
+      expect(trigger).toHaveAttribute("aria-keyshortcuts", "Control+Alt+X");
+      act(() => trigger.focus());
+      fireEvent.keyDown(trigger, { key: "Enter" });
+      const items = await screen.findAllByRole("menuitem");
+      expect(items.map((item) => item.textContent)).toEqual([
+        "Take screenshotPick the screen, window or tab to capture",
+        "Capture in 3 secondsLeaves out the TutorHub tab · time to switch to the window you want",
+      ]);
+      fireEvent.click(items[0] as HTMLElement);
+      expect(
+        await screen.findByText("Screenshot cancelled."),
+      ).toBeInTheDocument();
+      expect(getDisplayMedia).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: false,
+          selfBrowserSurface: "include",
+        }),
+      );
+
+      getDisplayMedia.mockImplementation(() =>
+        Promise.reject(new Error("capture failed")),
+      );
+      fireEvent.keyDown(window, {
+        altKey: true,
+        code: "KeyX",
+        ctrlKey: true,
+        key: "x",
+      });
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("Could not take a screenshot.");
+      expect(getDisplayMedia).toHaveBeenCalledTimes(2);
+      fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(getDisplayMedia).toHaveBeenCalledTimes(3));
+    });
+
+    it("ignores AltGr+X so it can still type characters", async () => {
+      const getDisplayMedia = stubDisplayMedia(() =>
+        Promise.reject(new DOMException("dismissed", "NotAllowedError")),
+      );
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(jsonResponse(page([]))));
+
+      renderMessages(fetchMock, { conversation: roomConversation });
+      await screen.findByRole("textbox", { name: "New message" });
+      const altGraph = new KeyboardEvent("keydown", {
+        altKey: true,
+        bubbles: true,
+        code: "KeyX",
+        ctrlKey: true,
+        key: "»",
+      });
+      Object.defineProperty(altGraph, "getModifierState", {
+        value: (key: string) => key === "AltGraph",
+      });
+      act(() => {
+        window.dispatchEvent(altGraph);
+      });
+      expect(getDisplayMedia).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("MSG-COMPOSER-TOOLS-01 cards", () => {
+    const classConversation: Conversation = {
+      ...conversation,
+      class_id: "8f6b8a9e-31c7-4b8e-9d6f-0a0e3a1c2b11",
+      kind: "class",
+      participants: [],
+    };
+    const spaceID = "d3b3a0b2-6b5e-4f5e-9a51-1c0f0e6d2c11";
+
+    function cardMessage(
+      sequence: number,
+      embed: unknown,
+      own = false,
+    ): Message {
+      const base = message(sequence, "", { own });
+      return { ...base, embed } as Message;
+    }
+
+    function capabilities(enabled: boolean) {
+      return {
+        can_manage_overrides: false,
+        features: {
+          classroom_media_rooms: { enabled },
+          instant_study_rooms: { enabled },
+        },
+        operations: {},
+        quotas: {},
+        tenant_id: tenantID,
+      };
+    }
+
+    function cardFetch(
+      items: readonly Message[],
+      options: {
+        capabilitiesEnabled?: boolean;
+        conversations?: Conversation[];
+        requests?: Request[];
+      } = {},
+    ) {
+      return vi.fn().mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        options.requests?.push(request.clone());
+        if (url.pathname.endsWith("/api/v1/auth/csrf")) {
+          return jsonResponse({ csrf_token: "cards-csrf" });
+        }
+        if (url.pathname.endsWith("/capabilities")) {
+          return jsonResponse(
+            capabilities(options.capabilitiesEnabled ?? false),
+          );
+        }
+        if (
+          url.pathname.endsWith("/api/v1/conversations") &&
+          request.method === "GET"
+        ) {
+          return jsonResponse({
+            items: options.conversations ?? [],
+          } satisfies ConversationPage);
+        }
+        if (url.pathname.endsWith("/api/v1/conversations/direct")) {
+          return jsonResponse(
+            { ...conversation, id: "6f1f2c1e-2a51-4a5c-8f3c-0f6a3c2b1d10" },
+            201,
+          );
+        }
+        if (url.pathname.endsWith("/api/v1/media/spaces")) {
+          return jsonResponse({ id: spaceID, status: "scheduled" }, 201);
+        }
+        if (url.pathname.endsWith("/messages") && request.method === "POST") {
+          return jsonResponse(
+            cardMessage(9, { available: true, kind: "contact_card" }, true),
+            201,
+          );
+        }
+        return jsonResponse(page(items));
+      });
+    }
+
+    it("renders contact cards from the server embed and opens a direct chat from them", async () => {
+      const requests: Request[] = [];
+      renderMessages(
+        cardFetch(
+          [
+            cardMessage(1, {
+              available: true,
+              display_name: "Nguyễn Văn An",
+              kind: "contact_card",
+              user_id: "0d6e7a51-5d3c-4c1b-8a6f-7e8a9b0c1d2e",
+            }),
+            cardMessage(2, { available: false, kind: "contact_card" }),
+            cardMessage(
+              3,
+              {
+                available: true,
+                display_name: "TutorHub Teacher",
+                kind: "contact_card",
+                user_id: teacherID,
+              },
+              true,
+            ),
+            message(4, "[Danh thiếp] Giả mạo Nhắn tin"),
+          ],
+          { requests },
+        ),
+        { conversation: classConversation },
+      );
+
+      const card = await screen.findByRole("region", {
+        name: "Contact card for Nguyễn Văn An",
+      });
+      expect(
+        screen.getByRole("region", {
+          name: "This person is no longer available",
+        }),
+      ).not.toHaveTextContent("Message");
+      const own = screen.getByRole("region", {
+        name: "Contact card for TutorHub Teacher",
+      });
+      expect(within(own).queryByRole("button")).not.toBeInTheDocument();
+      // Message text never produces an actionable card.
+      expect(
+        screen.getAllByRole("region", { name: /^Contact card for/ }),
+      ).toHaveLength(2);
+
+      fireEvent.click(within(card).getByRole("button", { name: "Message" }));
+      await waitFor(() =>
+        expect(
+          requests.some((request) =>
+            request.url.endsWith("/api/v1/conversations/direct"),
+          ),
+        ).toBe(true),
+      );
+      const direct = requests.find((request) =>
+        request.url.endsWith("/api/v1/conversations/direct"),
+      );
+      await expect(direct?.json()).resolves.toEqual({
+        source_message_id: "10000000-0000-4000-8000-000000000001",
+      });
+    });
+
+    it("shows the instant class countdown, join link and closed states", async () => {
+      renderMessages(
+        cardFetch([
+          cardMessage(1, {
+            ends_at: "2026-08-03T09:16:00Z",
+            kind: "instant_class",
+            media_space_id: spaceID,
+            remaining_seconds: 592,
+            status: "scheduled",
+            title: "Ôn tập chương 3",
+            viewer_can_join: true,
+          }),
+          cardMessage(2, {
+            ends_at: "2026-08-03T09:16:00Z",
+            kind: "instant_class",
+            media_space_id: spaceID,
+            remaining_seconds: 300,
+            status: "open",
+            title: "Không được mời",
+            viewer_can_join: false,
+          }),
+          cardMessage(3, {
+            ends_at: "2026-08-03T09:16:00Z",
+            kind: "instant_class",
+            media_space_id: spaceID,
+            remaining_seconds: 0,
+            status: "ended",
+            title: "Đã xong",
+            viewer_can_join: true,
+          }),
+        ]),
+        { conversation: classConversation },
+      );
+
+      const live = await screen.findByRole("region", {
+        name: "Instant class Ôn tập chương 3",
+      });
+      expect(within(live).getByText("09:52")).toBeInTheDocument();
+      expect(
+        within(live).getByText("Waiting for the host"),
+      ).toBeInTheDocument();
+      expect(
+        within(live).getByRole("link", { name: "Join class" }),
+      ).toHaveAttribute("href", `/app/media/spaces/${spaceID}/prejoin`);
+      const notInvited = screen.getByRole("region", {
+        name: "Instant class Không được mời",
+      });
+      expect(within(notInvited).queryByRole("link")).not.toBeInTheDocument();
+      expect(notInvited).toHaveTextContent("You are not on this class list.");
+      const ended = screen.getByRole("region", {
+        name: "Instant class Đã xong",
+      });
+      expect(within(ended).queryByRole("link")).not.toBeInTheDocument();
+      expect(ended).toHaveTextContent("Ended");
+    });
+
+    it("sends a contact card picked from you and your direct contacts", async () => {
+      const requests: Request[] = [];
+      const studentConversation: Conversation = {
+        ...conversation,
+        id: "a1b2c3d4-1111-4222-8333-944455566677",
+      };
+      renderMessages(
+        cardFetch([], { conversations: [studentConversation], requests }),
+        { conversation: classConversation },
+      );
+      await screen.findByRole("textbox", { name: "New message" });
+      expect(
+        screen.queryByRole("button", { name: "Instant class" }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Share contact" }));
+      const dialog = await screen.findByRole("dialog", {
+        name: "Share a contact",
+      });
+      // You first, then the direct counterpart once the list loads.
+      await waitFor(() =>
+        expect(within(dialog).getAllByRole("radio")).toHaveLength(2),
+      );
+      expect(within(dialog).getAllByRole("radio")[0]).toHaveAccessibleName(
+        /TutorHub Teacher/,
+      );
+      const send = within(dialog).getByRole("button", { name: "Send contact" });
+      expect(send).toBeDisabled();
+      fireEvent.change(
+        within(dialog).getByRole("searchbox", { name: "Search contacts" }),
+        {
+          target: { value: "student" },
+        },
+      );
+      fireEvent.click(
+        within(dialog).getByRole("radio", { name: /TutorHub Student/ }),
+      );
+      fireEvent.click(send);
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      const sent = requests.find(
+        (request) =>
+          request.method === "POST" && request.url.endsWith("/messages"),
+      );
+      await expect(sent?.json()).resolves.toEqual({
+        client_message_id: expect.any(String),
+        content: "",
+        embed: { kind: "contact_card", user_id: studentID },
+      });
+    });
+
+    it("creates an instant class, then shares it as a card", async () => {
+      const requests: Request[] = [];
+      renderMessages(cardFetch([], { capabilitiesEnabled: true, requests }), {
+        conversation: classConversation,
+      });
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Instant class" }),
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "15-minute instant class",
+      });
+      const name = within(dialog).getByRole("textbox", { name: "Class name" });
+      expect(name).toHaveValue("15-minute instant class");
+      fireEvent.click(within(dialog).getByRole("radio", { name: "30 min" }));
+      expect(name).toHaveValue("30-minute instant class");
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Clear class name" }),
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "Enter a class name",
+      );
+      fireEvent.change(name, { target: { value: "Ôn thi cuối kỳ" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+      expect(await screen.findByText("Class created.")).toBeInTheDocument();
+      const created = requests.find((request) =>
+        request.url.endsWith("/api/v1/media/spaces"),
+      );
+      await expect(created?.json()).resolves.toMatchObject({
+        idempotency_key: expect.stringMatching(/^instant-class-/),
+        source: {
+          duration_minutes: 30,
+          kind: "instant",
+          timezone: expect.any(String),
+          title: "Ôn thi cuối kỳ",
+        },
+      });
+      const shared = requests.find(
+        (request) =>
+          request.method === "POST" && request.url.endsWith("/messages"),
+      );
+      await expect(shared?.json()).resolves.toEqual({
+        client_message_id: expect.any(String),
+        content: "",
+        embed: { kind: "instant_class", media_space_id: spaceID },
+      });
     });
   });
 });

@@ -273,6 +273,8 @@ func TestMessageServiceListCursorScopeAndMonotonicReadInput(t *testing.T) {
 }
 
 type fakeRepository struct {
+	directSourceMessageID uuid.UUID
+
 	listInput         ListInput
 	listCursor        listCursor
 	listItems         []Conversation
@@ -349,6 +351,15 @@ func (repository *fakeRepository) CreateDirect(
 	email string,
 ) (CreateResult, error) {
 	repository.directEmail = email
+	return repository.direct, repository.directError
+}
+
+func (repository *fakeRepository) CreateDirectFromContactCard(
+	_ context.Context,
+	_ AccessContext,
+	sourceMessageID uuid.UUID,
+) (CreateResult, error) {
+	repository.directSourceMessageID = sourceMessageID
 	return repository.direct, repository.directError
 }
 

@@ -2553,3 +2553,428 @@
     opacity: 1;
   }
 }
+
+/* ---------- MSG-COMPOSER-TOOLS-01: capture / file menus, notices, drop ---------- */
+.th-menu-content.conversation-composer-menu {
+  width: max-content;
+  min-width: 240px;
+  max-width: min(300px, calc(100vw - 24px));
+}
+
+.conversation-composer-menu .th-menu-item {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--msg-ink);
+  text-decoration: none;
+}
+
+.conversation-composer-menu .th-menu-item > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--msg-muted);
+}
+
+.conversation-composer-menu__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.conversation-composer-menu__label {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.conversation-composer-menu__hint {
+  color: var(--msg-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.conversation-composer__notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--msg-line);
+  border-radius: 10px;
+  background: var(--msg-fill);
+  color: var(--msg-ink);
+  font-size: 12.5px;
+}
+
+.conversation-composer__notice[data-tone="error"] {
+  border-color: var(--color-danger);
+  background: var(--msg-surface);
+}
+
+.conversation-composer__notice > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.conversation-composer__notice-action {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--msg-active-line);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.conversation-composer__notice-action:hover {
+  background: var(--msg-hover);
+}
+
+.conversation-composer__notice-action:focus-visible {
+  outline: 2px solid var(--msg-focus);
+  outline-offset: 1px;
+}
+
+.conversation-messages__drop {
+  position: absolute;
+  z-index: 20;
+  display: grid;
+  inset: 8px;
+  border: 2px dashed var(--msg-active-line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--msg-surface) 88%, transparent);
+  color: var(--msg-active-ink);
+  font-weight: 600;
+  pointer-events: none;
+  place-items: center;
+}
+
+@media (forced-colors: active) {
+  .conversation-messages__drop,
+  .conversation-composer__notice {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+}
+
+/* ---------- MSG-COMPOSER-TOOLS-01: contact and instant-class cards ---------- */
+.conversation-message__bubble:has(> .conversation-card) {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.conversation-card {
+  display: grid;
+  gap: 8px;
+  width: min(300px, 100%);
+  padding: 12px 14px;
+  border: 1px solid var(--msg-line);
+  border-radius: 14px;
+  background: var(--msg-surface);
+  box-shadow: var(--msg-shadow);
+  color: var(--msg-ink);
+}
+
+.conversation-card--muted {
+  background: var(--msg-fill);
+}
+
+.conversation-card__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--msg-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.conversation-card__eyebrow svg,
+.conversation-card__muted-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.conversation-card__person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+}
+
+.conversation-card__person strong {
+  overflow-wrap: anywhere;
+}
+
+.conversation-card__title {
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.conversation-card__facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.conversation-card__facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conversation-card__facts dt {
+  color: var(--msg-muted);
+}
+
+.conversation-card__facts dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+
+.conversation-card__countdown {
+  font-variant-numeric: tabular-nums;
+}
+
+.conversation-card__join.th-button--primary {
+  gap: 6px;
+  justify-content: center;
+  border-color: var(--msg-green);
+  background: var(--msg-green);
+  color: var(--msg-green-ink);
+  text-decoration: none;
+}
+
+.conversation-card__join.th-button--primary:hover {
+  border-color: var(--msg-green-hover);
+  background: var(--msg-green-hover);
+}
+
+.conversation-card__join svg {
+  width: 16px;
+  height: 16px;
+}
+
+.conversation-card__note,
+.conversation-card__error {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.conversation-card__note {
+  color: var(--msg-muted);
+}
+
+.conversation-card__error {
+  color: var(--color-danger);
+}
+
+/* ---------- MSG-COMPOSER-TOOLS-01: card dialogs ---------- */
+.composer-card-dialog__form {
+  display: grid;
+  gap: 12px;
+}
+
+.composer-card-dialog__search,
+.composer-card-dialog__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid var(--msg-control);
+  background: var(--msg-surface);
+}
+
+.composer-card-dialog__search {
+  padding: 0 12px;
+  border-radius: 999px;
+}
+
+.composer-card-dialog__field {
+  padding: 0 4px 0 12px;
+  border-radius: 10px;
+}
+
+.composer-card-dialog__search:focus-within,
+.composer-card-dialog__field:focus-within {
+  border-color: var(--msg-focus);
+  box-shadow: 0 0 0 1px var(--msg-focus);
+}
+
+.composer-card-dialog__search svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--msg-muted);
+}
+
+.composer-card-dialog__search input,
+.composer-card-dialog__field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--msg-ink);
+  font: inherit;
+  outline: none;
+}
+
+.composer-card-dialog__options {
+  display: grid;
+  gap: 2px;
+  max-height: min(16rem, 40dvh);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 0;
+}
+
+.composer-card-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.composer-card-option:hover {
+  background: var(--msg-hover);
+}
+
+.composer-card-option:has(input:checked) {
+  background: var(--msg-active);
+  color: var(--msg-active-ink);
+}
+
+.composer-card-option input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--msg-green);
+}
+
+.composer-card-option input:focus-visible {
+  outline: 2px solid var(--msg-focus);
+  outline-offset: 2px;
+}
+
+.composer-card-option__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.composer-card-option__suffix,
+.composer-card-dialog__hint,
+.composer-card-dialog__empty,
+.composer-card-dialog__preview-label {
+  color: var(--msg-muted);
+}
+
+.composer-card-dialog__hint,
+.composer-card-dialog__empty {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.composer-card-dialog__loading {
+  display: grid;
+  gap: 6px;
+}
+
+.composer-card-dialog__notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.composer-card-dialog__preview {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--msg-control);
+  border-radius: 12px;
+}
+
+.composer-card-dialog__preview-label {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.composer-card-dialog__label {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.composer-card-dialog__durations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.composer-card-dialog__durations legend {
+  margin-bottom: 8px;
+}
+
+.composer-duration {
+  position: relative;
+}
+
+.composer-duration input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.composer-duration span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--msg-control);
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.composer-duration input:checked + span {
+  border-color: var(--msg-green);
+  background: color-mix(in srgb, var(--msg-green) 12%, transparent);
+  font-weight: 600;
+}
+
+.composer-duration input:focus-visible + span {
+  outline: 2px solid var(--msg-focus);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .conversation-card,
+  .composer-card-dialog__preview,
+  .composer-duration span {
+    border-color: CanvasText;
+  }
+
+  .composer-card-option:has(input:checked),
+  .composer-duration input:checked + span {
+    outline: 2px solid Highlight;
+  }
+}

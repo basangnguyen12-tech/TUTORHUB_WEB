@@ -11,10 +11,13 @@ import {
 import type {
   Conversation,
   CurrentUser,
+  Message,
+  MessagePage,
   TenantCapabilities,
 } from "@tutorhub/api-client";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { conversationQueryKeys } from "../app/conversations";
 import { I18nProvider } from "../app/i18n";
 import { SessionProvider } from "../app/session";
 import { tenantCapabilityQueryKeys } from "../app/tenantCapabilities";
@@ -133,6 +136,7 @@ function renderPage(
   path: string,
   fetchMock: ReturnType<typeof vi.fn>,
   capabilities: TenantCapabilities = availableTenantCapabilities(tenantID),
+  seed?: (queryClient: QueryClient) => void,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -144,6 +148,7 @@ function renderPage(
     tenantCapabilityQueryKeys.detail(tenantID),
     capabilities,
   );
+  seed?.(queryClient);
   vi.stubGlobal("fetch", fetchMock);
   render(
     <QueryClientProvider client={queryClient}>
@@ -820,5 +825,98 @@ describe("ConversationsPage", () => {
         screen.queryByText("Chào mừng đến với", { exact: false }),
       ).not.toBeInTheDocument();
     });
+  });
+
+  it("previews card messages as cards in the conversation list", async () => {
+    const card = (
+      id: string,
+      conversationID: string,
+      own: boolean,
+      embed: unknown,
+    ) =>
+      ({
+        id,
+        conversation_id: conversationID,
+        sequence: 3,
+        client_message_id: id,
+        author: own
+          ? { user_id: teacherID, display_name: "TutorHub Teacher" }
+          : { user_id: studentID, display_name: "TutorHub Student" },
+        content: "",
+        attachments: [],
+        embed,
+        state: "active",
+        version: 1,
+        created_at: "2026-08-03T12:00:00Z",
+        updated_at: "2026-08-03T12:00:00Z",
+      }) as Message;
+    const seedPage = (
+      queryClient: QueryClient,
+      conversationID: string,
+      item: Message,
+    ) =>
+      queryClient.setQueryData(
+        conversationQueryKeys.messages(tenantID, conversationID),
+        {
+          pageParams: [undefined],
+          pages: [
+            {
+              items: [item],
+              read_state: null,
+              unread_count: 0,
+              unread_count_capped: false,
+            } satisfies MessagePage,
+          ],
+        },
+      );
+    renderPage(
+      "/app/messages",
+      vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(
+            listResponse([directConversation, activeClassConversation]),
+          ),
+        ),
+      availableTenantCapabilities(tenantID),
+      (queryClient) => {
+        seedPage(
+          queryClient,
+          directID,
+          card("10000000-0000-4000-8000-000000000031", directID, false, {
+            kind: "contact_card",
+            available: true,
+            user_id: "0d6e7a51-5d3c-4c1b-8a6f-7e8a9b0c1d2e",
+            display_name: "Lê Thu Hà",
+          }),
+        );
+        seedPage(
+          queryClient,
+          activeClassConversationID,
+          card(
+            "10000000-0000-4000-8000-000000000032",
+            activeClassConversationID,
+            true,
+            {
+              kind: "instant_class",
+              media_space_id: "d3b3a0b2-6b5e-4f5e-9a51-1c0f0e6d2c11",
+              title: "Ôn tập chương 3",
+              status: "scheduled",
+              ends_at: "2026-08-03T12:15:00Z",
+              remaining_seconds: 900,
+              viewer_can_join: true,
+            },
+          ),
+        );
+      },
+    );
+
+    expect(
+      await screen.findByText("[Danh thiếp] Lê Thu Hà"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Bạn: [Lớp học tạm thời] Ôn tập chương 3"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Đã gửi tệp đính kèm/)).not.toBeInTheDocument();
   });
 });

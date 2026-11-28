@@ -3819,7 +3819,7 @@ paths:
     post:
       operationId: createDirectConversation
       summary: Create or return the canonical direct conversation with one active tenant member
-      description: The server derives the exact participant pair from the authenticated actor and normalized target member email. Clients cannot submit a participant array.
+      description: The server derives the exact participant pair from the authenticated actor and either the normalized target member email or (MSG-COMPOSER-TOOLS-01) an active contact-card message the actor can read; exactly one target field is accepted. A card the actor cannot read is concealed as 404. Clients cannot submit a participant array or a raw user identifier.
       security:
         - SessionCookie: []
       parameters:
@@ -4312,7 +4312,7 @@ paths:
   /api/v1/conversations/{conversation_id}/attachments:
     post:
       operationId: uploadConversationAttachment
-      summary: Stage one bounded image or lesson-file attachment for a room message
+      summary: Stage one bounded image or lesson-file attachment for a conversation message
       description: Multipart upload (body at most 11 MiB). The server sniffs magic bytes; images (PNG, JPEG, WebP, GIF) may be up to 5 MiB and files (PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, MD, ZIP) up to 10 MiB. SVG, HTML, scripts and executables are rejected. The staged attachment expires after 15 minutes unless a message binds it. Reusing client_attachment_id with the same payload returns the existing attachment (200); a different payload returns 409.
       security:
         - SessionCookie: []
@@ -14163,7 +14163,7 @@ components:
           description: ADR-0042. True only on an open room conversation for the class teacher/owner/organization admin, the StudyMeeting owner, or a live host/co-host. Always sent by servers implementing ROOM-CHAT-01.
         can_upload_attachments:
           type: boolean
-          description: ADR-0042. True when the viewer can post in a room conversation and an attachment data plane is configured.
+          description: ADR-0042 (MSG-COMPOSER-TOOLS-01 amendment). True when the viewer can post in the conversation (direct, class or room) and an attachment data plane is configured.
     Conversation:
       type: object
       additionalProperties: false
@@ -14236,6 +14236,10 @@ components:
           minLength: 1
           maxLength: 1024
     CreateDirectConversationRequest:
+      oneOf:
+        - $ref: "#/components/schemas/CreateDirectConversationByEmailRequest"
+        - $ref: "#/components/schemas/CreateDirectConversationFromContactCardRequest"
+    CreateDirectConversationByEmailRequest:
       type: object
       additionalProperties: false
       required: [target_member_email]
@@ -14245,6 +14249,15 @@ components:
           format: email
           minLength: 3
           maxLength: 320
+    CreateDirectConversationFromContactCardRequest:
+      type: object
+      additionalProperties: false
+      required: [source_message_id]
+      description: MSG-COMPOSER-TOOLS-01. Opens the direct conversation with the member named on an active contact-card message that the actor can read.
+      properties:
+        source_message_id:
+          type: string
+          format: uuid
     MessageState:
       type: string
       enum: [active, deleted]
@@ -14296,13 +14309,15 @@ components:
           type: string
           minLength: 0
           maxLength: 4000
-          description: Normalized plain text for an active message. It is empty only when the message carries at least one attachment.
+          description: Normalized plain text for an active message. It is empty only when the message carries at least one attachment or a server-authored embed.
         attachments:
           type: array
           maxItems: 4
           description: Attachments sent with this active message (an empty array when none). Deleted messages never expose attachments.
           items:
             $ref: "#/components/schemas/MessageAttachment"
+        embed:
+          $ref: "#/components/schemas/MessageEmbed"
         state:
           type: string
           const: active
@@ -14437,15 +14452,17 @@ components:
           type: string
           minLength: 0
           maxLength: 4000
-          description: Plain text; the server also enforces a 16 KiB UTF-8 maximum after normalization. It may be empty only when attachment_ids has 1 to 4 items.
+          description: Plain text; the server also enforces a 16 KiB UTF-8 maximum after normalization. It may be empty only when attachment_ids has 1 to 4 items, and it must be empty (or whitespace) when embed is present.
         attachment_ids:
           type: array
           maxItems: 4
           uniqueItems: true
-          description: Unexpired staged attachments uploaded by the sender to this conversation; they are bound atomically to the new message.
+          description: Unexpired staged attachments uploaded by the sender to this conversation; they are bound atomically to the new message. Not allowed together with embed.
           items:
             type: string
             format: uuid
+        embed:
+          $ref: "#/components/schemas/MessageEmbedInput"
     EditMessageRequest:
       type: object
       additionalProperties: false
@@ -14469,6 +14486,103 @@ components:
           type: integer
           format: int64
           minimum: 1
+    MessageEmbedInput:
+      description: MSG-COMPOSER-TOOLS-01. A server-validated card that is the whole message. A contact card may name the sender or the other member of one of the sender's direct conversations. An instant class must be an active, classless instant StudyMeeting media space owned by the sender, shared into a direct or class conversation; the conversation's current readers become explicit space members (revoked members stay revoked). Unshareable targets return 409 message_embed_unavailable.
+      oneOf:
+        - $ref: "#/components/schemas/ContactCardEmbedInput"
+        - $ref: "#/components/schemas/InstantClassEmbedInput"
+      discriminator:
+        propertyName: kind
+        mapping:
+          contact_card: "#/components/schemas/ContactCardEmbedInput"
+          instant_class: "#/components/schemas/InstantClassEmbedInput"
+    ContactCardEmbedInput:
+      type: object
+      additionalProperties: false
+      required: [kind, user_id]
+      properties:
+        kind:
+          type: string
+          const: contact_card
+        user_id:
+          type: string
+          format: uuid
+    InstantClassEmbedInput:
+      type: object
+      additionalProperties: false
+      required: [kind, media_space_id]
+      properties:
+        kind:
+          type: string
+          const: instant_class
+        media_space_id:
+          type: string
+          format: uuid
+    MessageEmbed:
+      description: MSG-COMPOSER-TOOLS-01. The server resolves the card for each reader at read time; clients render actionable cards only from this field, never from message text. Card messages cannot be edited (409 message_not_editable) and tombstones never expose an embed.
+      oneOf:
+        - $ref: "#/components/schemas/ContactCardEmbed"
+        - $ref: "#/components/schemas/InstantClassEmbed"
+      discriminator:
+        propertyName: kind
+        mapping:
+          contact_card: "#/components/schemas/ContactCardEmbed"
+          instant_class: "#/components/schemas/InstantClassEmbed"
+    ContactCardEmbed:
+      type: object
+      additionalProperties: false
+      required: [kind, available]
+      properties:
+        kind:
+          type: string
+          const: contact_card
+        available:
+          type: boolean
+          description: False when the member left the workspace or is inactive; user_id and display_name are then omitted.
+        user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+    InstantClassEmbed:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          kind,
+          media_space_id,
+          title,
+          status,
+          ends_at,
+          remaining_seconds,
+          viewer_can_join,
+        ]
+      properties:
+        kind:
+          type: string
+          const: instant_class
+        media_space_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          $ref: "#/components/schemas/MediaSpaceStatus"
+        ends_at:
+          type: string
+          format: date-time
+        remaining_seconds:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Seconds until ends_at measured by the server clock when the response was produced; clients count down from it with a monotonic clock.
+        viewer_can_join:
+          type: boolean
+          description: True for the space owner and for active explicit members; joining still goes through prejoin and lobby admission.
     MessageAttachmentKind:
       type: string
       enum: [image, file]

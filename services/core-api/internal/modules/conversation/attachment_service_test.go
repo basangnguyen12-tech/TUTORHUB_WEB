@@ -367,7 +367,7 @@ func TestMessageRequestFingerprintKeepsTextOnlyCompatibility(t *testing.T) {
 	}
 }
 
-func TestServiceDecoratesUploadCapabilityOnlyForWritableRooms(t *testing.T) {
+func TestServiceDecoratesUploadCapabilityForWritableConversations(t *testing.T) {
 	t.Parallel()
 	open := "open"
 	repository := &fakeRepository{get: Conversation{
@@ -389,10 +389,23 @@ func TestServiceDecoratesUploadCapabilityOnlyForWritableRooms(t *testing.T) {
 	if item.ViewerAccess.CanUploadAttachments {
 		t.Fatal("read-only room must not allow uploads")
 	}
-	repository.get = Conversation{Kind: KindClass, ViewerAccess: ViewerAccess{CanPostMessages: true}}
-	item, _ = withStorage.Get(context.Background(), testAccess(uuid.New()), uuid.New())
-	if item.ViewerAccess.CanUploadAttachments {
-		t.Fatal("attachments are scoped to room conversations")
+	// MSG-COMPOSER-TOOLS-01 (ADR-0042 amendment): direct and class
+	// conversations accept attachments from members who may post.
+	for _, kind := range []Kind{KindDirect, KindClass} {
+		repository.get = Conversation{Kind: kind, ViewerAccess: ViewerAccess{CanPostMessages: true}}
+		item, _ = withStorage.Get(context.Background(), testAccess(uuid.New()), uuid.New())
+		if !item.ViewerAccess.CanUploadAttachments {
+			t.Fatalf("writable %s conversation must allow uploads", kind)
+		}
+		item, _ = withoutStorage.Get(context.Background(), testAccess(uuid.New()), uuid.New())
+		if item.ViewerAccess.CanUploadAttachments {
+			t.Fatalf("%s upload capability must fail closed without storage", kind)
+		}
+		repository.get.ViewerAccess.CanPostMessages = false
+		item, _ = withStorage.Get(context.Background(), testAccess(uuid.New()), uuid.New())
+		if item.ViewerAccess.CanUploadAttachments {
+			t.Fatalf("read-only %s conversation must not allow uploads", kind)
+		}
 	}
 }
 

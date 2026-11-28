@@ -77,6 +77,11 @@ LIMIT $4`,
 	); err != nil {
 		return messageRepositoryPage{}, err
 	}
+	if err := loadMessageEmbeds(
+		queryContext, transaction, access.TenantID, conversationID, access.ActorID, items,
+	); err != nil {
+		return messageRepositoryPage{}, err
+	}
 	readState, err := loadMessageReadState(
 		queryContext, transaction, access.TenantID, conversationID, access.ActorID,
 	)
@@ -145,7 +150,7 @@ func (repository *PostgresRepository) SendMessage(
 	if err != nil {
 		return MessageMutationResult{}, err
 	}
-	fingerprint := messageRequestFingerprint(input.Content, input.AttachmentIDs)
+	fingerprint := sendRequestFingerprint(input)
 	if existing, found, err := loadIdempotentMessage(
 		queryContext,
 		transaction,
@@ -159,8 +164,8 @@ func (repository *PostgresRepository) SendMessage(
 			subtle.ConstantTimeCompare(existing.fingerprint, fingerprint[:]) != 1 {
 			return MessageMutationResult{}, ErrIdempotencyConflict
 		}
-		replayed, err := withMessageAttachments(
-			queryContext, transaction, access.TenantID, conversationID, existing.message,
+		replayed, err := withMessageExtras(
+			queryContext, transaction, access, conversationID, existing.message,
 		)
 		if err != nil {
 			return MessageMutationResult{}, err
@@ -201,8 +206,8 @@ func (repository *PostgresRepository) SendMessage(
 			subtle.ConstantTimeCompare(existing.fingerprint, fingerprint[:]) != 1 {
 			return MessageMutationResult{}, ErrIdempotencyConflict
 		}
-		replayed, err := withMessageAttachments(
-			queryContext, transaction, access.TenantID, conversationID, existing.message,
+		replayed, err := withMessageExtras(
+			queryContext, transaction, access, conversationID, existing.message,
 		)
 		if err != nil {
 			return MessageMutationResult{}, err
@@ -217,6 +222,13 @@ func (repository *PostgresRepository) SendMessage(
 		return MessageMutationResult{}, fmt.Errorf("read message server time: %w", err)
 	}
 	now = now.UTC()
+	if input.Embed != nil {
+		if err := repository.prepareMessageEmbed(
+			queryContext, transaction, access, conversationID, *input.Embed, now,
+		); err != nil {
+			return MessageMutationResult{}, err
+		}
+	}
 	if err := repository.reserveMessageCapacity(
 		queryContext, transaction, access.TenantID,
 	); err != nil {
@@ -288,8 +300,15 @@ RETURNING
 	); err != nil {
 		return MessageMutationResult{}, err
 	}
-	item, err = withMessageAttachments(
-		queryContext, transaction, access.TenantID, conversationID, item,
+	if input.Embed != nil {
+		if err := insertMessageEmbed(
+			queryContext, transaction, access.TenantID, conversationID, item.ID, *input.Embed, now,
+		); err != nil {
+			return MessageMutationResult{}, err
+		}
+	}
+	item, err = withMessageExtras(
+		queryContext, transaction, access, conversationID, item,
 	)
 	if err != nil {
 		return MessageMutationResult{}, err
@@ -350,12 +369,20 @@ func (repository *PostgresRepository) EditMessage(
 	if err != nil {
 		return Message{}, safeMessageStoreError("load message for edit", err)
 	}
+	// MSG-COMPOSER-TOOLS-01: server-authored cards keep their exact payload.
+	if hasEmbed, err := messageHasEmbed(
+		queryContext, transaction, access.TenantID, messageID,
+	); err != nil {
+		return Message{}, err
+	} else if hasEmbed {
+		return Message{}, ErrMessageNotEditable
+	}
 	if item.State != MessageStateActive || item.Version != input.ExpectedVersion {
 		return Message{}, ErrVersionConflict
 	}
 	if item.Content != nil && *item.Content == input.Content {
-		item, err = withMessageAttachments(
-			queryContext, transaction, access.TenantID, conversationID, item,
+		item, err = withMessageExtras(
+			queryContext, transaction, access, conversationID, item,
 		)
 		if err != nil {
 			return Message{}, err
@@ -399,8 +426,8 @@ RETURNING
 	if err != nil {
 		return Message{}, safeMessageStoreError("update message content", err)
 	}
-	item, err = withMessageAttachments(
-		queryContext, transaction, access.TenantID, conversationID, item,
+	item, err = withMessageExtras(
+		queryContext, transaction, access, conversationID, item,
 	)
 	if err != nil {
 		return Message{}, err

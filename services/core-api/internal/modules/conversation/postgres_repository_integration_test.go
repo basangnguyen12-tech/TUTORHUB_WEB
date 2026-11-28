@@ -106,6 +106,8 @@ SELECT
 				"message_id", "state", "inline_bytes", "updated_at",
 			},
 		},
+		// MSG-COMPOSER-TOOLS-01: server-authored cards are insert-only.
+		{relation: "tutorhub.message_embeds"},
 	} {
 		var selected, inserted, updated, deleted, truncated, referenced, triggered bool
 		var columnSelected, columnInserted, columnUpdated bool
@@ -138,7 +140,7 @@ SELECT
 	targetRelations := []string{
 		"conversations", "conversation_members", "messages",
 		"message_receipts", "tenant_message_usage",
-		"room_conversation_settings", "message_attachments",
+		"room_conversation_settings", "message_attachments", "message_embeds",
 	}
 	var publicTableGrants, publicColumnGrants int
 	if err := migrationPool.QueryRow(ctx, `
@@ -257,7 +259,8 @@ REVOKE ALL PRIVILEGES ON TABLE
     tutorhub.tenant_message_usage,
     tutorhub.message_receipts,
     tutorhub.room_conversation_settings,
-    tutorhub.message_attachments
+    tutorhub.message_attachments,
+    tutorhub.message_embeds
 FROM tutorhub_conversation_runtime_ci;
 
 REVOKE ALL PRIVILEGES ON TABLE
@@ -267,7 +270,8 @@ REVOKE ALL PRIVILEGES ON TABLE
     tutorhub.tenant_message_usage,
     tutorhub.message_receipts,
     tutorhub.room_conversation_settings,
-    tutorhub.message_attachments
+    tutorhub.message_attachments,
+    tutorhub.message_embeds
 FROM PUBLIC;
 
 GRANT SELECT, INSERT ON TABLE
@@ -277,7 +281,8 @@ GRANT SELECT, INSERT ON TABLE
     tutorhub.tenant_message_usage,
     tutorhub.message_receipts,
     tutorhub.room_conversation_settings,
-    tutorhub.message_attachments
+    tutorhub.message_attachments,
+    tutorhub.message_embeds
 TO tutorhub_conversation_runtime_ci;
 
 GRANT UPDATE (updated_at)

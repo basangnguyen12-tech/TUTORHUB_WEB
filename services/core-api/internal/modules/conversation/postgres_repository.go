@@ -26,6 +26,30 @@ type PostgresRepository struct {
 	queryTimeout time.Duration
 	authorizer   policy.Authorizer
 	controls     featurecontrol.Enforcer
+	// instantSharer grants conversation readers access to a shared instant
+	// class; without it instant-class cards are rejected.
+	instantSharer InstantSpaceSharer
+}
+
+// InstantSpaceSharer shares an instant StudyMeeting media space owned by
+// ownerID with recipientIDs inside the caller's transaction. It returns
+// ErrEmbedUnavailable when the space cannot be shared.
+type InstantSpaceSharer func(
+	ctx context.Context,
+	transaction pgx.Tx,
+	tenantID, spaceID, ownerID uuid.UUID,
+	recipientIDs []uuid.UUID,
+	now time.Time,
+) error
+
+// PostgresRepositoryOption configures optional repository collaborators.
+type PostgresRepositoryOption func(*PostgresRepository)
+
+// WithInstantSpaceSharer enables instant-class cards (MSG-COMPOSER-TOOLS-01).
+func WithInstantSpaceSharer(sharer InstantSpaceSharer) PostgresRepositoryOption {
+	return func(repository *PostgresRepository) {
+		repository.instantSharer = sharer
+	}
 }
 
 func NewPostgresRepository(
@@ -33,6 +57,7 @@ func NewPostgresRepository(
 	queryTimeout time.Duration,
 	authorizer policy.Authorizer,
 	controls featurecontrol.Enforcer,
+	options ...PostgresRepositoryOption,
 ) (*PostgresRepository, error) {
 	if database == nil || authorizer == nil || controls == nil {
 		return nil, fmt.Errorf("conversation database, authorizer, and feature controls are required")
@@ -40,9 +65,15 @@ func NewPostgresRepository(
 	if queryTimeout <= 0 {
 		queryTimeout = defaultQueryTimeout
 	}
-	return &PostgresRepository{
+	repository := &PostgresRepository{
 		database: database, queryTimeout: queryTimeout, authorizer: authorizer, controls: controls,
-	}, nil
+	}
+	for _, option := range options {
+		if option != nil {
+			option(repository)
+		}
+	}
+	return repository, nil
 }
 
 func (repository *PostgresRepository) List(
@@ -251,6 +282,17 @@ WHERE member.tenant_id = $1
 	if targetUserID == access.ActorID {
 		return CreateResult{}, ErrUnavailable
 	}
+	return repository.createDirectWithTarget(queryContext, transaction, access, targetUserID)
+}
+
+// createDirectWithTarget finishes direct creation (or canonical reuse) for a
+// resolved, distinct target inside the caller's transaction and commits it.
+func (repository *PostgresRepository) createDirectWithTarget(
+	queryContext context.Context,
+	transaction pgx.Tx,
+	access AccessContext,
+	targetUserID uuid.UUID,
+) (CreateResult, error) {
 	members, err := lockDirectMembers(
 		queryContext, transaction, access.TenantID, access.ActorID, targetUserID,
 	)

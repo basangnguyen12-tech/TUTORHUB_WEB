@@ -2055,7 +2055,7 @@ export type paths = {
     readonly get?: never;
     readonly put?: never;
     /**
-     * Stage one bounded image or lesson-file attachment for a room message
+     * Stage one bounded image or lesson-file attachment for a conversation message
      * @description Multipart upload (body at most 11 MiB). The server sniffs magic bytes; images (PNG, JPEG, WebP, GIF) may be up to 5 MiB and files (PDF, DOC/DOCX, XLS/XLSX, PPT/PPTX, TXT, CSV, MD, ZIP) up to 10 MiB. SVG, HTML, scripts and executables are rejected. The staged attachment expires after 15 minutes unless a message binds it. Reusing client_attachment_id with the same payload returns the existing attachment (200); a different payload returns 409.
      */
     readonly post: operations["uploadConversationAttachment"];
@@ -2178,7 +2178,7 @@ export type paths = {
     readonly put?: never;
     /**
      * Create or return the canonical direct conversation with one active tenant member
-     * @description The server derives the exact participant pair from the authenticated actor and normalized target member email. Clients cannot submit a participant array.
+     * @description The server derives the exact participant pair from the authenticated actor and either the normalized target member email or (MSG-COMPOSER-TOOLS-01) an active contact-card message the actor can read; exactly one target field is accepted. A card the actor cannot read is concealed as 404. Clients cannot submit a participant array or a raw user identifier.
      */
     readonly post: operations["createDirectConversation"];
     readonly delete?: never;
@@ -4510,7 +4510,7 @@ export type components = {
        * @description Sender-supplied idempotency identifier; it never selects the sender or conversation.
        */
       readonly client_message_id: string;
-      /** @description Normalized plain text for an active message. It is empty only when the message carries at least one attachment. */
+      /** @description Normalized plain text for an active message. It is empty only when the message carries at least one attachment or a server-authored embed. */
       readonly content: string;
       /** Format: uuid */
       readonly conversation_id: string;
@@ -4518,6 +4518,7 @@ export type components = {
       readonly created_at: string;
       /** Format: date-time */
       readonly edited_at?: string;
+      readonly embed?: components["schemas"]["MessageEmbed"];
       /** Format: uuid */
       readonly id: string;
       /**
@@ -5702,6 +5703,27 @@ export type components = {
       readonly storage_version_id: string;
       readonly upload: components["schemas"]["FileMultipartUpload"];
     };
+    readonly ContactCardEmbed: {
+      /** @description False when the member left the workspace or is inactive; user_id and display_name are then omitted. */
+      readonly available: boolean;
+      readonly display_name?: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      readonly kind: "contact_card";
+      /** Format: uuid */
+      readonly user_id?: string;
+    };
+    readonly ContactCardEmbedInput: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      readonly kind: "contact_card";
+      /** Format: uuid */
+      readonly user_id: string;
+    };
     readonly ContentFile: {
       readonly active_content?: boolean;
       readonly allow_student_download?: boolean;
@@ -5809,7 +5831,7 @@ export type components = {
       /** @description ADR-0042. True only on an open room conversation for the class teacher/owner/organization admin, the StudyMeeting owner, or a live host/co-host. Always sent by servers implementing ROOM-CHAT-01. */
       readonly can_moderate_chat?: boolean;
       readonly can_post_messages: boolean;
-      /** @description ADR-0042. True when the viewer can post in a room conversation and an attachment data plane is configured. */
+      /** @description ADR-0042 (MSG-COMPOSER-TOOLS-01 amendment). True when the viewer can post in the conversation (direct, class or room) and an attachment data plane is configured. */
       readonly can_upload_attachments?: boolean;
     };
     readonly CreateAvailabilityPollCapabilityRequest: {
@@ -5908,10 +5930,18 @@ export type components = {
     readonly CreateCodeWorkspaceRequest: {
       readonly idempotency_key: string;
     };
-    readonly CreateDirectConversationRequest: {
+    readonly CreateDirectConversationByEmailRequest: {
       /** Format: email */
       readonly target_member_email: string;
     };
+    /** @description MSG-COMPOSER-TOOLS-01. Opens the direct conversation with the member named on an active contact-card message that the actor can read. */
+    readonly CreateDirectConversationFromContactCardRequest: {
+      /** Format: uuid */
+      readonly source_message_id: string;
+    };
+    readonly CreateDirectConversationRequest:
+      | components["schemas"]["CreateDirectConversationByEmailRequest"]
+      | components["schemas"]["CreateDirectConversationFromContactCardRequest"];
     readonly CreateFileMultipartUploadRequest: {
       /** Format: int64 */
       readonly expected_version: number;
@@ -6229,6 +6259,35 @@ export type components = {
     };
     readonly IdentityListResponse: {
       readonly identities: readonly components["schemas"]["ExternalIdentity"][];
+    };
+    readonly InstantClassEmbed: {
+      /** Format: date-time */
+      readonly ends_at: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      readonly kind: "instant_class";
+      /** Format: uuid */
+      readonly media_space_id: string;
+      /**
+       * Format: int64
+       * @description Seconds until ends_at measured by the server clock when the response was produced; clients count down from it with a monotonic clock.
+       */
+      readonly remaining_seconds: number;
+      readonly status: components["schemas"]["MediaSpaceStatus"];
+      readonly title: string;
+      /** @description True for the space owner and for active explicit members; joining still goes through prejoin and lobby admission. */
+      readonly viewer_can_join: boolean;
+    };
+    readonly InstantClassEmbedInput: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      readonly kind: "instant_class";
+      /** Format: uuid */
+      readonly media_space_id: string;
     };
     readonly InstantMediaSpaceSourceInput: {
       readonly duration_minutes: number;
@@ -6986,6 +7045,14 @@ export type components = {
       /** Format: uuid */
       readonly user_id: string;
     };
+    /** @description MSG-COMPOSER-TOOLS-01. The server resolves the card for each reader at read time; clients render actionable cards only from this field, never from message text. Card messages cannot be edited (409 message_not_editable) and tombstones never expose an embed. */
+    readonly MessageEmbed:
+      | components["schemas"]["ContactCardEmbed"]
+      | components["schemas"]["InstantClassEmbed"];
+    /** @description MSG-COMPOSER-TOOLS-01. A server-validated card that is the whole message. A contact card may name the sender or the other member of one of the sender's direct conversations. An instant class must be an active, classless instant StudyMeeting media space owned by the sender, shared into a direct or class conversation; the conversation's current readers become explicit space members (revoked members stay revoked). Unshareable targets return 409 message_embed_unavailable. */
+    readonly MessageEmbedInput:
+      | components["schemas"]["ContactCardEmbedInput"]
+      | components["schemas"]["InstantClassEmbedInput"];
     readonly MessagePage: {
       /** @description Newest-first persistent message page. */
       readonly items: readonly components["schemas"]["Message"][];
@@ -7792,12 +7859,13 @@ export type components = {
       readonly replayed: boolean;
     };
     readonly SendMessageRequest: {
-      /** @description Unexpired staged attachments uploaded by the sender to this conversation; they are bound atomically to the new message. */
+      /** @description Unexpired staged attachments uploaded by the sender to this conversation; they are bound atomically to the new message. Not allowed together with embed. */
       readonly attachment_ids?: readonly string[];
       /** Format: uuid */
       readonly client_message_id: string;
-      /** @description Plain text; the server also enforces a 16 KiB UTF-8 maximum after normalization. It may be empty only when attachment_ids has 1 to 4 items. */
+      /** @description Plain text; the server also enforces a 16 KiB UTF-8 maximum after normalization. It may be empty only when attachment_ids has 1 to 4 items, and it must be empty (or whitespace) when embed is present. */
       readonly content: string;
+      readonly embed?: components["schemas"]["MessageEmbedInput"];
     };
     readonly SessionAudience: {
       readonly attendees: readonly components["schemas"]["SessionAudienceAttendee"][];

@@ -518,28 +518,16 @@ func (repository *PostgresRepository) CreateAttachment(
 	if err != nil {
 		return MessageAttachment{}, false, nil, err
 	}
-	var kind Kind
-	if err := transaction.QueryRow(
-		queryContext,
-		`SELECT kind FROM tutorhub.conversations WHERE tenant_id = $1 AND id = $2`,
-		access.TenantID,
-		conversationID,
-	).Scan(&kind); errors.Is(err, pgx.ErrNoRows) {
-		return MessageAttachment{}, false, nil, ErrNotFound
-	} else if err != nil {
-		return MessageAttachment{}, false, nil, fmt.Errorf("resolve attachment conversation: %w", err)
-	}
-	if kind != KindRoom {
-		// ADR-0042 scopes attachments to classroom room chat.
-		return MessageAttachment{}, false, nil, ErrAttachmentsUnavailable
-	}
+	// MSG-COMPOSER-TOOLS-01 (ADR-0042 amendment): every conversation kind
+	// accepts attachments from members who may post in it.
 	if err := repository.controls.RequireFeature(
 		queryContext, transaction, access.TenantID, featurecontrol.FeatureConversations,
 	); err != nil {
 		return MessageAttachment{}, false, nil, err
 	}
-	// Room source, live participant, posting switch and the conversation row
-	// lock are all enforced exactly as for a message send.
+	// Direct membership, class chat policy and archived state, or the room
+	// source, live participant and posting switch, plus the conversation row
+	// lock, are all enforced exactly as for a message send.
 	access, err = repository.authorizeMessageWrite(queryContext, transaction, access, conversationID)
 	if err != nil {
 		return MessageAttachment{}, false, nil, err
@@ -907,17 +895,4 @@ WHERE attachment.tenant_id = $1
 		return storedAttachment{}, fmt.Errorf("commit attachment read: %w", err)
 	}
 	return result, nil
-}
-
-func withMessageAttachments(
-	ctx context.Context,
-	transaction pgx.Tx,
-	tenantID, conversationID uuid.UUID,
-	item Message,
-) (Message, error) {
-	items := []Message{item}
-	if err := loadMessageAttachments(ctx, transaction, tenantID, conversationID, items); err != nil {
-		return Message{}, err
-	}
-	return items[0], nil
 }

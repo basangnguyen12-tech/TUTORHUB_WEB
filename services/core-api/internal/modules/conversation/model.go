@@ -27,6 +27,11 @@ var (
 	ErrReadOnly            = errors.New("conversation is read only")
 	ErrIdempotencyConflict = errors.New("message idempotency conflict")
 	ErrVersionConflict     = errors.New("message version conflict")
+	// ErrMessageNotEditable rejects edits of server-authored card messages.
+	ErrMessageNotEditable = errors.New("message is not editable")
+	// ErrEmbedUnavailable conceals why a contact card or instant class cannot
+	// be shared or opened (unknown, not visible, not owned, ended).
+	ErrEmbedUnavailable = errors.New("message embed unavailable")
 )
 
 type Kind string
@@ -49,7 +54,7 @@ type ViewerAccess struct {
 	// teacher/owner/organization admin, the StudyMeeting owner, or a live
 	// host/co-host of the active RoomInstance (ADR-0042).
 	CanModerateChat bool `json:"can_moderate_chat"`
-	// CanUploadAttachments requires current posting authority on a room
+	// CanUploadAttachments requires current posting authority on the
 	// conversation and a configured attachment data plane.
 	CanUploadAttachments bool `json:"can_upload_attachments"`
 }
@@ -98,6 +103,7 @@ type ServiceAPI interface {
 	List(context.Context, AccessContext, ListInput) (Page, error)
 	Get(context.Context, AccessContext, uuid.UUID) (Conversation, error)
 	CreateDirect(context.Context, AccessContext, string) (CreateResult, error)
+	CreateDirectFromContactCard(context.Context, AccessContext, uuid.UUID) (CreateResult, error)
 	CreateClass(context.Context, AccessContext, uuid.UUID) (CreateResult, error)
 	CreateRoom(context.Context, AccessContext, uuid.UUID) (CreateResult, error)
 	ListMessages(context.Context, AccessContext, uuid.UUID, MessageListInput) (MessagePage, error)

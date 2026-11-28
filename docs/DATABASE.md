@@ -170,7 +170,8 @@ ngoài UI thread ở các client native về sau.
 | `conversation_members`             | Hai membership row server-owned cho direct conversation; class membership luôn đọc từ enrollment                 |
 | `room_conversation_settings`       | Trạng thái công tắc `participant_chat_enabled` cho room conversation; bảo toàn cột `UPDATE` của `conversations`  |
 | `messages`                         | Message plain-text tenant/conversation-scoped, server sequence, idempotency fingerprint và tombstone lifecycle   |
-| `message_attachments`              | Metadata/bytes dev giới hạn của ảnh và tệp đính kèm room chat; khóa opaque B2 hoặc inline dev, xóa thành `NULL`  |
+| `message_attachments`              | Metadata/bytes dev giới hạn của ảnh và tệp đính kèm hội thoại (`direct`/`class`/`room`); xóa thành `NULL`        |
+| `message_embeds`                   | Thẻ tin nhắn có cấu trúc insert-only (`contact_card`, `instant_class`) xác thực khi gửi, chiếu theo người đọc    |
 | `tenant_message_usage`             | O(1) committed message/tombstone counter theo tenant để reserve storage quota trong transaction                  |
 | `content_files`                    | Metadata class/room file (owner union `000056`), opaque object key, idempotent intent, finalize + verifier proof |
 | `tenant_file_usage`                | O(1) file-count/reserved-byte/committed-byte counter theo tenant                                                 |
@@ -1210,7 +1211,8 @@ REVOKE ALL PRIVILEGES ON TABLE
     tutorhub.tenant_message_usage,
     tutorhub.message_receipts,
     tutorhub.room_conversation_settings,
-    tutorhub.message_attachments
+    tutorhub.message_attachments,
+    tutorhub.message_embeds
 FROM tutorhub_runtime;
 
 REVOKE ALL PRIVILEGES ON TABLE
@@ -1220,7 +1222,8 @@ REVOKE ALL PRIVILEGES ON TABLE
     tutorhub.tenant_message_usage,
     tutorhub.message_receipts,
     tutorhub.room_conversation_settings,
-    tutorhub.message_attachments
+    tutorhub.message_attachments,
+    tutorhub.message_embeds
 FROM PUBLIC;
 
 GRANT SELECT, INSERT ON TABLE
@@ -1230,7 +1233,8 @@ GRANT SELECT, INSERT ON TABLE
     tutorhub.tenant_message_usage,
     tutorhub.message_receipts,
     tutorhub.room_conversation_settings,
-    tutorhub.message_attachments
+    tutorhub.message_attachments,
+    tutorhub.message_embeds
 TO tutorhub_runtime;
 
 GRANT UPDATE (updated_at)
@@ -1668,6 +1672,26 @@ Hai partial index hỗ trợ tìm phòng đóng và tệp phòng đến hạn. T
 yêu cầu B2 xóa phiên bản đã lưu hoặc hủy multipart đang hoạt động theo kiểu best-effort.
 Rollback xóa bảng và dữ liệu ghi chú cùng hai index mới. Khi rollback về `000057`, migration owner
 thu hồi `UPDATE (expires_at)` trên `content_files` để khôi phục ACL phiên bản trước.
+
+## MSG-COMPOSER-TOOLS-01 — structured message embeds schema (000059)
+
+Migration `000059_message_embeds` (ADR-0046) tạo bảng con insert-only `tutorhub.message_embeds`
+khóa chính `(tenant_id, message_id)`, khóa ngoại tổng hợp tới `tutorhub.messages (tenant_id, conversation_id, id) ON DELETE CASCADE`,
+`tutorhub.memberships (tenant_id, user_id)` và `tutorhub.media_spaces (tenant_id, id)`, cùng `CHECK` phân nhánh chặt
+theo `kind IN ('contact_card', 'instant_class')` và hai index `(tenant_id, conversation_id, message_id)` /
+`(tenant_id, media_space_id) WHERE media_space_id IS NOT NULL`.
+
+Bảng thu hồi toàn bộ quyền từ `PUBLIC`. Trong cùng cửa sổ chạy forward migration `000059` trước khi
+triển khai Core API mới, migration owner cấp đúng quyền `SELECT, INSERT` (không cấp `UPDATE`, `DELETE` hay `TRUNCATE`;
+tin thu hồi ẩn embed qua trạng thái tombstone của `messages`):
+
+```sql
+REVOKE ALL ON TABLE tutorhub.message_embeds FROM PUBLIC;
+GRANT SELECT, INSERT ON TABLE tutorhub.message_embeds TO tutorhub_runtime;
+```
+
+Quyền của `tutorhub_collab_worker` và các role bảo trì không thay đổi. Rollback `000059.down` xóa bảng
+`tutorhub.message_embeds` (ưu tiên roll-forward trên môi trường chia sẻ vì xóa bảng sẽ làm mất metadata thẻ đã gửi).
 
 ## Quy tắc thay đổi schema
 
