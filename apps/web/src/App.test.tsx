@@ -148,7 +148,7 @@ describe("web shell", () => {
     ]);
   });
 
-  it("links the sidebar identity footer to account settings with initials", () => {
+  it("links the sidebar identity footer to account settings with the default avatar", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -170,9 +170,12 @@ describe("web shell", () => {
     expect(footer).toHaveAttribute("href", "/app/settings");
     expect(footer).toHaveAttribute("title", "Thiết lập tài khoản");
     expect(footer).toHaveClass("app-sidebar__footer");
-    expect(
-      footer.querySelector('.app-sidebar__avatar[aria-hidden="true"]'),
-    ).toHaveTextContent("TT");
+    // MSG-AVATAR-SEARCH-CLASSIN-01: Zalo-style default avatar, no initials.
+    const avatar = footer.querySelector(
+      '.app-sidebar__avatar[aria-hidden="true"]',
+    );
+    expect(avatar).toHaveAttribute("data-avatar", "default");
+    expect(avatar).toHaveTextContent("");
     expect(
       screen.getByRole("combobox", { name: "Ngôn ngữ" }),
     ).toHaveDisplayValue("Tiếng Việt");

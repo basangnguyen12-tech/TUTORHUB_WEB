@@ -27,6 +27,7 @@
   --msg-green-hover: #166534;
   --msg-green-ink: #ffffff;
   --msg-green-dot: #16a34a;
+  --msg-avatar-ring: rgb(15 23 42 / 0.08);
   --msg-send-idle: #eceff3;
   --msg-send-idle-ink: #5f6875;
   --msg-unread: #b4232c;
@@ -66,6 +67,7 @@
   --msg-green-hover: #86efac;
   --msg-green-ink: #0b2a17;
   --msg-green-dot: #16a34a;
+  --msg-avatar-ring: rgb(255 255 255 / 0.12);
   --msg-send-idle: #2a3340;
   --msg-send-idle-ink: #b5bdc8;
   --msg-unread: #f09aa0;
@@ -90,7 +92,9 @@
   overflow: hidden;
   background: var(--msg-surface);
   color: var(--msg-ink);
-  grid-template-columns: minmax(18.5rem, 21rem) minmax(0, 1fr);
+  /* MSG-AVATAR-SEARCH-CLASSIN-01: wide enough for the four default chips on
+     one line (ref-06); a fifth chip or a large badge wraps instead. */
+  grid-template-columns: minmax(19.5rem, 21.5rem) minmax(0, 1fr);
 }
 
 .page-content.conversations-page--state {
@@ -146,9 +150,17 @@
   border-right: 1px solid var(--msg-line);
 }
 
+/* Fixed rows never shrink (ref-01/04/06: the chips were squeezed because the
+   scroll container `.conversation-filters` had a zero automatic min-height).
+   Only the scroller flexes. */
 .conversation-list-panel > :not(.conversation-list-panel__scroll) {
+  flex: 0 0 auto;
   margin-right: 16px;
   margin-left: 16px;
+}
+
+.conversation-list-panel > [hidden] {
+  display: none;
 }
 
 .conversations-page__header {
@@ -251,6 +263,13 @@
   gap: 8px;
 }
 
+/* Focused, empty search (ClassIn ref-05): the area takes the whole body. */
+.conversation-list-panel > .conversation-search-area[data-open] {
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .conversation-search {
   position: relative;
   display: flex;
@@ -329,16 +348,31 @@
 
 .conversation-shortcuts {
   display: grid;
+  align-content: start;
   gap: 4px;
-  padding: 4px 0 6px;
-  border-bottom: 1px solid var(--msg-line);
+}
+
+.conversation-shortcuts--panel {
+  min-height: 0;
+  padding: 6px 0 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* While typing: after the results, inside the scroller. */
+.conversation-shortcuts--results {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--msg-line);
 }
 
 .conversation-shortcuts__title {
   margin: 0;
-  padding: 0 4px;
+  padding: 0 10px 2px;
   color: var(--msg-muted);
   font-size: 12px;
+  line-height: 1.4;
 }
 
 .conversation-shortcuts ul {
@@ -352,17 +386,17 @@
 .conversation-shortcut {
   display: grid;
   width: 100%;
-  min-height: 52px;
+  min-height: 56px;
   align-items: center;
-  padding: 8px;
+  padding: 8px 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
   color: var(--msg-ink);
   cursor: pointer;
   font: inherit;
-  gap: 10px;
-  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  gap: 12px;
+  grid-template-columns: 36px minmax(0, 1fr) 16px;
   text-align: left;
   text-decoration: none;
 }
@@ -376,9 +410,24 @@
   opacity: 0.6;
 }
 
-.conversation-shortcut > svg {
+.conversation-shortcut__icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--msg-fill);
+  color: var(--msg-ink);
+  place-items: center;
+}
+
+.conversation-shortcut__icon svg {
   width: 18px;
   height: 18px;
+}
+
+.conversation-shortcut__arrow {
+  width: 16px;
+  height: 16px;
   color: var(--msg-muted);
 }
 
@@ -391,44 +440,43 @@
 .conversation-shortcut__text strong {
   font-size: 13.5px;
   font-weight: 600;
+  line-height: 1.35;
 }
 
 .conversation-shortcut__text span {
   overflow: hidden;
   color: var(--msg-muted);
   font-size: 12px;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Teams filter chips (ref-01) */
+/* Teams filter chips (ref-01). They wrap instead of scrolling sideways, so
+   nothing is clipped (ref-06) and focus outlines stay visible. */
 .conversation-filters {
   display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: none;
-}
-
-.conversation-filters::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .conversation-filter {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 12px;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 9px;
   border: 1px solid var(--msg-control);
   border-radius: 999px;
   background: var(--msg-surface);
   color: var(--msg-ink);
   cursor: pointer;
   font: inherit;
-  font-size: 12.5px;
-  font-weight: 550;
+  font-size: 12px;
+  /* One weight for every state, so pressing a chip never reflows the row. */
+  font-weight: 600;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -440,18 +488,17 @@
   border-color: var(--msg-active-line);
   background: var(--msg-active);
   color: var(--msg-active-ink);
-  font-weight: 700;
 }
 
 .conversation-filter__count {
-  min-width: 18px;
-  padding: 0 5px;
+  min-width: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--msg-unread);
   color: var(--msg-unread-ink);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 16px;
   text-align: center;
 }
 
@@ -665,7 +712,7 @@
   margin-top: 12px;
 }
 
-/* ---------- Avatars ---------- */
+/* ---------- Avatars (MSG-AVATAR-SEARCH-CLASSIN-01) ---------- */
 .conversation-avatar {
   position: relative;
   display: grid;
@@ -685,12 +732,39 @@
   height: 64px;
 }
 
-.conversation-avatar--class {
+/* A person in the list / header / welcome is the shared Zalo-style circle
+   (components/UserAvatar, styles.css); only its sizes are set here. */
+.user-avatar.conversation-avatar--md {
+  width: 42px;
+  height: 42px;
+}
+
+.user-avatar.conversation-avatar--sm {
+  width: 36px;
+  height: 36px;
+}
+
+.user-avatar.conversation-avatar--lg {
+  width: 64px;
+  height: 64px;
+}
+
+/* ClassIn cover (ref-03): classes and rooms are a rounded square filled edge
+   to edge by the class cover, with a hairline inner ring. */
+.conversation-avatar--cover {
   border-radius: 10px;
   background: var(--msg-hover);
 }
 
-.conversation-avatar--class > .class-cover-art {
+.conversation-avatar--cover.conversation-avatar--sm {
+  border-radius: 8px;
+}
+
+.conversation-avatar--cover.conversation-avatar--lg {
+  border-radius: 14px;
+}
+
+.conversation-avatar--cover > .class-cover-art {
   position: absolute;
   display: block;
   overflow: hidden;
@@ -698,20 +772,25 @@
   inset: 0;
 }
 
-.conversation-avatar--class > .class-cover-art svg {
+.conversation-avatar--cover > .class-cover-art svg {
   display: block;
   width: 100%;
   height: 100%;
 }
 
-.conversation-avatar__glyph {
-  width: 50%;
-  height: 50%;
-  color: var(--msg-muted);
+.conversation-avatar--cover::after {
+  position: absolute;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--msg-avatar-ring);
+  content: "";
+  inset: 0;
+  pointer-events: none;
 }
 
+/* Green ClassIn badge on the bottom-right corner, ringed off the cover. */
 .conversation-avatar__badge {
   position: absolute;
+  z-index: 1;
   right: -3px;
   bottom: -3px;
   display: grid;
@@ -725,101 +804,27 @@
 }
 
 .conversation-avatar__badge svg {
-  width: 9px;
-  height: 9px;
-  stroke-width: 2.6;
+  width: 8px;
+  height: 8px;
+  stroke-width: 2.8;
 }
 
-.conversation-avatar--room {
-  border-radius: 12px;
-  background: var(--avatar-bg, #dfe3ea);
+.conversation-avatar--sm .conversation-avatar__badge {
+  width: 14px;
+  height: 14px;
 }
 
-.conversation-avatar--room .conversation-avatar__glyph {
-  color: var(--avatar-fg, #2b3340);
-}
-
-.conversation-person-avatar {
-  display: inline-grid;
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  background: var(--avatar-bg, #dfe3ea);
-  color: var(--avatar-fg, #2b3340);
-  font-size: 12.5px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  line-height: 1;
-  place-items: center;
-  user-select: none;
-}
-
-.conversation-person-avatar--xs {
+.conversation-avatar--lg .conversation-avatar__badge {
+  right: -4px;
+  bottom: -4px;
   width: 22px;
   height: 22px;
-  font-size: 9.5px;
+  border-width: 3px;
 }
 
-.conversation-person-avatar--md,
-.conversation-person-avatar.conversation-avatar--md {
-  width: 42px;
-  height: 42px;
-  font-size: 15px;
-}
-
-.conversation-person-avatar.conversation-avatar--sm {
-  width: 36px;
-  height: 36px;
-  font-size: 13.5px;
-}
-
-.conversation-person-avatar--lg,
-.conversation-person-avatar.conversation-avatar--lg {
-  width: 64px;
-  height: 64px;
-  font-size: 22px;
-}
-
-/* ROOM-TILE-TEAMS-01 flat pastel pairs (>= 5.79:1). */
-[data-tone="0"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #c6e9d7;
-  --avatar-fg: #1c5a3c;
-}
-
-[data-tone="1"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #f3d2cc;
-  --avatar-fg: #8a2b1f;
-}
-
-[data-tone="2"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #dbe0d3;
-  --avatar-fg: #39452e;
-}
-
-[data-tone="3"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #dad5f2;
-  --avatar-fg: #3a2e7f;
-}
-
-[data-tone="4"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #cde0f3;
-  --avatar-fg: #1c4977;
-}
-
-[data-tone="5"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #f0ddc1;
-  --avatar-fg: #784811;
-}
-
-[data-tone="6"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #c5e7e9;
-  --avatar-fg: #145a61;
-}
-
-[data-tone="7"]:is(.conversation-person-avatar, .conversation-avatar--room) {
-  --avatar-bg: #f0d1df;
-  --avatar-fg: #7c234e;
+.conversation-avatar--lg .conversation-avatar__badge svg {
+  width: 11px;
+  height: 11px;
 }
 
 /* ---------- Right column: conversation ---------- */
@@ -2339,12 +2344,26 @@
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
+  /* Still room for the four default chips (and a small unread badge) on one
+     line next to an expanded app sidebar at 1024px. */
   .page-content.conversations-page {
-    grid-template-columns: minmax(16rem, 18.5rem) minmax(0, 1fr);
+    grid-template-columns: minmax(17.5rem, 20.5rem) minmax(0, 1fr);
+  }
+
+  .conversation-list-panel > :not(.conversation-list-panel__scroll) {
+    margin-right: 14px;
+    margin-left: 14px;
   }
 
   .conversation-detail-panel__header .conversation-cta {
     display: none;
+  }
+}
+
+@media (max-width: 940px) {
+  /* Narrow two-column range: give the chat its width back; chips wrap. */
+  .page-content.conversations-page {
+    grid-template-columns: minmax(16.5rem, 18.5rem) minmax(0, 1fr);
   }
 }
 
@@ -2480,6 +2499,7 @@
   }
 
   .conversation-search input,
+  .conversation-shortcut__icon,
   .conversation-thread-search,
   .conversation-composer,
   .conversation-composer-locked,
@@ -2541,11 +2561,18 @@
     forced-color-adjust: none;
   }
 
-  .conversation-avatar__badge,
-  .conversation-person-avatar,
-  .conversation-avatar--room {
+  .conversation-avatar__badge {
     border: 1px solid CanvasText;
     forced-color-adjust: auto;
+  }
+
+  /* Covers keep their colours; the outline separates them from Canvas. */
+  .conversation-avatar--cover {
+    outline: 1px solid CanvasText;
+  }
+
+  .conversation-avatar--cover::after {
+    box-shadow: none;
   }
 
   .conversation-message__actions,

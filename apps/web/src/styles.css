@@ -480,18 +480,75 @@ textarea:focus-visible {
   outline-offset: -2px;
 }
 
-.app-sidebar__avatar {
+/*
+ * MSG-AVATAR-SEARCH-CLASSIN-01: shared person avatar (components/UserAvatar).
+ * Zalo-style default: neutral grey disc, solid light head-and-shoulders, a
+ * hairline ring so it separates from white rows and the #e8f1f8 active row.
+ */
+.user-avatar {
+  --user-avatar-bg: #cfd5de;
+  --user-avatar-figure: #ffffff;
+  --user-avatar-ring: rgb(15 23 42 / 0.08);
+  position: relative;
   display: inline-grid;
   width: 32px;
   height: 32px;
-  flex: none;
-  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
   border-radius: 50%;
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0.02em;
+  background: var(--user-avatar-bg);
+  box-shadow: inset 0 0 0 1px var(--user-avatar-ring);
+  color: var(--user-avatar-figure);
+  place-items: center;
+  user-select: none;
+}
+
+[data-theme="dark"] .user-avatar,
+.user-avatar[data-theme="dark"] {
+  --user-avatar-bg: #3a4352;
+  --user-avatar-figure: #e6ebf2;
+  --user-avatar-ring: rgb(255 255 255 / 0.12);
+}
+
+.user-avatar--xs {
+  width: 22px;
+  height: 22px;
+}
+
+.user-avatar--md {
+  width: 42px;
+  height: 42px;
+}
+
+.user-avatar--lg {
+  width: 64px;
+  height: 64px;
+}
+
+.user-avatar__figure,
+.user-avatar__photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  grid-area: 1 / 1;
+}
+
+.user-avatar__photo {
+  object-fit: cover;
+}
+
+/* The ring sits above a photo too. */
+.user-avatar[data-avatar="photo"]::after {
+  position: absolute;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--user-avatar-ring);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+}
+
+.app-sidebar__avatar {
+  flex: none;
 }
 
 .app-sidebar__identity {
@@ -591,8 +648,11 @@ textarea:focus-visible {
     outline-offset: -3px;
   }
 
-  .app-sidebar__avatar {
+  .user-avatar {
     border: 1px solid CanvasText;
+    background: Canvas;
+    box-shadow: none;
+    color: CanvasText;
   }
 }
 

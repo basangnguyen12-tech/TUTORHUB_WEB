@@ -27,7 +27,6 @@ import {
   ChevronUp,
   Contact,
   Copy,
-  GraduationCap,
   Lock,
   MessageCircle,
   Pencil,
@@ -61,6 +60,7 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import {
   coverThemeFor,
+  defaultCoverTheme,
   type ClassCoverTheme,
   useClassroomPreferences,
 } from "../app/classroomPreferences";
@@ -88,11 +88,6 @@ import {
   prepareChatImage,
   type ChatAttachmentKind,
 } from "../features/media/classroomChatMedia";
-import {
-  MEDIA_TILE_TONE_COUNT,
-  fnv1aHash,
-  participantInitials,
-} from "../features/media/classroomSignals";
 import { ClassCoverArt } from "./ClassCoverArt";
 import {
   buildQuotedReply,
@@ -124,6 +119,7 @@ import {
 } from "./conversation-composer/composerCards";
 import { MessageEmbedCard } from "./conversation-composer/MessageEmbedCard";
 import { FileTypeIcon } from "./FileTypeIcon";
+import { UserAvatar, type UserAvatarSize } from "./UserAvatar";
 
 const maximumMessageCharacters = 4000;
 const maximumMessageBytes = 16 * 1024;
@@ -164,102 +160,75 @@ function cx(...values: (string | false | null | undefined)[]) {
   return values.filter(Boolean).join(" ");
 }
 
-function personTone(seed: string) {
-  return fnv1aHash(seed) % MEDIA_TILE_TONE_COUNT;
-}
-
-/** ROOM-TILE-TEAMS-01 flat pastel avatar with two initials. */
+/**
+ * MSG-AVATAR-SEARCH-CLASSIN-01: a person is the shared Zalo-style default
+ * avatar (no initials, no tone). It is decorative: the name always sits next
+ * to it. `src` takes a profile photo once the API exposes one.
+ */
 export function PersonAvatar({
   className,
-  name,
-  seed,
   size = "sm",
+  src,
 }: {
   className?: string;
-  name: string;
-  seed: string;
-  size?: "xs" | "sm" | "md" | "lg";
+  size?: UserAvatarSize;
+  src?: string | null;
 }) {
-  const initials = participantInitials(name);
   return (
-    <span
-      aria-hidden="true"
-      className={cx(
-        "conversation-person-avatar",
-        `conversation-person-avatar--${size}`,
-        className,
-      )}
-      data-initials={[...initials].length}
-      data-tone={personTone(seed)}
-    >
-      {initials}
-    </span>
+    <UserAvatar
+      className={cx("conversation-person-avatar", className)}
+      size={size}
+      src={src}
+    />
   );
 }
 
 /**
- * Conversation identity: the class cover (rounded square with a green member
- * badge), a Teams meeting-style room tile, or the other person's initials.
+ * Conversation identity. Classes and rooms (including a standalone instant
+ * class) are a ClassIn rounded-square cover with a green badge; a direct chat
+ * is the other person's avatar. A conversation tied to a class uses that
+ * class's cover, so the class and its rooms match; a standalone room gets a
+ * stable cover from its media space (or its own) ID.
  */
 export function ConversationAvatar({
-  actorID,
   conversation,
   coverTheme,
   size = "md",
 }: {
-  actorID: string;
   conversation: Pick<
     Conversation,
-    "class_id" | "id" | "kind" | "participants" | "title"
+    "class_id" | "id" | "kind" | "media_space_id"
   >;
+  /** The class's chosen cover; only meaningful with a `class_id`. */
   coverTheme?: ClassCoverTheme;
   size?: "sm" | "md" | "lg";
 }) {
-  if (conversation.kind === "class") {
+  if (conversation.kind === "class" || conversation.kind === "room") {
+    const theme =
+      (conversation.class_id ? coverTheme : undefined) ??
+      defaultCoverTheme(
+        conversation.class_id ?? conversation.media_space_id ?? conversation.id,
+      );
     return (
       <span
         aria-hidden="true"
         className={cx(
           "conversation-avatar",
-          "conversation-avatar--class",
+          "conversation-avatar--cover",
+          `conversation-avatar--${conversation.kind}`,
           `conversation-avatar--${size}`,
         )}
       >
-        {coverTheme ? (
-          <ClassCoverArt theme={coverTheme} />
-        ) : (
-          <GraduationCap className="conversation-avatar__glyph" />
-        )}
+        <ClassCoverArt theme={theme} />
         <span className="conversation-avatar__badge">
-          <Users />
+          {conversation.kind === "class" ? <Users /> : <Video />}
         </span>
       </span>
     );
   }
-  if (conversation.kind === "room") {
-    return (
-      <span
-        aria-hidden="true"
-        className={cx(
-          "conversation-avatar",
-          "conversation-avatar--room",
-          `conversation-avatar--${size}`,
-        )}
-        data-tone={personTone(conversation.id)}
-      >
-        <Video className="conversation-avatar__glyph" />
-      </span>
-    );
-  }
-  const other =
-    conversation.participants.find(
-      (participant) => participant.user_id !== actorID,
-    ) ?? conversation.participants[0];
   return (
     <PersonAvatar
       className={cx("conversation-avatar", `conversation-avatar--${size}`)}
-      name={other?.display_name ?? conversation.title}
-      seed={other?.user_id ?? conversation.id}
       size={size}
     />
   );
@@ -1152,11 +1121,13 @@ export function ConversationMessages({
 
         {messages.isSuccess && items.length === 0 && (
           <ConversationWelcome
-            actorID={actorID}
             conversation={conversation}
             coverTheme={
-              classID
-                ? coverThemeFor(classroomPreferences.preferences, classID)
+              conversation?.class_id
+                ? coverThemeFor(
+                    classroomPreferences.preferences,
+                    conversation.class_id,
+                  )
                 : undefined
             }
           />
@@ -1209,11 +1180,7 @@ export function ConversationMessages({
                   )}
                   <div className="conversation-message__row">
                     {!own && (
-                      <PersonAvatar
-                        className="conversation-message__avatar"
-                        name={message.author.display_name}
-                        seed={message.author.user_id}
-                      />
+                      <PersonAvatar className="conversation-message__avatar" />
                     )}
                     <div className="conversation-message__stack">
                       <div
@@ -1263,9 +1230,7 @@ export function ConversationMessages({
                             {active.embed && (
                               <MessageEmbedCard
                                 actorID={actorID}
-                                avatar={(name, seed) => (
-                                  <PersonAvatar name={name} seed={seed} />
-                                )}
+                                avatar={() => <PersonAvatar />}
                                 embed={active.embed}
                                 messageID={active.id}
                                 tenantID={tenantID}
@@ -1651,11 +1616,7 @@ export function ConversationMessages({
                           insertIntoDraft(`@${candidate.name} `, true);
                         }}
                       >
-                        <PersonAvatar
-                          name={candidate.name}
-                          seed={candidate.userID}
-                          size="xs"
-                        />
+                        <PersonAvatar size="xs" />
                         <span>{candidate.name}</span>
                       </MenuItem>
                     ))
@@ -1784,9 +1745,7 @@ export function ConversationMessages({
       {cardDialog === "contact" && (
         <ContactCardDialog
           actorID={actorID}
-          avatar={(name, seed) => (
-            <PersonAvatar name={name} seed={seed} size="xs" />
-          )}
+          avatar={() => <PersonAvatar size="xs" />}
           onClose={() => setCardDialog(null)}
           onSend={sendContactCard}
           tenantID={tenantID}
@@ -2061,11 +2020,9 @@ function MessageAttachments({
 }
 
 function ConversationWelcome({
-  actorID,
   conversation,
   coverTheme,
 }: {
-  actorID: string;
   conversation?: Conversation;
   coverTheme?: ClassCoverTheme;
 }) {
@@ -2137,7 +2094,6 @@ function ConversationWelcome({
     <div className="conversation-welcome">
       {conversation ? (
         <ConversationAvatar
-          actorID={actorID}
           conversation={conversation}
           coverTheme={coverTheme}
           size="lg"

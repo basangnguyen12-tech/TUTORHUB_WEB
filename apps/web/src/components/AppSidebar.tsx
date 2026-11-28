@@ -17,6 +17,7 @@ import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import { Link, NavLink } from "react-router";
 import { useI18n, type TranslationKey } from "../app/i18n";
 import type { NavigationItem } from "../app/routes";
+import { UserAvatar } from "./UserAvatar";
 
 /**
  * NAV-SIDEBAR-SAAS-01: modern SaaS sidebar (workspace switcher on top, grouped
@@ -127,17 +128,6 @@ function groupNavigationItems(
       ),
     }))
     .filter((group) => group.items.length > 0);
-}
-
-/** First letters of the first and last words, e.g. "Nguyễn Văn An" → "NA". */
-function displayInitials(name: string) {
-  const words = name.trim().split(/\s+/u).filter(Boolean);
-  const first = Array.from(words[0] ?? "")[0] ?? "";
-  const last =
-    words.length > 1
-      ? (Array.from(words[words.length - 1] ?? "")[0] ?? "")
-      : "";
-  return `${first}${last}`.toLocaleUpperCase() || "?";
 }
 
 export interface WorkspaceOption {
@@ -391,9 +381,9 @@ export function AppSidebar({
             title={t("shell.accountSettings")}
             to="/app/settings"
           >
-            <span aria-hidden="true" className="app-sidebar__avatar">
-              {displayInitials(displayName)}
-            </span>
+            {/* MSG-AVATAR-SEARCH-CLASSIN-01: Zalo-style default avatar; the
+                name next to it carries the meaning. */}
+            <UserAvatar className="app-sidebar__avatar" size="sm" />
             <span className="app-sidebar__identity">
               <span className="app-sidebar__role">{roleLabel}</span>
               <strong>{displayName}</strong>

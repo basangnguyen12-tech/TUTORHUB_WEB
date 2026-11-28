@@ -227,6 +227,11 @@ export function ConversationsPage() {
     [filter, items, query],
   );
   const searching = query.trim().length > 0;
+  // MSG-AVATAR-SEARCH-CLASSIN-01 (ClassIn ref-05): a focused, empty search
+  // swaps the chips and the list for a full-height shortcut panel. While a
+  // query is typed the chips and results come back, with the shortcuts at the
+  // end of the scrolling results.
+  const panelOpen = shortcutsOpen && !searching;
   const { pinned: pinnedItems, others: otherItems } =
     partitionPinnedConversations(
       filtered,
@@ -259,27 +264,17 @@ export function ConversationsPage() {
     suppressShortcutsOnFocus.current = false;
   };
 
-  const clearSearch = () => {
-    if (query) {
-      setQuery("");
-      searchInput.current?.focus();
-      return;
-    }
+  /** ✕ and Escape leave search mode: the normal chips and list come back. */
+  const closeSearch = () => {
+    setQuery("");
     setShortcutsOpen(false);
     focusSearchQuietly();
   };
 
   const handleSearchAreaKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Escape") {
-      return;
-    }
-    if (shortcutsOpen) {
+    if (event.key === "Escape" && (shortcutsOpen || query)) {
       event.preventDefault();
-      setShortcutsOpen(false);
-      focusSearchQuietly();
-    } else if (query) {
-      event.preventDefault();
-      setQuery("");
+      closeSearch();
     }
   };
 
@@ -288,6 +283,67 @@ export function ConversationsPage() {
     if (!(next instanceof Node) || !event.currentTarget.contains(next)) {
       setShortcutsOpen(false);
     }
+  };
+
+  // A click on the panel's empty space must not blur the search and close it.
+  const keepSearchFocus = (event: MouseEvent<HTMLDivElement>) => {
+    if (
+      !(event.target instanceof Element) ||
+      !event.target.closest("a, button")
+    ) {
+      event.preventDefault();
+    }
+  };
+
+  const renderShortcuts = (placement: "panel" | "results") => {
+    const titleID = `conversation-shortcuts-title-${placement}`;
+    return (
+      <div
+        className={`conversation-shortcuts conversation-shortcuts--${placement}`}
+        onMouseDown={placement === "panel" ? keepSearchFocus : undefined}
+      >
+        <p className="conversation-shortcuts__title" id={titleID}>
+          {t("conversations.shortcutsTitle")}
+        </p>
+        <ul aria-labelledby={titleID}>
+          <li>
+            <button
+              className="conversation-shortcut"
+              disabled={!createAvailability.available}
+              onClick={openCreateFromShortcut}
+              type="button"
+            >
+              <span aria-hidden="true" className="conversation-shortcut__icon">
+                <Mail />
+              </span>
+              <span className="conversation-shortcut__text">
+                <strong>{t("conversations.shortcutDirect")}</strong>
+                <span>{t("conversations.shortcutDirectHint")}</span>
+              </span>
+              <ArrowUpRight
+                aria-hidden="true"
+                className="conversation-shortcut__arrow"
+              />
+            </button>
+          </li>
+          <li>
+            <Link className="conversation-shortcut" to="/app/classrooms">
+              <span aria-hidden="true" className="conversation-shortcut__icon">
+                <School />
+              </span>
+              <span className="conversation-shortcut__text">
+                <strong>{t("conversations.shortcutClasses")}</strong>
+                <span>{t("conversations.shortcutClassesHint")}</span>
+              </span>
+              <ArrowUpRight
+                aria-hidden="true"
+                className="conversation-shortcut__arrow"
+              />
+            </Link>
+          </li>
+        </ul>
+      </div>
+    );
   };
 
   const submitDirect = (event: FormEvent<HTMLFormElement>) => {
@@ -369,7 +425,6 @@ export function ConversationsPage() {
           to={`/app/messages/${item.id}`}
         >
           <ConversationAvatar
-            actorID={actorID}
             conversation={item}
             coverTheme={
               item.class_id
@@ -558,6 +613,7 @@ export function ConversationsPage() {
 
         <div
           className="conversation-search-area"
+          data-open={panelOpen ? "true" : undefined}
           onBlur={handleSearchAreaBlur}
           onKeyDown={handleSearchAreaKeyDown}
         >
@@ -576,7 +632,11 @@ export function ConversationsPage() {
               id="conversation-search"
               onChange={(event) => {
                 setQuery(event.target.value);
-                setShortcutsOpen(true);
+                // Only a focused input opens search mode; a value reset from
+                // elsewhere must not leave the panel stuck open.
+                if (event.target === document.activeElement) {
+                  setShortcutsOpen(true);
+                }
               }}
               onFocus={() => {
                 if (!suppressShortcutsOnFocus.current) {
@@ -592,62 +652,23 @@ export function ConversationsPage() {
               <button
                 aria-label={t("conversations.searchClear")}
                 className="conversation-search__clear"
-                onClick={clearSearch}
+                onClick={closeSearch}
                 type="button"
               >
                 <X aria-hidden="true" />
               </button>
             )}
           </div>
-          {shortcutsOpen && (
-            <div className="conversation-shortcuts">
-              <p
-                className="conversation-shortcuts__title"
-                id="conversation-shortcuts-title"
-              >
-                {t("conversations.shortcutsTitle")}
-              </p>
-              <ul aria-labelledby="conversation-shortcuts-title">
-                <li>
-                  <button
-                    className="conversation-shortcut"
-                    disabled={!createAvailability.available}
-                    onClick={openCreateFromShortcut}
-                    type="button"
-                  >
-                    <Mail aria-hidden="true" />
-                    <span className="conversation-shortcut__text">
-                      <strong>{t("conversations.shortcutDirect")}</strong>
-                      <span>{t("conversations.shortcutDirectHint")}</span>
-                    </span>
-                    <ArrowUpRight
-                      aria-hidden="true"
-                      className="conversation-shortcut__arrow"
-                    />
-                  </button>
-                </li>
-                <li>
-                  <Link className="conversation-shortcut" to="/app/classrooms">
-                    <School aria-hidden="true" />
-                    <span className="conversation-shortcut__text">
-                      <strong>{t("conversations.shortcutClasses")}</strong>
-                      <span>{t("conversations.shortcutClassesHint")}</span>
-                    </span>
-                    <ArrowUpRight
-                      aria-hidden="true"
-                      className="conversation-shortcut__arrow"
-                    />
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          )}
+          {panelOpen && renderShortcuts("panel")}
         </div>
 
+        {/* Kept mounted while the panel is open so the list keeps its scroll
+            position; `hidden` removes both from layout and the a11y tree. */}
         {!listConcealed && items.length > 0 && (
           <div
             aria-label={t("conversations.filtersLabel")}
             className="conversation-filters"
+            hidden={panelOpen}
             role="group"
           >
             {visibleFilters.map((value) => (
@@ -669,7 +690,7 @@ export function ConversationsPage() {
           </div>
         )}
 
-        <div className="conversation-list-panel__scroll">
+        <div className="conversation-list-panel__scroll" hidden={panelOpen}>
           {conversations.isPending && (
             <SkeletonGroup label={t("conversations.loading")}>
               <Skeleton height={56} />
@@ -755,6 +776,11 @@ export function ConversationsPage() {
               </Button>
             </div>
           )}
+
+          {searching &&
+            !listConcealed &&
+            items.length > 0 &&
+            renderShortcuts("results")}
         </div>
       </section>
 
@@ -1041,7 +1067,6 @@ function ConversationDetail({
             plain muted status line under the name (no pill, no kind label). */}
         <span className="conversation-detail-panel__avatar">
           <ConversationAvatar
-            actorID={actorID}
             conversation={item}
             coverTheme={item.class_id ? coverFor(item.class_id) : undefined}
             size="sm"

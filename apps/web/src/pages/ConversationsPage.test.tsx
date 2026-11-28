@@ -17,6 +17,7 @@ import type {
 } from "@tutorhub/api-client";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultCoverTheme } from "../app/classroomPreferences";
 import { conversationQueryKeys } from "../app/conversations";
 import { I18nProvider } from "../app/i18n";
 import { SessionProvider } from "../app/session";
@@ -531,6 +532,235 @@ describe("ConversationsPage", () => {
     expect(
       screen.getByRole("button", { name: "Bắt đầu trò chuyện" }),
     ).toHaveFocus();
+  });
+
+  describe("MSG-AVATAR-SEARCH-CLASSIN-01 ClassIn search", () => {
+    function renderList() {
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(
+            listResponse([
+              directConversation,
+              activeClassConversation,
+              endedRoomConversation,
+            ]),
+          ),
+        );
+      renderPage("/app/messages", fetchMock);
+    }
+
+    const filtersGroup = () =>
+      screen.queryByRole("group", { name: "Lọc cuộc trò chuyện" });
+    const listPanel = () =>
+      document.querySelector(".conversation-list-panel__scroll");
+
+    it("swaps the chips and list for a full shortcut panel on an empty focus", async () => {
+      renderList();
+      const search = await screen.findByRole("searchbox", {
+        name: "Tìm cuộc trò chuyện",
+      });
+      await screen.findByText("Đại số tuyến tính");
+      // Idle: chips and list, no panel, no clear button.
+      expect(filtersGroup()).toBeInTheDocument();
+      expect(listPanel()).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Xóa tìm kiếm" }),
+      ).not.toBeInTheDocument();
+
+      act(() => search.focus());
+      const panel = document.querySelector(".conversation-shortcuts--panel");
+      expect(panel).not.toBeNull();
+      expect(
+        within(panel as HTMLElement).getByText("Lối tắt"),
+      ).toBeInTheDocument();
+      expect(filtersGroup()).not.toBeInTheDocument();
+      expect(listPanel()).not.toBeVisible();
+      const clear = screen.getByRole("button", { name: "Xóa tìm kiếm" });
+
+      // Moving focus inside the search area keeps the panel open, and a
+      // click on its empty space does not blur the search.
+      fireEvent.focusOut(search, { relatedTarget: clear });
+      expect(filtersGroup()).not.toBeInTheDocument();
+      expect(
+        fireEvent.mouseDown(within(panel as HTMLElement).getByText("Lối tắt")),
+      ).toBe(false);
+
+      // The clear button closes search mode and keeps focus on the input.
+      fireEvent.click(clear);
+      expect(document.querySelector(".conversation-shortcuts")).toBeNull();
+      expect(filtersGroup()).toBeInTheDocument();
+      expect(listPanel()).toBeVisible();
+      expect(search).toHaveFocus();
+
+      // Escape does the same.
+      act(() => search.blur());
+      act(() => search.focus());
+      expect(filtersGroup()).not.toBeInTheDocument();
+      fireEvent.keyDown(search, { key: "Escape" });
+      expect(filtersGroup()).toBeInTheDocument();
+      expect(search).toHaveFocus();
+
+      // Leaving the search area closes the panel too.
+      act(() => search.blur());
+      act(() => search.focus());
+      expect(filtersGroup()).not.toBeInTheDocument();
+      fireEvent.focusOut(search, { relatedTarget: null });
+      expect(filtersGroup()).toBeInTheDocument();
+      expect(screen.getByText("Đại số tuyến tính")).toBeVisible();
+    });
+
+    it("keeps chips over the results and puts the shortcuts inside the scroller while typing", async () => {
+      renderList();
+      const search = await screen.findByRole("searchbox", {
+        name: "Tìm cuộc trò chuyện",
+      });
+      await screen.findByText("Đại số tuyến tính");
+
+      act(() => search.focus());
+      fireEvent.change(search, { target: { value: "dai so" } });
+      const filters = filtersGroup();
+      expect(filters).toBeInTheDocument();
+      const scroller = listPanel() as HTMLElement;
+      expect(scroller).toBeVisible();
+      expect(within(scroller).getByText("Đại số tuyến tính")).toBeVisible();
+      expect(scroller.lastElementChild).toHaveClass(
+        "conversation-shortcuts--results",
+      );
+      expect(
+        within(scroller).getByRole("link", {
+          name: /Tìm hoặc tham gia lớp học/,
+        }),
+      ).toHaveAttribute("href", "/app/classrooms");
+      expect(
+        document.querySelector(".conversation-shortcuts--panel"),
+      ).toBeNull();
+      // The chips still narrow the results.
+      fireEvent.click(
+        within(filters as HTMLElement).getByRole("button", {
+          name: "Trực tiếp",
+        }),
+      );
+      expect(
+        screen.getByText("Không có cuộc trò chuyện phù hợp"),
+      ).toBeInTheDocument();
+      fireEvent.click(
+        within(filters as HTMLElement).getByRole("button", { name: "Tất cả" }),
+      );
+
+      // Deleting the text while focused returns to the shortcut panel.
+      fireEvent.change(search, { target: { value: "" } });
+      expect(
+        document.querySelector(".conversation-shortcuts--panel"),
+      ).not.toBeNull();
+      expect(filtersGroup()).not.toBeInTheDocument();
+
+      // A value reset while the input is not focused never opens the panel.
+      fireEvent.focusOut(search, { relatedTarget: null });
+      act(() => search.blur());
+      fireEvent.change(search, { target: { value: "toan" } });
+      fireEvent.change(search, { target: { value: "" } });
+      expect(document.querySelector(".conversation-shortcuts")).toBeNull();
+      expect(filtersGroup()).toBeInTheDocument();
+    });
+  });
+
+  it("draws people as Zalo avatars and classes and rooms as ClassIn covers", async () => {
+    const roomWithClass: Conversation = {
+      ...endedRoomConversation,
+      id: "0b7c2d1e-3f4a-4b5c-8d6e-7f8091a2b3c4",
+      class_id: activeClassID,
+      media_space_id: "7e6d5c4b-3a29-4180-9f7e-6d5c4b3a2918",
+      title: "Phòng học Đại số",
+    };
+    localStorage.setItem(
+      `tutorhub.classroom-prefs:${tenantID}:${teacherID}`,
+      JSON.stringify({ pinned: [], covers: { [activeClassID]: "lilac-dusk" } }),
+    );
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(
+          listResponse([
+            directConversation,
+            activeClassConversation,
+            roomWithClass,
+            endedRoomConversation,
+          ]),
+        ),
+      );
+    renderPage("/app/messages", fetchMock);
+
+    const avatarOf = async (title: string) => {
+      const link = (await screen.findByText(title)).closest("a");
+      expect(link).not.toBeNull();
+      return (link as HTMLElement).querySelector(".conversation-avatar");
+    };
+
+    const person = await avatarOf("TutorHub Student");
+    expect(person).toHaveClass("user-avatar");
+    expect(person).toHaveAttribute("aria-hidden", "true");
+    expect(person).toHaveAttribute("data-avatar", "default");
+    expect(person).toHaveTextContent("");
+
+    // The class and its room share the cover chosen for the class.
+    for (const title of ["Đại số tuyến tính", "Phòng học Đại số"]) {
+      const cover = await avatarOf(title);
+      expect(cover).toHaveClass("conversation-avatar--cover");
+      expect(cover?.querySelector(".class-cover-art")).toHaveAttribute(
+        "data-cover",
+        "lilac-dusk",
+      );
+      expect(
+        cover?.querySelector(".conversation-avatar__badge"),
+      ).not.toBeNull();
+    }
+
+    // A standalone room gets a stable cover from its media space.
+    const standalone = await avatarOf("Phòng ôn tập Toán");
+    expect(standalone?.querySelector(".class-cover-art")).toHaveAttribute(
+      "data-cover",
+      defaultCoverTheme(endedRoomConversation.media_space_id ?? ""),
+    );
+    expect(document.querySelector(".conversation-list [data-tone]")).toBeNull();
+  });
+
+  it("keeps the presence dot on the direct header avatar", async () => {
+    const fetchMock = vi.fn().mockImplementation((request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith(`/api/v1/conversations/${directID}/messages`)) {
+        return Promise.resolve(emptyMessagePageResponse());
+      }
+      if (path.endsWith(`/api/v1/conversations/${directID}`)) {
+        return Promise.resolve(jsonResponse(directConversation));
+      }
+      return Promise.resolve(listResponse());
+    });
+    renderPage(`/app/messages/${directID}`, fetchMock);
+
+    const heading = await screen.findByRole("heading", {
+      level: 2,
+      name: "TutorHub Student",
+    });
+    const header = heading.closest("header") as HTMLElement;
+    const avatar = header.querySelector(
+      ".conversation-detail-panel__avatar .user-avatar",
+    );
+    expect(avatar).toHaveClass("conversation-avatar--sm");
+    expect(avatar).toHaveAttribute("data-avatar", "default");
+    expect(
+      header.querySelector(
+        '.conversation-detail-panel__avatar .conversation-presence-dot[aria-hidden="true"]',
+      ),
+    ).not.toBeNull();
+    // The welcome block uses the large size of the same avatar.
+    await waitFor(() =>
+      expect(
+        document.querySelector(
+          ".conversation-welcome .user-avatar.conversation-avatar--lg",
+        ),
+      ).not.toBeNull(),
+    );
   });
 
   it("welcomes a new class conversation with real class shortcuts", async () => {

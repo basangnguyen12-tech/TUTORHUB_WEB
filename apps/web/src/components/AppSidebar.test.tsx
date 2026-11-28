@@ -246,9 +246,13 @@ describe("AppSidebar", () => {
     const footer = screen.getByRole("link", { name: /Nguyễn Văn An/ });
     expect(footer).toHaveAttribute("href", "/app/settings");
     expect(footer).toHaveAttribute("title", "Thiết lập tài khoản");
-    expect(footer.querySelector(".app-sidebar__avatar")).toHaveTextContent(
-      "NA",
-    );
+    // MSG-AVATAR-SEARCH-CLASSIN-01: Zalo-style default avatar, no initials.
+    const avatar = footer.querySelector(".app-sidebar__avatar");
+    expect(avatar).toHaveClass("user-avatar", "user-avatar--sm");
+    expect(avatar).toHaveAttribute("aria-hidden", "true");
+    expect(avatar).toHaveAttribute("data-avatar", "default");
+    expect(avatar?.querySelector("svg clipPath circle")).not.toBeNull();
+    expect(avatar).toHaveTextContent("");
   });
 });
 

@@ -20,9 +20,13 @@ import type {
 } from "@tutorhub/api-client";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultCoverTheme } from "../app/classroomPreferences";
 import { conversationQueryKeys } from "../app/conversations";
 import { I18nProvider } from "../app/i18n";
-import { ConversationMessages } from "./ConversationMessages";
+import {
+  ConversationAvatar,
+  ConversationMessages,
+} from "./ConversationMessages";
 
 const tenantID = "4b18543a-74de-419f-9fe8-d0c3dfc991eb";
 const conversationID = "c82ef7ee-0a1b-4e99-b9d5-3ae20858a82e";
@@ -712,6 +716,16 @@ describe("ConversationMessages", () => {
     expect(
       within(items[1] as HTMLElement).getByText("TutorHub Student"),
     ).toBeInTheDocument();
+    // MSG-AVATAR-SEARCH-CLASSIN-01: incoming messages carry the Zalo-style
+    // default avatar (no initials), own messages none.
+    const incomingAvatar = items[0]?.querySelector(
+      ".conversation-message__avatar",
+    );
+    expect(incomingAvatar).toHaveClass("user-avatar");
+    expect(incomingAvatar).toHaveAttribute("aria-hidden", "true");
+    expect(incomingAvatar).toHaveAttribute("data-avatar", "default");
+    expect(incomingAvatar).toHaveTextContent("");
+    expect(items[2]?.querySelector(".conversation-message__avatar")).toBeNull();
     expect(screen.getByText("Second line", { exact: true })).toHaveClass(
       "conversation-message__content",
     );
@@ -934,9 +948,16 @@ describe("ConversationMessages", () => {
     act(() => trigger.focus());
     fireEvent.keyDown(trigger, { key: "Enter" });
     const options = await screen.findAllByRole("menuitem");
+    // MSG-AVATAR-SEARCH-CLASSIN-01: the avatar is a decorative silhouette,
+    // so the item reads as the display name only.
     expect(options.map((option) => option.textContent)).toEqual([
-      "TSTutorHub Student",
+      "TutorHub Student",
     ]);
+    expect(
+      options[0]?.querySelector(
+        '.user-avatar--xs[aria-hidden="true"][data-avatar="default"] svg',
+      ),
+    ).not.toBeNull();
     expect(document.body.textContent).not.toContain("@example.com");
     fireEvent.click(options[0] as HTMLElement);
     await waitFor(() => expect(composer).toHaveValue("@TutorHub Student "));
@@ -1371,6 +1392,11 @@ describe("ConversationMessages", () => {
       const card = await screen.findByRole("region", {
         name: "Contact card for Nguyễn Văn An",
       });
+      // The card shows the default avatar, never initials.
+      expect(
+        card.querySelector('.user-avatar[data-avatar="default"]'),
+      ).not.toBeNull();
+      expect(card).not.toHaveTextContent("NA");
       expect(
         screen.getByRole("region", {
           name: "This person is no longer available",
@@ -1596,5 +1622,94 @@ describe("ConversationMessages", () => {
         ).toBe(true),
       );
     });
+  });
+});
+
+describe("MSG-AVATAR-SEARCH-CLASSIN-01 ConversationAvatar", () => {
+  afterEach(() => cleanup());
+
+  const classID = "8f6b8a9e-31c7-4b8e-9d6f-0a0e3a1c2b11";
+  const spaceID = "d3b3a0b2-6b5e-4f5e-9a51-1c0f0e6d2c11";
+
+  function coverOf(container: HTMLElement) {
+    return container
+      .querySelector(".conversation-avatar--cover > .class-cover-art")
+      ?.getAttribute("data-cover");
+  }
+
+  it("draws a direct chat as the Zalo-style default avatar", () => {
+    const { container } = render(
+      <ConversationAvatar conversation={conversation} size="sm" />,
+    );
+    const avatar = container.firstElementChild;
+    expect(avatar).toHaveClass(
+      "user-avatar",
+      "conversation-avatar",
+      "conversation-avatar--sm",
+    );
+    expect(avatar).toHaveAttribute("aria-hidden", "true");
+    expect(avatar).toHaveAttribute("data-avatar", "default");
+    expect(avatar).toHaveTextContent("");
+    expect(container.querySelector(".class-cover-art")).toBeNull();
+  });
+
+  it("uses the class cover for a class and for a room of that class", () => {
+    const classView = render(
+      <ConversationAvatar
+        conversation={{ ...conversation, class_id: classID, kind: "class" }}
+        coverTheme="coral-bay"
+      />,
+    );
+    expect(coverOf(classView.container)).toBe("coral-bay");
+    expect(
+      classView.container.querySelector(".conversation-avatar__badge svg"),
+    ).not.toBeNull();
+    classView.unmount();
+
+    const roomView = render(
+      <ConversationAvatar
+        conversation={{
+          ...conversation,
+          class_id: classID,
+          kind: "room",
+          media_space_id: spaceID,
+        }}
+        coverTheme="coral-bay"
+        size="lg"
+      />,
+    );
+    expect(coverOf(roomView.container)).toBe("coral-bay");
+    expect(roomView.container.firstElementChild).toHaveClass(
+      "conversation-avatar--room",
+      "conversation-avatar--lg",
+    );
+    // No pastel video tile any more.
+    expect(roomView.container.querySelector("[data-tone]")).toBeNull();
+  });
+
+  it("gives a standalone room a stable cover from its media space", () => {
+    const standalone = {
+      ...conversation,
+      kind: "room" as const,
+      media_space_id: spaceID,
+    };
+    const first = render(
+      <ConversationAvatar
+        conversation={standalone}
+        // A class cover never applies to a room without a class.
+        coverTheme="minimal-studio"
+      />,
+    );
+    expect(coverOf(first.container)).toBe(defaultCoverTheme(spaceID));
+    first.unmount();
+
+    const withoutSpace = render(
+      <ConversationAvatar
+        conversation={{ ...standalone, media_space_id: undefined }}
+      />,
+    );
+    expect(coverOf(withoutSpace.container)).toBe(
+      defaultCoverTheme(conversationID),
+    );
   });
 });
