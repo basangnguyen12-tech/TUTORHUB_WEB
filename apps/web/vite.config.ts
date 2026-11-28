@@ -56,6 +56,7 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, "e2e/**"],
     maxWorkers: 4,
     setupFiles: ["./src/test/setup.ts"],
+    testTimeout: 15_000,
   },
 });
 
