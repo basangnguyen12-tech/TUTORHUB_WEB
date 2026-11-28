@@ -528,6 +528,11 @@
   margin-top: var(--space-6);
 }
 
+/* Buttons in a dialog (not a side drawer) use a lighter label weight. */
+.th-dialog-content:not(.th-drawer-content) .th-button {
+  font-weight: var(--font-weight-dialog-action);
+}
+
 .th-dialog-content.th-drawer-content {
   top: 0;
   bottom: 0;

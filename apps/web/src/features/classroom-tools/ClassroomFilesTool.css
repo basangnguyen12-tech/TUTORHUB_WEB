@@ -1253,6 +1253,11 @@ h3.classroom-files-library__title:focus:not(:focus-visible) {
   overflow-wrap: anywhere;
 }
 
+/* Same lighter label weight as buttons in library dialogs. */
+.classroom-files-dialog .th-button {
+  font-weight: var(--font-weight-dialog-action);
+}
+
 .classroom-files-dialog__title {
   display: flex;
   align-items: center;

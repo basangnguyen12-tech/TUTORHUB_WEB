@@ -2521,7 +2521,8 @@
   color: var(--neutral-muted);
 }
 
-/* Buttons: pills, ink primary, hairline secondary, no hover lift. */
+/* Buttons: pills, ink primary, hairline secondary, no hover lift. The lighter
+   label weight comes from the shared dialog rule in @tutorhub/ui. */
 .conversations-dialog .th-button {
   border-radius: 999px;
   box-shadow: none;
