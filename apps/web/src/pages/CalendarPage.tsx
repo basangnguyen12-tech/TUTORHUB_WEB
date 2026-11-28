@@ -568,7 +568,7 @@ export function CalendarPage() {
         item={selectedItem}
         locale={preference.locale}
         mediaRoomsEnabled={
-          capabilitiesQuery.data?.features.classroom_media_rooms.enabled ===
+          capabilitiesQuery.data?.features.classroom_media_rooms?.enabled ===
           true
         }
         onClose={() => setSelectedItem(null)}

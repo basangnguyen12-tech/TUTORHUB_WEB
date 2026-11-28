@@ -11,7 +11,7 @@ import {
 import { createMemoryRouter } from "react-router";
 import { RouterProvider } from "react-router/dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider, useI18n } from "./app/i18n";
+import { I18nProvider, LANGUAGE_STORAGE_KEY, useI18n } from "./app/i18n";
 import { createAppRoutes, getVisibleNavigationItems } from "./app/routes";
 import { SessionProvider } from "./app/session";
 import { tenantCapabilityQueryKeys } from "./app/tenantCapabilities";
@@ -176,9 +176,61 @@ describe("web shell", () => {
     );
     expect(avatar).toHaveAttribute("data-avatar", "default");
     expect(avatar).toHaveTextContent("");
+    // No top-bar controls outside Settings > System any more.
     expect(
-      screen.getByRole("combobox", { name: "Ngôn ngữ" }),
-    ).toHaveDisplayValue("Tiếng Việt");
+      screen.queryByRole("combobox", { name: "Ngôn ngữ" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Đăng xuất" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Có kết nối")).not.toBeInTheDocument();
+  });
+
+  it("moves language, connection and sign-out into Settings > System", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation((request: Request) =>
+          Promise.reject(new Error(`Unexpected request: ${request.url}`)),
+        ),
+    );
+
+    renderRoute("/app/settings");
+
+    // Available even while the profile cannot load.
+    const system = await screen.findByRole("region", { name: "Hệ thống" });
+    const language = within(system).getByRole("combobox", {
+      name: "Ngôn ngữ",
+    });
+    expect(language).toHaveDisplayValue("Tiếng Việt");
+    expect(within(system).getByRole("status")).toHaveTextContent("Có kết nối");
+    expect(
+      within(system).getByRole("button", { name: "Đăng xuất" }),
+    ).toBeEnabled();
+    // Without the notification feature there is no notification row.
+    expect(within(system).queryByRole("link")).not.toBeInTheDocument();
+
+    fireEvent.change(language, { target: { value: "en" } });
+    expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("en");
+    expect(
+      await screen.findByRole("region", { name: "System" }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "System" })).getByRole(
+        "button",
+        { name: "Sign out" },
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.change(
+      within(screen.getByRole("region", { name: "System" })).getByRole(
+        "combobox",
+        { name: "Language" },
+      ),
+      { target: { value: "vi" } },
+    );
+    expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBeNull();
   });
 
   it("shows Messages to a student without organization-level chat.send", () => {
@@ -353,7 +405,7 @@ describe("web shell", () => {
     });
   });
 
-  it("mounts the notification bell only after the feature becomes effective", async () => {
+  it("mounts the notification bell in Settings > System only after the feature becomes effective", async () => {
     const fetchMock = vi.fn().mockImplementation((request: Request) => {
       if (request.url.endsWith("/api/v1/notifications/unread-count")) {
         return Promise.resolve(
@@ -380,10 +432,11 @@ describe("web shell", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    renderRoute("/app/home", testSession, true);
+    renderRoute("/app/settings", testSession, true);
 
+    const system = await screen.findByRole("region", { name: "Hệ thống" });
     expect(
-      await screen.findByRole("link", {
+      await within(system).findByRole("link", {
         name: "Mở trung tâm thông báo, 3 chưa đọc",
       }),
     ).toHaveAttribute("href", "/app/notifications");

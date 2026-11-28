@@ -18,6 +18,11 @@ import {
   ErrorState,
   ForbiddenState,
   IconButton,
+  Menu,
+  MenuContent,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
   Skeleton,
   SkeletonGroup,
   TextField,
@@ -222,6 +227,13 @@ export function ConversationsPage() {
   const visibleFilters = conversationFilters.filter(
     (value) => value !== "room" || hasRoomConversations || filter === "room",
   );
+  const tabFilters = visibleFilters.filter(
+    (value) => value === "all" || value === "unread",
+  );
+  const categoryFilters = visibleFilters.filter(
+    (value) => value !== "all" && value !== "unread",
+  );
+  const activeCategory = categoryFilters.find((value) => value === filter);
   const filtered = useMemo(
     () => filterConversations(items, filter, query),
     [filter, items, query],
@@ -299,7 +311,9 @@ export function ConversationsPage() {
     const titleID = `conversation-shortcuts-title-${placement}`;
     return (
       <div
-        className={`conversation-shortcuts conversation-shortcuts--${placement}`}
+        className={`conversation-shortcuts conversation-shortcuts--${placement}${
+          placement === "panel" ? " scroll-autohide" : ""
+        }`}
         onMouseDown={placement === "panel" ? keepSearchFocus : undefined}
       >
         <p className="conversation-shortcuts__title" id={titleID}>
@@ -671,7 +685,9 @@ export function ConversationsPage() {
             hidden={panelOpen}
             role="group"
           >
-            {visibleFilters.map((value) => (
+            {/* Zalo-style row: two text tabs, the conversation kinds behind a
+                "Phân loại" menu on the right, so it never wraps. */}
+            {tabFilters.map((value) => (
               <button
                 aria-pressed={filter === value}
                 className="conversation-filter"
@@ -687,10 +703,56 @@ export function ConversationsPage() {
                 )}
               </button>
             ))}
+            {/* Non-modal: a light filter menu must not aria-hide the page. */}
+            <Menu modal={false}>
+              <MenuTrigger asChild>
+                <button
+                  aria-label={
+                    activeCategory
+                      ? t("conversations.filterCategoryActive", {
+                          category: t(filterLabels[activeCategory]),
+                        })
+                      : undefined
+                  }
+                  className="conversation-filter conversation-filter--category"
+                  data-active={activeCategory ? "true" : undefined}
+                  type="button"
+                >
+                  <span className="conversation-filter__label">
+                    {activeCategory
+                      ? t(filterLabels[activeCategory])
+                      : t("conversations.filterCategory")}
+                  </span>
+                  <ChevronDown aria-hidden="true" />
+                </button>
+              </MenuTrigger>
+              <MenuContent align="end" className="conversation-filter-menu">
+                <MenuRadioGroup
+                  onValueChange={(value) => {
+                    const next = categoryFilters.find(
+                      (category) => category === value,
+                    );
+                    if (next) {
+                      setFilter(next);
+                    }
+                  }}
+                  value={activeCategory ?? ""}
+                >
+                  {categoryFilters.map((value) => (
+                    <MenuRadioItem key={value} value={value}>
+                      {t(filterLabels[value])}
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuContent>
+            </Menu>
           </div>
         )}
 
-        <div className="conversation-list-panel__scroll" hidden={panelOpen}>
+        <div
+          className="conversation-list-panel__scroll scroll-autohide"
+          hidden={panelOpen}
+        >
           {conversations.isPending && (
             <SkeletonGroup label={t("conversations.loading")}>
               <Skeleton height={56} />

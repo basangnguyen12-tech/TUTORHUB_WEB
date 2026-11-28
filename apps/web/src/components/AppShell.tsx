@@ -1,8 +1,9 @@
 import { Button, IconButton } from "@tutorhub/ui";
-import { Building2, LogOut, Menu, RefreshCw, X } from "lucide-react";
+import { Building2, Menu, RefreshCw, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -14,16 +15,18 @@ import {
   useNavigate,
   useNavigation,
 } from "react-router";
+import { useAutoHideScrollbars } from "../app/autoHideScrollbars";
 import { getVisibleNavigationItems, navigationItems } from "../app/routes";
 import { useI18n } from "../app/i18n";
+import { useOnlineStatus } from "../app/onlineStatus";
 import { isAdminMFARequired, useStepUpRequest } from "../app/security";
 import { useSession } from "../app/session";
 import { useWorkspaceActions } from "../app/workspaces";
 import { useTenantCapabilities } from "../app/tenantCapabilities";
 import { AdminMfaRequiredNotice } from "./AdminMfaRequiredNotice";
 import { AppSidebar, WorkspaceSwitcher } from "./AppSidebar";
-import { NotificationBell } from "./NotificationBell";
 import { StepUpAuthDialog } from "./StepUpAuthDialog";
+import { SystemSettingsProvider } from "./SystemSettingsCard";
 
 /** Same threshold as the drawer media query in styles.css. */
 const COMPACT_SIDEBAR_QUERY = "(max-width: 680px)";
@@ -51,27 +54,8 @@ function useCompactSidebar() {
   );
 }
 
-function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
-
-  useEffect(() => {
-    const markOnline = () => setIsOnline(true);
-    const markOffline = () => setIsOnline(false);
-
-    window.addEventListener("online", markOnline);
-    window.addEventListener("offline", markOffline);
-
-    return () => {
-      window.removeEventListener("online", markOnline);
-      window.removeEventListener("offline", markOffline);
-    };
-  }, []);
-
-  return isOnline;
-}
-
 export function AppShell() {
-  const { language, setLanguage, t } = useI18n();
+  const { t } = useI18n();
   const session = useSession();
   const navigate = useNavigate();
   const { switchWorkspace } = useWorkspaceActions({
@@ -99,6 +83,15 @@ export function AppShell() {
   );
   const notificationEnabled =
     tenantCapabilities.data?.features.in_app_notifications?.enabled === true;
+  const notificationTenantID =
+    notificationEnabled && activeTenant ? activeTenant.id : null;
+  // Language, connection, notifications and sign-out live in Settings >
+  // System now; the shell only tells that card whether notifications apply.
+  const systemSettings = useMemo(
+    () => ({ notificationTenantID }),
+    [notificationTenantID],
+  );
+  useAutoHideScrollbars();
   const activeMemberships =
     session.currentUser?.memberships.filter(
       (membership) => membership.status === "active",
@@ -176,6 +169,8 @@ export function AppShell() {
       />
 
       <div className="app-workspace" inert={drawerActive || undefined}>
+        {/* Phones only (the sidebar is a drawer there): the drawer toggle and
+            the page name. Desktop has no top bar, so pages get the height. */}
         <header className="app-topbar">
           <div className="app-topbar__context">
             <IconButton
@@ -197,41 +192,6 @@ export function AppShell() {
             <strong>
               {currentItem ? t(currentItem.labelKey) : t("nav.home")}
             </strong>
-          </div>
-
-          <div className="app-topbar__actions">
-            {notificationEnabled && activeTenant && (
-              <NotificationBell tenantID={activeTenant.id} />
-            )}
-            <span
-              className={`connection-status${isOnline ? " connection-status--online" : ""}`}
-              role="status"
-            >
-              {isOnline ? t("shell.online") : t("shell.offline")}
-            </span>
-            <label className="language-select">
-              <span className="visually-hidden">{t("shell.language")}</span>
-              <select
-                aria-label={t("shell.language")}
-                onChange={(event) =>
-                  setLanguage(event.target.value as typeof language)
-                }
-                value={language}
-              >
-                <option value="vi">Tiếng Việt</option>
-                <option value="en">English</option>
-              </select>
-            </label>
-            <Button
-              aria-label={t("auth.signOut")}
-              className="app-topbar__logout"
-              leadingIcon={<LogOut />}
-              onClick={() => void session.signOut()}
-              size="sm"
-              variant="secondary"
-            >
-              {t("auth.signOut")}
-            </Button>
           </div>
         </header>
 
@@ -321,7 +281,9 @@ export function AppShell() {
               </Link>
             </section>
           )}
-          <Outlet />
+          <SystemSettingsProvider value={systemSettings}>
+            <Outlet />
+          </SystemSettingsProvider>
         </main>
       </div>
 

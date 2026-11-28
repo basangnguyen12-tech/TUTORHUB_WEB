@@ -235,7 +235,9 @@ async function expectSignedInAs(page: Page, email: string) {
 }
 
 async function signOut(page: Page) {
-  await page.getByRole("button", { name: labels.signOut }).click();
+  // Sign-out lives in Settings > System (no app top bar).
+  await page.goto("/app/settings");
+  await page.getByRole("button", { name: labels.signOut }).first().click();
   await expect(page).toHaveURL(/\/signed-out$/);
 }
 

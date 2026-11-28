@@ -1939,7 +1939,7 @@ export function AvailabilityPollManagementPage() {
         canCreate={createMeetingAvailability.available}
         currentUserID={currentUserID}
         mediaRoomsEnabled={
-          capabilities.data?.features.classroom_media_rooms.enabled === true
+          capabilities.data?.features.classroom_media_rooms?.enabled === true
         }
         strings={strings}
         tenantID={tenantID}

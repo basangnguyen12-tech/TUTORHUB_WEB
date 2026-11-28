@@ -315,8 +315,9 @@ test.describe("AUTH-02 native email sign-up and password login", () => {
     }
     await expectBrowserStorageWithoutSecrets(page, [password, code]);
 
-    // 2. Sign out through the CSRF-protected BFF logout.
-    await page.getByRole("button", { name: labels.signOut }).click();
+    // 2. Sign out through the CSRF-protected BFF logout (Settings > System).
+    await page.goto("/app/settings");
+    await page.getByRole("button", { name: labels.signOut }).first().click();
     await expect(page).toHaveURL(/\/signed-out$/);
 
     // 3. Requesting a code for the now-registered email looks identical in the

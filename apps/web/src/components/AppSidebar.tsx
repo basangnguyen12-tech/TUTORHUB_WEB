@@ -343,7 +343,10 @@ export function AppSidebar({
           </button>
         </div>
 
-        <nav className="app-navigation" aria-label={t("shell.navigation")}>
+        <nav
+          aria-label={t("shell.navigation")}
+          className="app-navigation scroll-autohide"
+        >
           {groups.map((group) => {
             const labelID = `${sidebarID}-${group.id}`;
             return (

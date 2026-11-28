@@ -309,10 +309,12 @@ async function installAuthenticatedCalendarMocks(
 }
 
 async function openCalendar(page: Page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tutorhub.language", "en");
+  });
   await page.goto(`/app/calendar?view=week&date=${fixtureDate}`, {
     waitUntil: "domcontentloaded",
   });
-  await page.locator(".language-select select").selectOption("en");
   await expect(
     page.locator(
       '[data-calendar-ready="ready"][data-calendar-renderer="fullcalendar-standard"]',

@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -680,7 +681,6 @@ const messages = {
     "conversations.composerLabel": "Tin nhắn mới",
     "conversations.composerPlaceholder": "Nhập nội dung tin nhắn",
     "conversations.composerHint": "Nhấn Ctrl+Enter hoặc Command+Enter để gửi.",
-    "conversations.composerCount": "{count}/{limit} ký tự",
     "conversations.messageRequired": "Hãy nhập nội dung tin nhắn.",
     "conversations.messageTooLong":
       "Tin nhắn phải tối đa 4.000 ký tự và 16 KiB sau khi chuẩn hóa.",
@@ -724,6 +724,8 @@ const messages = {
     "conversations.filterClass": "Lớp học",
     "conversations.filterDirect": "Trực tiếp",
     "conversations.filterRoom": "Phòng trực tuyến",
+    "conversations.filterCategory": "Phân loại",
+    "conversations.filterCategoryActive": "Phân loại: {category}",
     "conversations.favoritesSection": "Đã ghim",
     "conversations.chatsSection": "Trò chuyện",
     "conversations.pin": "Ghim {title}",
@@ -1472,6 +1474,17 @@ const messages = {
     "shell.navGroup.learning": "Học tập",
     "shell.navGroup.manage": "Quản lý",
     "shell.collapseSidebar": "Thu gọn thanh bên",
+    "systemSettings.title": "Hệ thống",
+    "systemSettings.description":
+      "Ngôn ngữ, kết nối, thông báo và phiên đăng nhập trên thiết bị này.",
+    "systemSettings.languageHint":
+      "Ngôn ngữ giao diện TutorHub trên thiết bị này.",
+    "systemSettings.connection": "Kết nối",
+    "systemSettings.connectionHint": "Trạng thái mạng của trình duyệt.",
+    "systemSettings.notifications": "Thông báo",
+    "systemSettings.notificationsHint": "Mở trung tâm thông báo của workspace.",
+    "systemSettings.session": "Phiên đăng nhập",
+    "systemSettings.signOutHint": "Kết thúc phiên TutorHub trên thiết bị này.",
     "shell.expandSidebar": "Mở rộng thanh bên",
     "auth.signInTitle": "Đăng nhập vào TutorHub",
     "auth.signInDescription":
@@ -5060,7 +5073,6 @@ const messages = {
     "conversations.composerLabel": "New message",
     "conversations.composerPlaceholder": "Write a message",
     "conversations.composerHint": "Press Ctrl+Enter or Command+Enter to send.",
-    "conversations.composerCount": "{count}/{limit} characters",
     "conversations.messageRequired": "Enter a message.",
     "conversations.messageTooLong":
       "Messages are limited to 4,000 characters and 16 KiB after normalization.",
@@ -5105,6 +5117,8 @@ const messages = {
     "conversations.filterClass": "Classes",
     "conversations.filterDirect": "Direct",
     "conversations.filterRoom": "Live rooms",
+    "conversations.filterCategory": "Category",
+    "conversations.filterCategoryActive": "Category: {category}",
     "conversations.favoritesSection": "Favorites",
     "conversations.chatsSection": "Chats",
     "conversations.pin": "Pin {title}",
@@ -5861,6 +5875,18 @@ const messages = {
     "shell.navGroup.learning": "Learning",
     "shell.navGroup.manage": "Manage",
     "shell.collapseSidebar": "Collapse sidebar",
+    "systemSettings.title": "System",
+    "systemSettings.description":
+      "Language, connection, notifications and your session on this device.",
+    "systemSettings.languageHint":
+      "The TutorHub interface language on this device.",
+    "systemSettings.connection": "Connection",
+    "systemSettings.connectionHint": "Your browser's network status.",
+    "systemSettings.notifications": "Notifications",
+    "systemSettings.notificationsHint":
+      "Open the workspace notification center.",
+    "systemSettings.session": "Session",
+    "systemSettings.signOutHint": "End your TutorHub session on this device.",
     "shell.expandSidebar": "Expand sidebar",
     "auth.signInTitle": "Sign in to TutorHub",
     "auth.signInDescription":
@@ -8824,11 +8850,46 @@ function formatMessage(template: string, values?: TranslationValues) {
   });
 }
 
+/**
+ * UI-only device language flag (no user data or credentials). The default
+ * ("vi") is never written, and switching back to "vi" removes the key.
+ */
+export const LANGUAGE_STORAGE_KEY = "tutorhub.language";
+
+function readStoredLanguage(): Language {
+  try {
+    return window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === "en"
+      ? "en"
+      : "vi";
+  } catch {
+    return "vi";
+  }
+}
+
+function writeStoredLanguage(next: Language) {
+  try {
+    if (next === "en") {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, "en");
+    } else {
+      window.localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+    }
+  } catch {
+    // Storage can be unavailable in private mode or sandboxes.
+  }
+}
+
 export function I18nProvider({
   children,
-  initialLanguage = "vi",
+  initialLanguage,
 }: PropsWithChildren<{ initialLanguage?: Language }>) {
-  const [language, setLanguage] = useState<Language>(initialLanguage);
+  const [language, setLanguageState] = useState<Language>(
+    () => initialLanguage ?? readStoredLanguage(),
+  );
+
+  const setLanguage = useCallback((next: Language) => {
+    writeStoredLanguage(next);
+    setLanguageState(next);
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -8840,7 +8901,7 @@ export function I18nProvider({
       setLanguage,
       t: (key, values) => formatMessage(messages[language][key], values),
     }),
-    [language],
+    [language, setLanguage],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

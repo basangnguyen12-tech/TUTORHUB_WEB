@@ -647,8 +647,8 @@ export function ConversationMessages({
   const canShareInstantClass =
     canPostMessages &&
     (conversation?.kind === "direct" || conversation?.kind === "class") &&
-    capabilities.data?.features.instant_study_rooms.enabled === true &&
-    capabilities.data?.features.classroom_media_rooms.enabled === true;
+    capabilities.data?.features.instant_study_rooms?.enabled === true &&
+    capabilities.data?.features.classroom_media_rooms?.enabled === true;
   const attemptKeys = (payload: string) => {
     if (cardAttempt.current?.payload !== payload) {
       cardAttempt.current = {
@@ -913,7 +913,6 @@ export function ConversationMessages({
     !messages.isFetchNextPageError &&
     items.length > 0 &&
     !concealed;
-  const characterCount = [...draft].length;
   const hasContent =
     normalizeDraft(draft).length > 0 || readyAttachmentIDs.length > 0;
   const searchID = `conversation-thread-search-${conversationID}`;
@@ -1018,7 +1017,7 @@ export function ConversationMessages({
       )}
 
       <div
-        className="conversation-messages__scroller"
+        className="conversation-messages__scroller scroll-autohide"
         onScroll={(event) => {
           const element = event.currentTarget;
           stickToBottom.current =
@@ -1694,17 +1693,6 @@ export function ConversationMessages({
                   {t("conversations.messageSent")}
                 </span>
               )}
-              <span
-                className="conversation-composer__count"
-                data-over={
-                  characterCount > maximumMessageCharacters ? "true" : undefined
-                }
-              >
-                {t("conversations.composerCount", {
-                  count: characterCount,
-                  limit: maximumMessageCharacters,
-                })}
-              </span>
               <Button
                 className="conversation-composer__send"
                 data-ready={hasContent ? "true" : "false"}

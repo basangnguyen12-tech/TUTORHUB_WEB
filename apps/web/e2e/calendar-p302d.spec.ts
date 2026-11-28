@@ -193,10 +193,12 @@ test.describe("P3-02D availability poll acceptance", () => {
       }
     });
 
+    await page.addInitScript(() => {
+      window.localStorage.setItem("tutorhub.language", "en");
+    });
     await page.goto("/app/calendar/availability-polls", {
       waitUntil: "domcontentloaded",
     });
-    await page.locator(".language-select select").selectOption("en");
 
     await expect(
       page.getByRole("heading", { level: 1, name: "Availability polls" }),
@@ -315,10 +317,12 @@ test.describe("P3-02D availability poll acceptance", () => {
     const recorder: RouteRecorder = { unexpected: [] };
     await installOrganizerMocks(page, recorder);
 
+    await page.addInitScript(() => {
+      window.localStorage.setItem("tutorhub.language", "en");
+    });
     await page.goto("/app/calendar/availability-polls", {
       waitUntil: "domcontentloaded",
     });
-    await page.locator(".language-select select").selectOption("en");
 
     const titleField = page.getByRole("textbox", { name: "Poll title" });
     const descriptionField = page.getByRole("textbox", {

@@ -7,7 +7,8 @@
 /* ---------- Local tokens ---------- */
 .conversations-page,
 .conversations-dialog,
-.conversation-mention-menu {
+.conversation-mention-menu,
+.conversation-filter-menu {
   --msg-surface: #ffffff;
   --msg-line: #eceff3;
   --msg-control: #7c8592;
@@ -38,15 +39,22 @@
   --msg-popover-shadow: 0 18px 44px rgb(15 23 42 / 0.16);
   --msg-tooltip-bg: #1c222b;
   --msg-tooltip-ink: #ffffff;
-  --msg-offset: 64px;
+  /* Top bar height above the page: none on desktop, the phone bar below. */
+  --msg-offset: 0px;
 }
 
 [data-theme="dark"]
-  :is(.conversations-page, .conversations-dialog, .conversation-mention-menu),
+  :is(
+    .conversations-page,
+    .conversations-dialog,
+    .conversation-mention-menu,
+    .conversation-filter-menu
+  ),
 :is(
   .conversations-page,
   .conversations-dialog,
-  .conversation-mention-menu
+  .conversation-mention-menu,
+  .conversation-filter-menu
 )[data-theme="dark"] {
   --msg-surface: var(--color-surface);
   --msg-line: #2a3340;
@@ -92,8 +100,6 @@
   overflow: hidden;
   background: var(--msg-surface);
   color: var(--msg-ink);
-  /* MSG-AVATAR-SEARCH-CLASSIN-01: wide enough for the four default chips on
-     one line (ref-06); a fifth chip or a large badge wraps instead. */
   grid-template-columns: minmax(19.5rem, 21.5rem) minmax(0, 1fr);
 }
 
@@ -452,42 +458,81 @@
   white-space: nowrap;
 }
 
-/* Teams filter chips (ref-01). They wrap instead of scrolling sideways, so
-   nothing is clipped (ref-06) and focus outlines stay visible. */
+/*
+ * Zalo-style filter row: "Tất cả" and "Chưa đọc" are text tabs with an
+ * underline; the conversation kinds sit behind a "Phân loại" menu pushed to
+ * the right. One line at every width (the menu label ellipsizes last).
+ */
 .conversation-filters {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
+  min-width: 0;
+  align-items: stretch;
+  gap: 16px;
+  border-bottom: 1px solid var(--msg-line);
 }
 
 .conversation-filter {
+  position: relative;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 9px;
-  border: 1px solid var(--msg-control);
-  border-radius: 999px;
-  background: var(--msg-surface);
-  color: var(--msg-ink);
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 1px;
+  border: 0;
+  background: transparent;
+  color: var(--msg-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
-  /* One weight for every state, so pressing a chip never reflows the row. */
+  font-size: 13px;
+  /* One weight for every state, so selecting a tab never shifts the row. */
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
 }
 
-.conversation-filter:hover {
-  background: var(--msg-hover);
+.conversation-filter:hover,
+.conversation-filter[aria-expanded="true"] {
+  color: var(--msg-ink);
 }
 
-.conversation-filter[aria-pressed="true"] {
-  border-color: var(--msg-active-line);
-  background: var(--msg-active);
+.conversation-filter:is([aria-pressed="true"], [data-active]) {
   color: var(--msg-active-ink);
+}
+
+.conversation-filter:is([aria-pressed="true"], [data-active])::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--msg-active-line);
+  content: "";
+}
+
+.conversation-filter--category {
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.conversation-filter__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conversation-filter--category svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  transition: transform 140ms ease;
+}
+
+.conversation-filter--category[aria-expanded="true"] svg {
+  transform: rotate(180deg);
 }
 
 .conversation-filter__count {
@@ -500,6 +545,23 @@
   font-weight: 700;
   line-height: 16px;
   text-align: center;
+}
+
+.th-menu-content.conversation-filter-menu {
+  min-width: 180px;
+  border-color: var(--msg-line);
+  background: var(--msg-surface);
+  box-shadow: var(--msg-popover-shadow);
+}
+
+.conversation-filter-menu .th-menu-item {
+  color: var(--msg-ink);
+  font-size: 13.5px;
+}
+
+.conversation-filter-menu .th-menu-item[data-state="checked"] {
+  color: var(--msg-active-ink);
+  font-weight: 600;
 }
 
 .conversation-list-panel__scroll {
@@ -1857,18 +1919,6 @@
   opacity: 0.45;
 }
 
-.conversation-composer__count {
-  color: var(--msg-muted);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.conversation-composer__count[data-over] {
-  color: var(--color-danger);
-  font-weight: 700;
-}
-
 .conversation-composer__success {
   display: inline-flex;
   align-items: center;
@@ -2344,26 +2394,12 @@
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1100px) {
-  /* Still room for the four default chips (and a small unread badge) on one
-     line next to an expanded app sidebar at 1024px. */
   .page-content.conversations-page {
-    grid-template-columns: minmax(17.5rem, 20.5rem) minmax(0, 1fr);
-  }
-
-  .conversation-list-panel > :not(.conversation-list-panel__scroll) {
-    margin-right: 14px;
-    margin-left: 14px;
+    grid-template-columns: minmax(17.5rem, 19.5rem) minmax(0, 1fr);
   }
 
   .conversation-detail-panel__header .conversation-cta {
     display: none;
-  }
-}
-
-@media (max-width: 940px) {
-  /* Narrow two-column range: give the chat its width back; chips wrap. */
-  .page-content.conversations-page {
-    grid-template-columns: minmax(16.5rem, 18.5rem) minmax(0, 1fr);
   }
 }
 
@@ -2431,10 +2467,6 @@
     display: none;
   }
 
-  .conversation-composer__count {
-    display: none;
-  }
-
   .conversation-message__actions {
     position: absolute;
     top: -12px;
@@ -2482,6 +2514,7 @@
   .conversation-search input,
   .conversation-list__pin,
   .conversation-message__actions,
+  .conversation-filter--category svg,
   .conversation-section__toggle svg {
     transition: none;
   }
@@ -2503,7 +2536,6 @@
   .conversation-thread-search,
   .conversation-composer,
   .conversation-composer-locked,
-  .conversation-filter,
   .conversation-message__bubble,
   .conversation-message__actions,
   .conversation-attachment,
@@ -2517,11 +2549,23 @@
     color: CanvasText;
   }
 
-  .conversation-filter[aria-pressed="true"],
   .conversation-list__link--active {
     border: 2px solid Highlight;
     background: Highlight;
     color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .conversation-filters {
+    border-bottom-color: CanvasText;
+  }
+
+  .conversation-filter {
+    color: CanvasText;
+  }
+
+  .conversation-filter:is([aria-pressed="true"], [data-active])::after {
+    background: Highlight;
     forced-color-adjust: none;
   }
 

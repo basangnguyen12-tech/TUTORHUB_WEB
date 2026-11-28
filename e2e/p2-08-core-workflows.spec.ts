@@ -83,10 +83,27 @@ async function signIn(page: Page, role: UserRole) {
 }
 
 async function useEnglish(page: Page) {
-  const language = page.locator(".language-select select");
+  // The workspace gate has its own picker; inside the app the language lives
+  // in Settings > System. Going there and back client-side keeps the choice.
+  const gatePicker = page.locator(
+    ".workspace-gate__header .language-select select",
+  );
+  const footer = page.locator(".app-sidebar__footer");
+  await expect(gatePicker.or(footer).first()).toBeVisible();
+  if (await gatePicker.isVisible()) {
+    await gatePicker.selectOption("en");
+    await expect(gatePicker).toHaveValue("en");
+    return;
+  }
+  const back = page.url();
+  await footer.click();
+  await expect(page).toHaveURL(/\/app\/settings$/);
+  const language = page.locator(".system-settings .language-select select");
   await expect(language).toBeVisible();
   await language.selectOption("en");
   await expect(language).toHaveValue("en");
+  await page.goBack();
+  await expect(page).toHaveURL(back);
 }
 
 async function currentDisplayName(page: Page) {

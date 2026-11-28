@@ -175,6 +175,17 @@ function listResponse(items: Conversation[] = [directConversation]) {
   return jsonResponse({ items, next_cursor: null });
 }
 
+/** Picks a conversation kind from the Zalo-style "Phân loại" menu. */
+async function pickCategory(filters: HTMLElement, label: string) {
+  const trigger = within(filters).getByRole("button", { name: /^Phân loại/ });
+  act(() => trigger.focus());
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  fireEvent.click(await screen.findByRole("menuitemradio", { name: label }));
+  await waitFor(() =>
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+  );
+}
+
 function emptyMessagePageResponse() {
   return jsonResponse({
     items: [],
@@ -376,7 +387,7 @@ describe("ConversationsPage", () => {
     });
   });
 
-  it("filters by accent-insensitive search and Teams-style chips", async () => {
+  it("filters by accent-insensitive search, Zalo-style tabs and the category menu", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementation(() =>
@@ -412,19 +423,51 @@ describe("ConversationsPage", () => {
     expect(screen.getByText("TutorHub Student")).toBeInTheDocument();
     expect(screen.queryByText("Đại số tuyến tính")).not.toBeInTheDocument();
 
-    fireEvent.click(within(filters).getByRole("button", { name: "Lớp học" }));
+    // Only the two tabs and the category menu sit in the row.
+    expect(
+      within(filters)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Tất cả", "Chưa đọc1", "Phân loại"]);
+    const trigger = within(filters).getByRole("button", { name: "Phân loại" });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    act(() => trigger.focus());
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(
+      (await screen.findAllByRole("menuitemradio")).map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["Lớp học", "Trực tiếp", "Phòng trực tuyến"]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
+
+    await pickCategory(filters, "Lớp học");
     expect(screen.getByText("Đại số tuyến tính")).toBeInTheDocument();
     expect(screen.queryByText("TutorHub Student")).not.toBeInTheDocument();
+    // The menu button now names the chosen kind and is the active tab.
+    const active = within(filters).getByRole("button", {
+      name: "Phân loại: Lớp học",
+    });
+    expect(active).toHaveTextContent("Lớp học");
+    expect(active).toHaveAttribute("data-active", "true");
+    expect(unread).toHaveAttribute("aria-pressed", "false");
 
-    fireEvent.click(within(filters).getByRole("button", { name: "Trực tiếp" }));
+    await pickCategory(filters, "Trực tiếp");
     expect(screen.getByText("TutorHub Student")).toBeInTheDocument();
     expect(screen.queryByText("Đại số tuyến tính")).not.toBeInTheDocument();
 
-    fireEvent.click(
-      within(filters).getByRole("button", { name: "Phòng trực tuyến" }),
-    );
+    await pickCategory(filters, "Phòng trực tuyến");
     expect(screen.getByText("Phòng ôn tập Toán")).toBeInTheDocument();
     expect(screen.queryByText("TutorHub Student")).not.toBeInTheDocument();
+
+    // "Tất cả" clears the category.
+    fireEvent.click(within(filters).getByRole("button", { name: "Tất cả" }));
+    expect(
+      within(filters).getByRole("button", { name: "Phân loại" }),
+    ).not.toHaveAttribute("data-active");
+    expect(screen.getByText("TutorHub Student")).toBeInTheDocument();
   });
 
   it("pins conversations into a collapsible Favorites group only after a click", async () => {
@@ -635,12 +678,8 @@ describe("ConversationsPage", () => {
       expect(
         document.querySelector(".conversation-shortcuts--panel"),
       ).toBeNull();
-      // The chips still narrow the results.
-      fireEvent.click(
-        within(filters as HTMLElement).getByRole("button", {
-          name: "Trực tiếp",
-        }),
-      );
+      // The filters still narrow the results.
+      await pickCategory(filters as HTMLElement, "Trực tiếp");
       expect(
         screen.getByText("Không có cuộc trò chuyện phù hợp"),
       ).toBeInTheDocument();
@@ -648,7 +687,12 @@ describe("ConversationsPage", () => {
         within(filters as HTMLElement).getByRole("button", { name: "Tất cả" }),
       );
 
-      // Deleting the text while focused returns to the shortcut panel.
+      // Deleting the text while focused returns to the shortcut panel (the
+      // menu took focus, so come back to the search first).
+      act(() => search.focus());
+      expect(
+        document.querySelector(".conversation-shortcuts--panel"),
+      ).toBeNull();
       fireEvent.change(search, { target: { value: "" } });
       expect(
         document.querySelector(".conversation-shortcuts--panel"),

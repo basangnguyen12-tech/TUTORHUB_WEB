@@ -215,10 +215,12 @@ async function openCalendar(
     view = "week",
   }: { date?: string; expectedItems: number; view?: string },
 ) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tutorhub.language", "en");
+  });
   await page.goto(`/app/calendar?view=${view}&date=${date}`, {
     waitUntil: "domcontentloaded",
   });
-  await page.locator(".language-select select").selectOption("en");
   await expect(
     page.locator(
       '[data-calendar-ready="ready"][data-calendar-renderer="fullcalendar-standard"]',
@@ -486,10 +488,12 @@ test.describe("P3-02A Warm Academic visual baselines", () => {
       await page.setViewportSize(visualCase.size);
       await installCalendarMocks(page, { itemCount: 18 });
       if (visualCase.view === "agenda") {
+        await page.addInitScript(() => {
+          window.localStorage.setItem("tutorhub.language", "en");
+        });
         await page.goto(`/app/calendar?date=${fixtureDate}`, {
           waitUntil: "domcontentloaded",
         });
-        await page.locator(".language-select select").selectOption("en");
         await expect(
           page.getByRole("heading", { level: 2, name: "Agenda" }),
         ).toBeVisible();

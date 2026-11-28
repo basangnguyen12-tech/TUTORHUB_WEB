@@ -91,6 +91,7 @@ import {
 } from "../app/security";
 import { useSession } from "../app/session";
 import { StepUpAuthDialog } from "../components/StepUpAuthDialog";
+import { SystemSettingsCard } from "../components/SystemSettingsCard";
 import { PhoneSettingsCard } from "./PhoneSettingsCard";
 import { TwoFactorSettingsCard } from "./TwoFactorSettingsCard";
 import "./ProfileSettingsPage.css";
@@ -2450,6 +2451,10 @@ export function ProfileSettingsPage() {
           <Skeleton height={18} width="68%" />
           <Skeleton height={320} />
         </SkeletonGroup>
+        {/* Language and sign-out never wait for the profile. */}
+        <div className="profile-settings__grid">
+          <SystemSettingsCard />
+        </div>
       </main>
     );
   }
@@ -2470,6 +2475,9 @@ export function ProfileSettingsPage() {
           description={errorMessage(profileQuery.error, t("profile.loadError"))}
           title={t("profile.loadErrorTitle")}
         />
+        <div className="profile-settings__grid">
+          <SystemSettingsCard />
+        </div>
       </main>
     );
   }
@@ -2494,6 +2502,8 @@ export function ProfileSettingsPage() {
       </header>
 
       <div className="profile-settings__grid">
+        <SystemSettingsCard />
+
         <section
           className="profile-panel"
           aria-labelledby="profile-details-title"

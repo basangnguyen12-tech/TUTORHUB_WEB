@@ -125,11 +125,10 @@ test("P3-12 Home degrades one card and keeps search keyboard accessible", async 
     await json(route, { title: "Not found", status: 404 }, 404);
   });
 
+  await page.addInitScript(() => {
+    window.localStorage.setItem("tutorhub.language", "en");
+  });
   await page.goto("/app/home");
-  await expect(
-    page.getByRole("heading", { name: /Today at a glance|Tổng quan hôm nay/ }),
-  ).toBeVisible();
-  await page.locator(".language-select select").selectOption("en");
   await expect(
     page.getByRole("heading", { name: "Today at a glance" }),
   ).toBeVisible();

@@ -9,6 +9,7 @@
   --calendar-focus: var(--color-calendar-focus, #343831);
   background: var(--calendar-canvas);
   color: var(--calendar-ink);
+  container: calendarpage / inline-size;
   min-height: calc(100vh - 4.5rem);
   padding: clamp(1rem, 2vw, 2rem);
 }
@@ -1679,6 +1680,74 @@
   .calendar-agenda-item__time,
   .calendar-agenda-item__body,
   .calendar-agenda-item__actions {
+    grid-column: 2;
+  }
+}
+
+/* Reflow when the calendar workspace pane itself is narrow (e.g. 200% CSS zoom
+   next to the app sidebar, where @media still sees the unzoomed viewport). */
+@container calendarpage (max-width: 42rem) {
+  .calendar-toolbar__view-buttons,
+  .calendar-mini-month,
+  .calendar-filter-group {
+    display: none;
+  }
+
+  .calendar-toolbar__view-select,
+  .calendar-frame {
+    display: block;
+  }
+
+  .calendar-sidebar {
+    border-bottom: 1px solid var(--calendar-border);
+    border-right: 0;
+    padding: 0.75rem 1rem;
+  }
+
+  .calendar-filter-search {
+    border: 0;
+    padding: 0;
+  }
+
+  .calendar-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calendar-toolbar__navigation {
+    display: grid;
+    grid-template-columns: auto auto auto;
+  }
+
+  .calendar-toolbar__range {
+    grid-column: 1 / -1;
+    margin: 0.2rem 0 0;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+
+  .calendar-toolbar__actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .calendar-content {
+    padding: 0.8rem;
+  }
+
+  .calendar-agenda-item {
+    align-items: start;
+    grid-template-columns: 0.25rem minmax(0, 1fr);
+  }
+
+  .calendar-agenda-item__marker {
+    grid-row: 1 / span 3;
+  }
+
+  .calendar-agenda-item__time,
+  .calendar-agenda-item__body,
+  .calendar-agenda-item__actions {
+    flex-wrap: wrap;
     grid-column: 2;
   }
 }
