@@ -39,6 +39,22 @@
   --msg-popover-shadow: 0 18px 44px rgb(15 23 42 / 0.16);
   --msg-tooltip-bg: #1c222b;
   --msg-tooltip-ink: #ffffff;
+  /*
+   * Neutral field look shared by the list search pill and the card dialogs:
+   * hairline borders, ink focus border, ink primary button.
+   * Contrast (WCAG 2.1 AA): ink #0d0d0d 19.3:1 and muted #5d5d5d 6.6:1 on
+   * #ffffff; primary label #ffffff on #0d0d0d 19.3:1.
+   */
+  --neutral-ink: #0d0d0d;
+  --neutral-muted: #5d5d5d;
+  --neutral-line: rgb(0 0 0 / 0.14);
+  --neutral-line-strong: rgb(0 0 0 / 0.28);
+  --neutral-field: rgb(0 0 0 / 0.02);
+  --neutral-hover: rgb(0 0 0 / 0.04);
+  --neutral-selected: rgb(0 0 0 / 0.07);
+  --neutral-primary: #0d0d0d;
+  --neutral-primary-hover: #2f2f2f;
+  --neutral-primary-ink: #ffffff;
   /* Top bar height above the page: none on desktop, the phone bar below. */
   --msg-offset: 0px;
 }
@@ -86,6 +102,18 @@
   --msg-popover-shadow: 0 18px 44px rgb(0 0 0 / 0.5);
   --msg-tooltip-bg: #f4f6f8;
   --msg-tooltip-ink: #11161c;
+  /* Ink #ececec 14.2:1 and muted #b4b4b4 8.1:1 on #181e26; primary label
+     #0d0d0d on #ececec 16.5:1. */
+  --neutral-ink: #ececec;
+  --neutral-muted: #b4b4b4;
+  --neutral-line: rgb(255 255 255 / 0.16);
+  --neutral-line-strong: rgb(255 255 255 / 0.3);
+  --neutral-field: rgb(255 255 255 / 0.04);
+  --neutral-hover: rgb(255 255 255 / 0.06);
+  --neutral-selected: rgb(255 255 255 / 0.1);
+  --neutral-primary: #ececec;
+  --neutral-primary-hover: #d4d4d4;
+  --neutral-primary-ink: #0d0d0d;
 }
 
 /* ---------- Page plane: two seamless columns ---------- */
@@ -209,10 +237,10 @@
   color: var(--msg-ink);
 }
 
-/* Small tooltips for icon-only controls (the accessible name is the label). */
+/* Small tooltips for icon-only controls (the accessible name is the label).
+   The list-header buttons have none: their tooltip fell behind the search. */
 .conversations-page
   :is(
-    .conversations-page__icon-action,
     .conversation-thread-tools__button,
     .conversation-composer__tool,
     .conversation-message__action,
@@ -223,7 +251,6 @@
 
 .conversations-page
   :is(
-    .conversations-page__icon-action,
     .conversation-thread-tools__button,
     .conversation-composer__tool,
     .conversation-message__action,
@@ -284,23 +311,25 @@
 
 .conversation-search__icon {
   position: absolute;
-  left: 12px;
+  left: 16px;
   width: 16px;
   height: 16px;
-  color: var(--msg-muted);
+  color: var(--neutral-muted);
   pointer-events: none;
 }
 
+/* Same neutral pill as the card dialog fields: one hairline border that turns
+   ink on focus, and no second outline drawn around it. */
 .conversation-search input {
   width: 100%;
-  height: 36px;
-  padding: 0 38px 0 36px;
-  border: 1px solid var(--msg-control);
+  height: 40px;
+  padding: 0 40px 0 42px;
+  border: 1px solid var(--neutral-line);
   border-radius: 999px;
-  background: var(--msg-fill);
-  color: var(--msg-ink);
+  background: var(--neutral-field);
+  color: var(--neutral-ink);
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   appearance: none;
   transition:
     background-color 140ms ease,
@@ -308,7 +337,8 @@
 }
 
 .conversation-search input::placeholder {
-  color: var(--msg-muted);
+  color: var(--neutral-muted);
+  opacity: 1;
 }
 
 .conversation-search input::-webkit-search-cancel-button,
@@ -317,39 +347,54 @@
   appearance: none;
 }
 
+.conversation-search input:hover {
+  border-color: var(--neutral-line-strong);
+}
+
 .conversation-search[data-active] input,
 .conversation-search input:focus {
-  border-color: var(--msg-ink);
-  background: var(--msg-surface);
+  border-color: var(--neutral-ink);
+  background: transparent;
 }
 
 .conversations-page .conversation-search input:focus-visible {
-  outline: 2px solid var(--msg-focus);
-  outline-offset: 1px;
+  outline: none;
 }
 
 .conversation-search__clear {
   position: absolute;
   right: 6px;
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: 999px;
-  background: var(--msg-send-idle);
-  color: var(--msg-muted);
+  background: transparent;
+  color: var(--neutral-muted);
   cursor: pointer;
   place-items: center;
 }
 
 .conversation-search__clear:hover {
-  color: var(--msg-ink);
+  background: var(--neutral-hover);
+  color: var(--neutral-ink);
+}
+
+.conversations-page .conversation-search__clear:focus-visible {
+  outline: 2px solid var(--neutral-ink);
+  outline-offset: 2px;
 }
 
 .conversation-search__clear svg {
   width: 14px;
   height: 14px;
+}
+
+@media (forced-colors: active) {
+  .conversations-page .conversation-search input:focus-visible {
+    outline: 2px solid Highlight;
+  }
 }
 
 .conversation-shortcuts {
@@ -1155,49 +1200,60 @@
   padding: 4px 12px 0;
 }
 
+/* Same neutral pill as the list search and the dialog fields: one hairline
+   border that turns ink while the field has focus, no outline around it. */
 .conversation-thread-search {
   position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 10px 20px 0;
-  padding: 0 6px 0 34px;
-  border: 1px solid var(--msg-control);
+  padding: 0 6px 0 42px;
+  border: 1px solid var(--neutral-line);
   border-radius: 999px;
-  background: var(--msg-surface);
+  background: var(--neutral-field);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.conversation-thread-search:hover {
+  border-color: var(--neutral-line-strong);
+}
+
+.conversation-thread-search:focus-within {
+  border-color: var(--neutral-ink);
+  background: transparent;
 }
 
 .conversation-thread-search__icon {
   position: absolute;
-  left: 12px;
-  width: 15px;
-  height: 15px;
-  color: var(--msg-muted);
+  left: 16px;
+  width: 16px;
+  height: 16px;
+  color: var(--neutral-muted);
 }
 
 .conversation-thread-search input {
   min-width: 0;
-  height: 34px;
+  height: 38px;
   flex: 1 1 auto;
+  padding: 0;
   border: 0;
   background: transparent;
-  color: var(--msg-ink);
+  color: var(--neutral-ink);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   appearance: none;
 }
 
 .conversation-thread-search input::placeholder {
-  color: var(--msg-muted);
+  color: var(--neutral-muted);
+  opacity: 1;
 }
 
 .conversations-page .conversation-thread-search input:focus-visible {
   outline: none;
-}
-
-.conversation-thread-search:focus-within {
-  outline: 2px solid var(--msg-focus);
-  outline-offset: 1px;
 }
 
 .conversation-thread-search input::-webkit-search-cancel-button {
@@ -1206,31 +1262,43 @@
 
 .conversation-thread-search__count {
   flex: 0 0 auto;
-  color: var(--msg-muted);
+  color: var(--neutral-muted);
   font-size: 12px;
 }
 
 .conversation-thread-search__close {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
+  flex: none;
   padding: 0;
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--msg-muted);
+  color: var(--neutral-muted);
   cursor: pointer;
   place-items: center;
 }
 
 .conversation-thread-search__close:hover {
-  background: var(--msg-hover);
-  color: var(--msg-ink);
+  background: var(--neutral-hover);
+  color: var(--neutral-ink);
+}
+
+.conversations-page .conversation-thread-search__close:focus-visible {
+  outline: 2px solid var(--neutral-ink);
+  outline-offset: 2px;
 }
 
 .conversation-thread-search__close svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
+}
+
+@media (forced-colors: active) {
+  .conversation-thread-search:focus-within {
+    outline: 2px solid Highlight;
+  }
 }
 
 .conversation-messages__scroller {
@@ -2338,14 +2406,27 @@
   color: var(--msg-ink);
 }
 
-/* ---------- Direct conversation dialog (CLASS-CLASSIN-UI-01 style) ---------- */
+/* ---------- Conversation dialogs ----------
+ * Direct conversation, contact card and instant class share one neutral look
+ * (--neutral-* tokens above): hairline borders, pill fields and buttons, an
+ * ink primary button. A text field shows focus with its own border only, so no
+ * second outline is drawn around it.
+ */
 .th-dialog-content.conversations-dialog {
   width: min(440px, calc(100vw - 32px));
-  border: 1px solid var(--msg-line);
-  border-radius: 18px;
+  border: 1px solid rgb(0 0 0 / 0.06);
+  border-radius: 20px;
   background: var(--msg-surface);
-  box-shadow: 0 24px 64px rgb(15 23 42 / 0.18);
-  color: var(--msg-ink);
+  box-shadow:
+    0 12px 48px rgb(0 0 0 / 0.14),
+    0 2px 8px rgb(0 0 0 / 0.04);
+  color: var(--neutral-ink);
+}
+
+[data-theme="dark"] .th-dialog-content.conversations-dialog,
+.th-dialog-content.conversations-dialog[data-theme="dark"] {
+  border-color: rgb(255 255 255 / 0.08);
+  box-shadow: 0 16px 56px rgb(0 0 0 / 0.5);
 }
 
 .conversations-dialog__form {
@@ -2358,8 +2439,8 @@
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  background: var(--msg-active);
-  color: var(--msg-active-ink);
+  background: var(--neutral-selected);
+  color: var(--neutral-ink);
   place-items: center;
 }
 
@@ -2370,27 +2451,125 @@
 
 .conversations-dialog .th-dialog-title {
   margin: 0;
+  color: var(--neutral-ink);
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .conversations-dialog .th-dialog-description {
   margin: 0;
-  color: var(--msg-muted);
+  color: var(--neutral-muted);
   font-size: 13px;
 }
 
-.conversations-dialog .th-field__control {
-  border-radius: 12px;
+.conversations-dialog .th-dialog-close {
+  border-radius: 999px;
+  color: var(--neutral-muted);
 }
 
-.conversations-dialog__footer .th-button {
-  border-radius: 999px;
+.conversations-dialog .th-dialog-close:hover {
+  background: var(--neutral-hover);
+  color: var(--neutral-ink);
 }
 
 .conversations-dialog :is(a, button, input):focus-visible {
-  outline: 2px solid var(--msg-focus);
+  outline: 2px solid var(--neutral-ink);
   outline-offset: 2px;
+}
+
+/* Text fields (TextField from @tutorhub/ui) as neutral pills. */
+.conversations-dialog .th-field__label {
+  color: var(--neutral-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.conversations-dialog .th-field__control {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--neutral-line);
+  border-radius: 999px;
+  background: var(--neutral-field);
+  color: var(--neutral-ink);
+  font-size: 14px;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.conversations-dialog .th-field__control::placeholder {
+  color: var(--neutral-muted);
+  opacity: 1;
+}
+
+.conversations-dialog
+  .th-field__control:hover:not(:disabled, :focus, [aria-invalid="true"]) {
+  border-color: var(--neutral-line-strong);
+}
+
+.conversations-dialog .th-field__control:is(:focus, :focus-visible) {
+  border-color: var(--neutral-ink);
+  background: transparent;
+  outline: none;
+}
+
+.conversations-dialog .th-field__control[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.conversations-dialog .th-field__hint {
+  color: var(--neutral-muted);
+}
+
+/* Buttons: pills, ink primary, hairline secondary, no hover lift. */
+.conversations-dialog .th-button {
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.conversations-dialog .th-button:hover:not(:disabled) {
+  transform: none;
+}
+
+.conversations-dialog .th-dialog-footer .th-button {
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+.conversations-dialog .th-button--primary {
+  background: var(--neutral-primary);
+  color: var(--neutral-primary-ink);
+}
+
+.conversations-dialog .th-button--primary:is(:hover, :active):not(:disabled) {
+  background: var(--neutral-primary-hover);
+}
+
+.conversations-dialog .th-button--secondary {
+  border-color: var(--neutral-line);
+  background: transparent;
+  color: var(--neutral-ink);
+}
+
+.conversations-dialog .th-button--secondary:hover:not(:disabled) {
+  border-color: var(--neutral-line-strong);
+  background: var(--neutral-hover);
+  color: var(--neutral-ink);
+}
+
+.conversations-dialog .th-button--quiet {
+  color: var(--neutral-muted);
+}
+
+.conversations-dialog .th-button--quiet:hover:not(:disabled) {
+  background: var(--neutral-hover);
+  color: var(--neutral-ink);
+}
+
+@media (forced-colors: active) {
+  .conversations-dialog .th-field__control:focus-visible {
+    outline: 2px solid Highlight;
+  }
 }
 
 /* ---------- Responsive ---------- */
@@ -2513,6 +2692,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .conversation-search input,
+  .conversation-thread-search,
   .conversation-list__pin,
   .conversation-message__actions,
   .conversation-filter--category svg,
@@ -2851,73 +3031,11 @@
 }
 
 /* ---------- MSG-COMPOSER-TOOLS-01: card dialogs ----------
- * Neutral look for the contact-card and instant-class dialogs: hairline
- * borders, pill fields and buttons, an ink primary button. The field wrapper
- * draws the only focus ring; the bare <input> inside it gets none, so no
- * second box appears inside the pill.
- * Contrast (WCAG 2.1 AA): light ink #0d0d0d 19.3:1 and muted #5d5d5d 6.6:1 on
- * #ffffff; dark ink #ececec 14.2:1 and muted #b4b4b4 8.1:1 on #181e26;
- * primary labels #ffffff on #0d0d0d 19.3:1, #0d0d0d on #ececec 16.5:1.
+ * The dialog shell, title, close button and footer buttons come from the
+ * shared conversation-dialog rules. Here: the field wrapper draws the only
+ * focus ring; the bare <input> inside it gets none, so no second box appears
+ * inside the pill.
  */
-.th-dialog-content.composer-card-dialog {
-  --card-ink: #0d0d0d;
-  --card-muted: #5d5d5d;
-  --card-line: rgb(0 0 0 / 0.14);
-  --card-line-strong: rgb(0 0 0 / 0.28);
-  --card-field: rgb(0 0 0 / 0.02);
-  --card-hover: rgb(0 0 0 / 0.04);
-  --card-selected: rgb(0 0 0 / 0.07);
-  --card-primary: #0d0d0d;
-  --card-primary-hover: #2f2f2f;
-  --card-primary-ink: #ffffff;
-  border-color: rgb(0 0 0 / 0.06);
-  border-radius: 20px;
-  box-shadow:
-    0 12px 48px rgb(0 0 0 / 0.14),
-    0 2px 8px rgb(0 0 0 / 0.04);
-  color: var(--card-ink);
-}
-
-[data-theme="dark"] .th-dialog-content.composer-card-dialog,
-.th-dialog-content.composer-card-dialog[data-theme="dark"] {
-  --card-ink: #ececec;
-  --card-muted: #b4b4b4;
-  --card-line: rgb(255 255 255 / 0.16);
-  --card-line-strong: rgb(255 255 255 / 0.3);
-  --card-field: rgb(255 255 255 / 0.04);
-  --card-hover: rgb(255 255 255 / 0.06);
-  --card-selected: rgb(255 255 255 / 0.1);
-  --card-primary: #ececec;
-  --card-primary-hover: #d4d4d4;
-  --card-primary-ink: #0d0d0d;
-  border-color: rgb(255 255 255 / 0.08);
-  box-shadow: 0 16px 56px rgb(0 0 0 / 0.5);
-}
-
-.composer-card-dialog .th-dialog-title {
-  color: var(--card-ink);
-  font-weight: 600;
-}
-
-.composer-card-dialog .th-dialog-description {
-  color: var(--card-muted);
-}
-
-.composer-card-dialog .th-dialog-close {
-  border-radius: 999px;
-  color: var(--card-muted);
-}
-
-.composer-card-dialog .th-dialog-close:hover {
-  background: var(--card-hover);
-  color: var(--card-ink);
-}
-
-.composer-card-dialog :is(a, button, input):focus-visible {
-  outline: 2px solid var(--card-ink);
-  outline-offset: 2px;
-}
-
 .composer-card-dialog__form {
   display: grid;
   gap: 12px;
@@ -2930,9 +3048,9 @@
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  border: 1px solid var(--card-line);
+  border: 1px solid var(--neutral-line);
   border-radius: 999px;
-  background: var(--card-field);
+  background: var(--neutral-field);
   transition:
     border-color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
@@ -2948,12 +3066,12 @@
 
 .composer-card-dialog__search:hover,
 .composer-card-dialog__field:hover {
-  border-color: var(--card-line-strong);
+  border-color: var(--neutral-line-strong);
 }
 
 .composer-card-dialog__search:focus-within,
 .composer-card-dialog__field:focus-within {
-  border-color: var(--card-ink);
+  border-color: var(--neutral-ink);
   background: transparent;
 }
 
@@ -2965,7 +3083,7 @@
   width: 16px;
   height: 16px;
   flex: none;
-  color: var(--card-muted);
+  color: var(--neutral-muted);
 }
 
 .composer-card-dialog__search input,
@@ -2978,7 +3096,7 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--card-ink);
+  color: var(--neutral-ink);
   font: inherit;
   font-size: 14px;
   outline: none;
@@ -2994,7 +3112,7 @@
 
 .composer-card-dialog__search input::placeholder,
 .composer-card-dialog__field input::placeholder {
-  color: var(--card-muted);
+  color: var(--neutral-muted);
   opacity: 1;
 }
 
@@ -3003,7 +3121,7 @@
   width: 16px;
   height: 16px;
   margin: 0;
-  background-color: var(--card-muted);
+  background-color: var(--neutral-muted);
   cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
@@ -3013,63 +3131,19 @@
 }
 
 .composer-card-dialog__search input::-webkit-search-cancel-button:hover {
-  background-color: var(--card-ink);
+  background-color: var(--neutral-ink);
 }
 
 .composer-card-dialog__field .conversation-composer__chip-close {
   width: 30px;
   height: 30px;
   flex: none;
-  color: var(--card-muted);
+  color: var(--neutral-muted);
 }
 
 .composer-card-dialog__field .conversation-composer__chip-close:hover {
-  background: var(--card-hover);
-  color: var(--card-ink);
-}
-
-.composer-card-dialog .th-button {
-  border-radius: 999px;
-  box-shadow: none;
-}
-
-.composer-card-dialog .th-button:hover:not(:disabled) {
-  transform: none;
-}
-
-.composer-card-dialog .th-dialog-footer .th-button {
-  min-height: 40px;
-  padding: 0 18px;
-}
-
-.composer-card-dialog .th-button--primary {
-  background: var(--card-primary);
-  color: var(--card-primary-ink);
-}
-
-.composer-card-dialog .th-button--primary:is(:hover, :active):not(:disabled) {
-  background: var(--card-primary-hover);
-}
-
-.composer-card-dialog .th-button--secondary {
-  border-color: var(--card-line);
-  background: transparent;
-  color: var(--card-ink);
-}
-
-.composer-card-dialog .th-button--secondary:hover:not(:disabled) {
-  border-color: var(--card-line-strong);
-  background: var(--card-hover);
-  color: var(--card-ink);
-}
-
-.composer-card-dialog .th-button--quiet {
-  color: var(--card-muted);
-}
-
-.composer-card-dialog .th-button--quiet:hover:not(:disabled) {
-  background: var(--card-hover);
-  color: var(--card-ink);
+  background: var(--neutral-hover);
+  color: var(--neutral-ink);
 }
 
 .composer-card-dialog__options {
@@ -3089,17 +3163,17 @@
   min-height: 48px;
   padding: 8px 12px;
   border-radius: 12px;
-  color: var(--card-ink);
+  color: var(--neutral-ink);
   cursor: pointer;
 }
 
 .composer-card-option:hover {
-  background: var(--card-hover);
+  background: var(--neutral-hover);
 }
 
 .composer-card-option:has(input:checked) {
-  background: var(--card-selected);
-  color: var(--card-ink);
+  background: var(--neutral-selected);
+  color: var(--neutral-ink);
 }
 
 .composer-card-option input {
@@ -3107,11 +3181,11 @@
   height: 16px;
   flex: none;
   margin: 0;
-  accent-color: var(--card-primary);
+  accent-color: var(--neutral-primary);
 }
 
 .composer-card-option input:focus-visible {
-  outline: 2px solid var(--card-ink);
+  outline: 2px solid var(--neutral-ink);
   outline-offset: 2px;
 }
 
@@ -3124,7 +3198,7 @@
 .composer-card-dialog__hint,
 .composer-card-dialog__empty,
 .composer-card-dialog__preview-label {
-  color: var(--card-muted);
+  color: var(--neutral-muted);
 }
 
 .composer-card-dialog__hint,
@@ -3150,9 +3224,9 @@
   display: grid;
   gap: 6px;
   padding: 12px 14px;
-  border: 1px solid var(--card-line);
+  border: 1px solid var(--neutral-line);
   border-radius: 16px;
-  background: var(--card-field);
+  background: var(--neutral-field);
 }
 
 .composer-card-dialog__preview-label {
@@ -3162,7 +3236,7 @@
 
 .composer-card-dialog__label {
   padding: 0;
-  color: var(--card-ink);
+  color: var(--neutral-ink);
   font-size: 13px;
   font-weight: 600;
 }
@@ -3197,9 +3271,9 @@
   align-items: center;
   min-height: 36px;
   padding: 0 16px;
-  border: 1px solid var(--card-line);
+  border: 1px solid var(--neutral-line);
   border-radius: 999px;
-  color: var(--card-ink);
+  color: var(--neutral-ink);
   font-size: 13px;
   transition:
     border-color var(--duration-fast) var(--ease-standard),
@@ -3207,18 +3281,18 @@
 }
 
 .composer-duration:hover span {
-  border-color: var(--card-line-strong);
-  background: var(--card-hover);
+  border-color: var(--neutral-line-strong);
+  background: var(--neutral-hover);
 }
 
 .composer-duration input:checked + span {
-  border-color: var(--card-ink);
-  background: var(--card-selected);
+  border-color: var(--neutral-ink);
+  background: var(--neutral-selected);
   font-weight: 600;
 }
 
 .composer-duration input:focus-visible + span {
-  outline: 2px solid var(--card-ink);
+  outline: 2px solid var(--neutral-ink);
   outline-offset: 2px;
 }
 

@@ -577,7 +577,6 @@ export function ConversationsPage() {
           <div className="conversations-page__header-actions">
             <IconButton
               className="conversations-page__icon-action"
-              data-tooltip={t("conversations.refresh")}
               label={t("conversations.refresh")}
               loading={
                 conversations.isRefetching && !conversations.isFetchingNextPage
@@ -590,7 +589,6 @@ export function ConversationsPage() {
             </IconButton>
             <IconButton
               className="conversations-page__icon-action"
-              data-tooltip={t("conversations.createAction")}
               disabled={!createAvailability.available}
               label={t("conversations.createAction")}
               onClick={openCreate}
